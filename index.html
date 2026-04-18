@@ -171,7 +171,7 @@ function dfmt(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+S
 function mkAthlete(p){return{nm:p.athlete?.displayName||p.athlete?.fullName||'Unknown',ab:p.athlete?.shortName||p.athlete?.displayName?.split(' ').pop()||'?',id:p.id||null,rec:p.records?.[0]?.summary||'',sc:p.score||null}}
 
 async function init(){
-  if(AK){$('setupModal').style.display='none';$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
+  if(AK||localStorage.getItem('odds_api_skipped')){$('setupModal').style.display='none';if(AK){$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}}
   if(WORKER_URL){$('workerDot').classList.add('ok');$('workerSt').textContent='PINNACLE'}
   if(CLAUDE_KEY){$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY'}
   await refreshAll()}
@@ -179,7 +179,7 @@ function showSetup(){$('setupModal').style.display='flex';$('apiKeyInput').focus
 function showWorkerSetup(){$('workerModal').style.display='flex';$('workerUrlInput').value=WORKER_URL;$('workerUrlInput').focus()}
 function connectWorker(){const u=$('workerUrlInput').value.trim().replace(/\/$/,'');if(!u)return;WORKER_URL=u;localStorage.setItem('worker_url',u);$('workerModal').style.display='none';$('workerDot').classList.add('ok');$('workerSt').textContent='PINNACLE';refreshAll()}
 function connectApi(){const k=$('apiKeyInput').value.trim();if(!k)return;AK=k;localStorage.setItem('odds_api_key',k);$('setupModal').style.display='none';$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED';refreshAll()}
-function skipApi(){$('setupModal').style.display='none';refreshAll()}
+function skipApi(){localStorage.setItem('odds_api_skipped','1');$('setupModal').style.display='none';refreshAll()}
 
 async function espnFetch(sport,league,ep='scoreboard',params=''){
   try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/${ep}${params}`);return r.ok?r.json():null}catch(e){return null}}
