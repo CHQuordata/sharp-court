@@ -459,7 +459,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   h+=`<div class="note"><strong>NOTE:</strong> EV% derived from no-vig consensus across books. Sharp signal = edge magnitude. No lines = The Odds API has no market for this match yet.</div>`;
   el.innerHTML=h;el.scrollTop=0}
 
-function xForm(d,tid){if(!d?.events)return[];return d.events.filter(e=>e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>{const c=e.competitions[0],t=c.competitors.find(x=>x.id===tid||x.team?.id==tid),o=c.competitors.find(x=>x!==t);return{dt:new Date(e.date),r:t?.winner?'W':'L',sc:`${t?.score||0}-${o?.score||0}`,opp:o?.team?.abbreviation||'?',hm:t?.homeAway==='home'}})}
+function xForm(d,tid){if(!d?.events)return[];const sc=v=>typeof v==='object'?v?.value??0:v??0;return d.events.filter(e=>e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>{const c=e.competitions[0],t=c.competitors.find(x=>x.id===tid||x.team?.id==tid),o=c.competitors.find(x=>x!==t);return{dt:new Date(e.date),r:t?.winner?'W':'L',sc:`${sc(t?.score)}-${sc(o?.score)}`,opp:o?.team?.abbreviation||'?',hm:t?.homeAway==='home'}})}
 function avgSc(f,type){if(!f.length)return null;return f.reduce((s,x)=>{const p=x.sc.split('-');return s+(type==='f'?parseInt(p[0])||0:parseInt(p[1])||0)},0)/f.length}
 function formBar(nm,f){if(!f.length)return'';const w=f.filter(x=>x.r==='W').length,sk=streak(f),sc=sk[0]==='W'?'hot':sk[0]==='L'?'cold':'neutral';
   let h=`<div class="form-row"><div class="form-team">${nm}</div><div class="form-blocks">`;[...f].reverse().forEach(x=>{h+=`<div class="form-block ${x.r}" title="${x.r} ${x.sc} ${x.hm?'vs':'@'} ${x.opp}">${x.r}</div>`});
