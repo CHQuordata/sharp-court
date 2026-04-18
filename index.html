@@ -754,7 +754,14 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     const side=score>=0?g.hm:g.aw,other=score>=0?g.aw:g.hm,mlO=score>=0?mlHm:mlAw;
     const mag=Math.abs(score),conf=mag>=5?'HIGH':mag>=2.5?'MEDIUM':'LOW';
     let mlPrice=mlO?` (${fp(mlO.price)})`:'';
-    reasons.push(`${side.nm} is the straight-up play${g.ha>0&&score>=0?', backed by home-court advantage':''}${mlEdges.length?', with sharp book edge':''}`);
+    if(g.cat==='tennis'){
+      const fmtForm=(id,nm)=>{const ms=(tennisForm.get(String(id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!ms.length)return null;const w=ms.filter(m=>m.W).length;const last=ms[0];const res=last.W?`def. ${last.opp}`:`lost to ${last.opp}`;const ctx=[last.round,last.score].filter(Boolean).join(', ');return`${nm} ${w}-${ms.length-w} L${ms.length} (${res}${ctx?', '+ctx:''})`};
+      const awFmt=fmtForm(g.aw.id,g.aw.nm),hmFmt=fmtForm(g.hm.id,g.hm.nm);
+      if(awFmt&&hmFmt)reasons.push(`${awFmt}. ${hmFmt}`);
+      else if(awFmt||hmFmt)reasons.push(awFmt||hmFmt);
+    } else {
+      reasons.push(`${side.nm} is the straight-up play${g.ha>0&&score>=0?', backed by home-court advantage':''}${mlEdges.length?', with sharp book edge':''}`);
+    }
     if(af.length>=3&&hf.length>=3){const sp2=score>=0?hmPct:awPct,op2=score>=0?awPct:hmPct;
       if(Math.abs(sp2-op2)>.1)reasons.push(`Form gap (${(sp2*100).toFixed(0)}% vs ${(op2*100).toFixed(0)}% L10) translates directly to ML value`)}
     else if(awRecPct!==null&&hmRecPct!==null){const sp2=score>=0?hmRecPct:awRecPct,op2=score>=0?awRecPct:hmRecPct;
