@@ -176,8 +176,9 @@ function skipApi(){$('setupModal').style.display='none';refreshAll()}
 
 async function espnFetch(sport,league,ep='scoreboard',params=''){
   try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/${ep}${params}`);return r.ok?r.json():null}catch(e){return null}}
-async function espnSched(sport,league,tid){
-  try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/teams/${tid}/schedule`);return r.ok?r.json():null}catch(e){return null}}
+async function espnSched(sport,league,tid,szn){
+  try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/teams/${tid}/schedule?season=${szn}`);return r.ok?r.json():null}catch(e){return null}}
+function sportSeason(cat){const y=new Date().getFullYear(),m=new Date().getMonth();return cat==='nfl'?(m<8?y-1:y):y}
 async function oddsFetch(sk){
   if(!AK)return[];try{const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sk}/odds/?apiKey=${AK}&regions=us,us2&markets=h2h,spreads,totals&oddsFormat=american`);
   if(!r.ok)return[];const rem=r.headers.get('x-requests-remaining');if(rem)$('apiCalls').textContent=`API: ${500-parseInt(rem)}/500`;return r.json()}catch(e){return[]}}
@@ -400,7 +401,7 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
 async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$('detailPanel');
   el.innerHTML='<div class="detail-empty"><div class="pulse" style="font-size:14px;color:var(--grn)">ANALYZING MATCHUP...</div></div>';
   let af=[],hf=[];
-  if(g.isTeam&&g.aw.id&&E[g.sp]){const c=E[g.sp];const[a,b]=await Promise.all([espnSched(c.s,c.l,g.aw.id),espnSched(c.s,c.l,g.hm.id)]);af=xForm(a,g.aw.id);hf=xForm(b,g.hm.id)}
+  if(g.isTeam&&g.aw.id&&E[g.sp]){const c=E[g.sp],szn=sportSeason(g.cat);const[a,b]=await Promise.all([espnSched(c.s,c.l,g.aw.id,szn),espnSched(c.s,c.l,g.hm.id,szn)]);af=xForm(a,g.aw.id);hf=xForm(b,g.hm.id)}
   let h='';
   const ts=g.tm.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00B7 '+g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div></div>`;
