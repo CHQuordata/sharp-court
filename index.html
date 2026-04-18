@@ -456,15 +456,18 @@ function genPicks(g,af,hf){
   const awRecPct=parseRec(g.aw.rec),hmRecPct=parseRec(g.hm.rec);
   const awRank=g.aw.rank||null,hmRank=g.hm.rank||null;
   const hasRecord=awRecPct!==null||hmRecPct!==null;
-  const hasRanking=awRank!==null&&hmRank!==null;
+  const hasRanking=awRank!==null||hmRank!==null;
   if(!g.odds&&!g.eOdds&&!af.length&&!hf.length&&!hasRecord&&!hasRanking)return[];
   const picks=[];
   const awW=af.filter(f=>f.r==='W').length, hmW=hf.filter(f=>f.r==='W').length;
   const awFormPct=af.length>=3?awW/af.length:null, hmFormPct=hf.length>=3?hmW/hf.length:null;
   const awRankPct=(awRank&&hmRank)?1/(1+Math.exp((awRank-hmRank)/30)):null;
   const hmRankPct=awRankPct!==null?1-awRankPct:null;
-  const awPct=awFormPct!==null?awFormPct:awRecPct!==null?awRecPct:awRankPct!==null?awRankPct:.5;
-  const hmPct=hmFormPct!==null?hmFormPct:hmRecPct!==null?hmRecPct:hmRankPct!==null?hmRankPct:.5;
+  // one-sided ranking: ranked vs unranked — treat unranked as ~150
+  const awRankVsUnr=(awRank&&!hmRank)?1/(1+Math.exp((awRank-150)/30)):(!awRank&&hmRank)?1/(1+Math.exp((150-hmRank)/30)):null;
+  const hmRankVsUnr=awRankVsUnr!==null?1-awRankVsUnr:null;
+  const awPct=awFormPct!==null?awFormPct:awRecPct!==null?awRecPct:awRankPct!==null?awRankPct:awRankVsUnr!==null?awRankVsUnr:.5;
+  const hmPct=hmFormPct!==null?hmFormPct:hmRecPct!==null?hmRecPct:hmRankPct!==null?hmRankPct:hmRankVsUnr!==null?hmRankVsUnr:.5;
   const awFor=avgSc(af,'f'),awAg=avgSc(af,'a'),hmFor=avgSc(hf,'f'),hmAg=avgSc(hf,'a');
   const awMarg=awFor!==null?awFor-awAg:0, hmMarg=hmFor!==null?hmFor-hmAg:0;
   const awR=af.length?Math.round((g.tm-af[0].dt)/864e5):null,hmR=hf.length?Math.round((g.tm-hf[0].dt)/864e5):null;
@@ -501,6 +504,10 @@ function genPicks(g,af,hf){
       if(Math.abs(rd)>=50)reasons.push(`${b.nm} (${rankTier(br)}) vs ${w.nm} (${rankTier(wr)}) on ${surfTxt} — a ${Math.abs(rd)}-place gap at this level is significant; ${g.spL} data shows higher-ranked players win this tier of matchup at a high clip`);
       else if(Math.abs(rd)>=20)reasons.push(`${b.nm} (${rankTier(br)}) holds a ${Math.abs(rd)}-place edge over ${w.nm} (${rankTier(wr)}) on ${surfTxt} — tier separation is a consistent signal in ${g.spL}`);
       else reasons.push(`Rankings tight on ${surfTxt} — ${g.aw.nm} (#${awRank}) vs ${g.hm.nm} (#${hmRank}); narrow edge, defer to surface form and head-to-head`)}
+    else if(awRank!==null||hmRank!==null){const ranked=awRank?g.aw:g.hm,r=awRank||hmRank,unr=awRank?g.hm:g.aw;
+      const surf=getSurface(g.ven),surfTxt=surf==='clay'?'clay':surf==='grass'?'grass':'hard court';
+      score+=awRank?-4:4;
+      reasons.push(`${ranked.nm} (${rankTier(r)}) faces ${unr.nm} (unranked) on ${surfTxt} — ranked players hold a strong structural edge against unranked opponents at ${g.spL} level`)}
     if(hmMarg&&awMarg&&Math.abs(hmMarg-awMarg)>2){score+=(hmMarg-awMarg)*0.35;const b=hmMarg>awMarg?g.hm:g.aw,m=hmMarg>awMarg?hmMarg:awMarg;
       reasons.push(`${b.nm} has been winning by ${Math.abs(m).toFixed(1)} per game, indicating they're not just winning \u2014 they're covering`)}
     if(Math.abs(restDiff)>=2){score+=restDiff*0.6;const r=restDiff>0?g.hm:g.aw,t=restDiff>0?g.aw:g.hm;
