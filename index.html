@@ -434,9 +434,9 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
 // ══════════════════════════════
 async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$('detailPanel');
   el.innerHTML='<div class="detail-empty"><div class="pulse" style="font-size:14px;color:var(--grn)">ANALYZING MATCHUP...</div></div>';
-  let af=[],hf=[],pitchers=null,weather=null,awTn=null,hmTn=null,awNba=null,hmNba=null,tnSum=null;
+  let af=[],hf=[],pitchers=null,weather=null,awTn=null,hmTn=null,awNba=null,hmNba=null,tnSum=null,tnH2H=null;
   const _ec=g.isTeam&&g.aw.id&&E[g.sp],_eo=g.st!=='STATUS_FINAL';
-  const [_fr,_sm,_wx,_awt,_hmt,_awn,_hmn,_tns]=await Promise.all([
+  const [_fr,_sm,_wx,_awt,_hmt,_awn,_hmn,_tns,_h2h]=await Promise.all([
     _ec?(()=>{const c=E[g.sp],szn=sportSeason(g.cat);return Promise.all([espnSched(c.s,c.l,g.aw.id,szn),espnSched(c.s,c.l,g.hm.id,szn)])})():Promise.resolve(null),
     _eo&&(g.cat==='mlb'||g.cat==='nfl')?fetchGameSummary(g.cat,g.id):Promise.resolve(null),
     _eo&&isOutdoor(g.ven,g.cat)?fetchWeather(cityFromTeam(g.hm.nm)):Promise.resolve(null),
@@ -444,7 +444,8 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
     _eo&&g.cat==='tennis'&&g.hm.id?fetchTennisPlayerStats(g.sp,g.hm.id):Promise.resolve(null),
     _eo&&g.cat==='nba'&&g.aw.id?fetchNBATeamStats(g.aw.id):Promise.resolve(null),
     _eo&&g.cat==='nba'&&g.hm.id?fetchNBATeamStats(g.hm.id):Promise.resolve(null),
-    _eo&&g.cat==='tennis'?fetchTennisMatchSummary(g.sp,g.id,g.aw.nm,g.hm.nm,g.aw.id,g.hm.id):Promise.resolve(null)]);
+    _eo&&g.cat==='tennis'?fetchTennisMatchSummary(g.sp,g.id,g.aw.nm,g.hm.nm,g.aw.id,g.hm.id):Promise.resolve(null),
+    g.cat==='tennis'?fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm):Promise.resolve(null)]);
   if(_fr){af=xForm(_fr[0],g.aw.id);hf=xForm(_fr[1],g.hm.id)}
   if(_sm)pitchers=extractPitchers(_sm);
   if(_wx)weather=_wx;
@@ -453,6 +454,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   if(_awn)awNba=extractNBAStats(_awn);
   if(_hmn)hmNba=extractNBAStats(_hmn);
   if(_tns)tnSum=_tns;
+  if(_h2h)tnH2H=_h2h;
   let h='';
   const ts=g.tm.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00B7 '+g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div></div>`;
@@ -513,29 +515,31 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
     // ── H2H + ESPN article ──
     const bdr='border-top:1px solid rgba(42,42,62,.3);margin-top:6px;padding-top:6px';
     {
-      // 1. Try ESPN summary H2H
-      let h2hLine=null;
-      const h2hData=tnSum?.h2hPlayers||[];
-      if(h2hData.length>=2){const p0=h2hData[0],p1=h2hData[1];const w0=p0.h2h?.wins??p0.h2h?.value??null,w1=p1.h2h?.wins??p1.h2h?.value??null;if(w0!==null&&w1!==null){const tot=parseInt(w0)+parseInt(w1);const leader=parseInt(w0)>=parseInt(w1)?p0.nm:p1.nm;h2hLine=tot>0?`${leader.split(' ').pop()} leads H2H ${Math.max(w0,w1)}-${Math.min(w0,w1)} (${tot} meetings)`:null;}}
-      else if(tnSum?.h2hComp?.displayValue){h2hLine=`H2H: ${tnSum.h2hComp.displayValue}`;}
-      // 2. Fall back: cross-reference tennisForm by oppId
-      if(!h2hLine){
+      // H2H from Sackmann GitHub data (primary), fall back to ESPN/tennisForm
+      let h2hLine=null,h2hDetail='';
+      if(tnH2H&&tnH2H.total>0){
+        const awW=tnH2H.awW,hmW=tnH2H.hmW,tot=tnH2H.total;
+        const leader=awW>hmW?g.aw.nm:awW<hmW?g.hm.nm:'Even';
+        const leaderLast=leader.split(' ').pop();
+        h2hLine=awW===hmW?`H2H even ${awW}-${hmW} (${tot} meeting${tot>1?'s':''})`:`${leaderLast} leads H2H ${Math.max(awW,hmW)}-${Math.min(awW,hmW)} (${tot} meeting${tot>1?'s':''} since 2021)`;
+        const surfIcon=s=>s==='Clay'?'🔴':s==='Grass'?'🟢':s==='Hard'?'🔵':'⚪';
+        h2hDetail=tnH2H.recent.map(m=>{const rShort=r=>(r||'').replace('Quarterfinal','QF').replace('Semifinal','SF').replace('Final','F').replace('Round ','R');const winner=m.awWon?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop();return`<div style="font-size:8px;color:var(--t3);padding:1px 0">${surfIcon(m.surf)} ${m.dt.slice(0,4)} ${m.tn} ${rShort(m.round)}: <span style="color:${m.awWon?'var(--cyn)':'var(--amb)'}">${winner}</span> ${m.score}</div>`}).join('');
+      } else if(tnH2H&&tnH2H.total===0){
+        h2hLine=null; // genuine first meeting
+      } else {
+        // fall back to tennisForm cross-ref
         const awFAll=tennisForm.get(String(g.aw.id))||[];
-        const hmId=String(g.hm.id);
-        const meetings=awFAll.filter(f=>String(f.oppId)===hmId);
-        if(meetings.length>0){
-          const awW=meetings.filter(f=>f.W).length,hmW=meetings.length-awW;
-          const leader=awW>=hmW?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop();
-          h2hLine=`${leader} leads H2H ${Math.max(awW,hmW)}-${Math.min(awW,hmW)} (${meetings.length} recent meeting${meetings.length>1?'s':''})`;
-        }
+        const meetings=awFAll.filter(f=>String(f.oppId)===String(g.hm.id));
+        if(meetings.length){const awW=meetings.filter(f=>f.W).length,hmW=meetings.length-awW;const leader=awW>=hmW?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop();h2hLine=`${leader} leads H2H ${Math.max(awW,hmW)}-${Math.min(awW,hmW)} (${meetings.length} recent)`;}
       }
-      // 3. Always show H2H bullet
-      const h2hDisplay=h2hLine||`No H2H on record — likely first meeting`;
+      const h2hDisplay=h2hLine||'No prior H2H on record — first meeting';
       const h2hColor=h2hLine?'var(--grn)':'var(--t3)';
       // Article/news block
       const hasArticle=tnSum?.espnHead||tnSum?.newsHead;
       h+=`<div style="${bdr}">`;
-      h+=`<div style="font-size:10px;font-weight:600;color:${h2hColor};margin-bottom:${hasArticle?'6px':'0'}">● ${h2hDisplay}</div>`;
+      h+=`<div style="font-size:10px;font-weight:600;color:${h2hColor}">● ${h2hDisplay}</div>`;
+      if(h2hDetail)h+=`<div style="margin-top:3px;margin-bottom:${hasArticle?'6px':'0'}">${h2hDetail}</div>`;
+      else if(hasArticle)h+=`<div style="margin-bottom:6px"></div>`;
       if(hasArticle){
         const head=tnSum.newsHead||tnSum.espnHead;
         const desc=tnSum.newsDesc||(tnSum.espnStory?tnSum.espnStory.slice(0,280)+'…':null);
@@ -608,6 +612,7 @@ async function fetchWeather(city){if(!city)return null;try{const r=await fetch(`
 function isOutdoor(venue,cat){if(!['mlb','nfl'].includes(cat))return false;if(cat==='nfl')return!/lucas oil|mercedes.benz|state farm|allegiant|ford field|caesars superdome|u\.s\. bank|nrg stadium|dome at|sofi|klimt|kia metlife|dome/i.test(venue||'');return!/tropicana|rogers centre|minute maid|chase field|loandepot|american family field/i.test(venue||'')}
 function cityFromTeam(nm){return(nm||'').split(' ').slice(0,-1).join(' ')||nm}
 function kellyPct(conf,pickStr){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=conf==='HIGH'?0.60:conf==='MEDIUM'?0.54:0.50;const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
+async function fetchTennisH2H(sp,awNm,hmNm){if(!awNm||!hmNm)return null;const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const awL=norm(awNm.split(' ').pop()),hmL=norm(hmNm.split(' ').pop());if(awL.length<3||hmL.length<3)return null;const repo=sp==='wta'?'tennis_wta/master/wta_matches':'tennis_atp/master/atp_matches';try{const csvs=await Promise.all([2024,2023,2022,2021].map(y=>fetch(`https://raw.githubusercontent.com/JeffSackmann/${repo}_${y}.csv`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.text():null).catch(()=>null)));const ms=[];for(const csv of csvs){if(!csv)continue;const lines=csv.split('\n').slice(1);for(const ln of lines){if(!ln.trim())continue;const c=ln.split(',');if(c.length<26)continue;const w=norm(c[10]||''),l=norm(c[18]||'');if(!w||!l)continue;const awWon=w.includes(awL)&&l.includes(hmL),hmWon=w.includes(hmL)&&l.includes(awL);if(!awWon&&!hmWon)continue;ms.push({dt:c[5],tn:c[1],surf:c[2],round:c[25]?.trim(),score:c[23],awWon});}}if(!ms.length)return{awW:0,hmW:0,total:0,recent:[]};ms.sort((a,b)=>b.dt.localeCompare(a.dt));const awW=ms.filter(m=>m.awWon).length;return{awW,hmW:ms.length-awW,total:ms.length,recent:ms.slice(0,5)}}catch(e){return null}}
 async function fetchTennisPlayerStats(lg,aid){if(!aid)return null;try{const r=await fetch(`https://sports.core.api.espn.com/v2/sports/tennis/leagues/${lg}/athletes/${aid}`);return r.ok?r.json():null}catch(e){return null}}
 async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{const awL=(awNm||'').split(' ').pop().toLowerCase(),hmL=(hmNm||'').split(' ').pop().toLowerCase();const newsUrl=sp=>id=>id?`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/athletes/${id}/news?limit=10`:`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/news?limit=30`;const[sum,awNews,hmNews]=await Promise.all([fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`).then(r=>r.ok?r.json():null).catch(()=>null),fetch(newsUrl(sp)(awId)).then(r=>r.ok?r.json():null).catch(()=>null),hmId&&hmId!==awId?fetch(newsUrl(sp)(hmId)).then(r=>r.ok?r.json():null).catch(()=>null):Promise.resolve(null)]);const out={};if(sum){const comp=sum.header?.competitions?.[0];const comps=comp?.competitors||[];comps.forEach(c=>{if(c.headToHeadMatchups){if(!out.h2hPlayers)out.h2hPlayers=[];out.h2hPlayers.push({nm:c.athlete?.displayName||'',h2h:c.headToHeadMatchups})}});if(comp?.headToHeadMatchups)out.h2hComp=comp.headToHeadMatchups;const art=sum.article;if(art?.story||art?.description){out.espnStory=(art.story||art.description).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();out.espnLink=art.links?.web?.href||null;}out.espnHead=art?.headline||comp?.notes?.[0]?.headline||null;}const findArt=(feed,a,b)=>(feed?.articles||[]).find(x=>{const t=((x.headline||'')+' '+(x.description||'')).toLowerCase();return a.length>2&&b.length>2&&t.includes(a)&&t.includes(b)});const art=findArt(awNews,awL,hmL)||findArt(hmNews,hmL,awL)||findArt(awNews,hmL,awL);if(art){out.newsHead=art.headline;out.newsDesc=art.description;out.newsLink=art.links?.web?.href||null;}console.log('[Tennis]',{sum:!!sum,awNewsCount:awNews?.articles?.length,hmNewsCount:hmNews?.articles?.length,found:!!art,h2h:!!(out.h2hPlayers||out.h2hComp)});return Object.keys(out).length?out:null}catch(e){return null}}
 function extractTennisStats(d){if(!d)return null;return{hand:d.hand?.abbreviation||null,handFull:d.hand?.displayValue||null,age:d.age||null,country:d.birthPlace?.country?.displayName||null}}
