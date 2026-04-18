@@ -255,7 +255,8 @@ async function refreshAll(){
     const mma=await oddsFetch('mma_mixed_martial_arts');
     mma.forEach(o=>{
       const existing=allG.find(x=>x.cat==='mma'&&(
-        x.aw.nm.includes(o.away_team.split(' ').pop())||x.hm.nm.includes(o.home_team.split(' ').pop())));
+        (x.aw.nm.includes(o.away_team.split(' ').pop())&&x.hm.nm.includes(o.home_team.split(' ').pop()))||
+        (x.aw.nm.includes(o.home_team.split(' ').pop())&&x.hm.nm.includes(o.away_team.split(' ').pop()))));
       if(existing){existing.odds=o;return;}
       allG.push({id:'m_'+o.id,sp:'mma',cat:'mma',spL:'UFC',spI:'\u{1F94A}',
         aw:{nm:o.away_team,ab:o.away_team.split(' ').pop(),id:null,rec:'',sc:null},
@@ -370,6 +371,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
     picks.forEach(pk=>{const cls=pk.conf==='HIGH'?'':pk.conf==='MEDIUM'?' medium':' low';
       h+=`<div class="pick-card${cls}"><div class="pick-label">\u26A1 ${pk.label}</div><div class="pick-main">${pk.pick}</div><div class="pick-conf ${pk.conf.toLowerCase()}">\u25CF Confidence: ${pk.conf}</div>${renderMetrics(pk)}<div class="pick-reasoning">${pk.reasoning}</div></div>`;
     });h+=`</div>`;}
+  else if(!g.isTeam){h+=`<div class="pick-card low" style="margin:6px 16px"><div class="pick-label">\u26A1 ANALYSIS</div><div class="pick-main" style="font-size:13px">Odds API Key Required</div><div class="pick-reasoning" style="margin-top:6px">Tennis and MMA picks require live odds data \u2014 ESPN doesn\u2019t publish lines for these sports. Add your Odds API key (free at the-odds-api.com) to unlock EV%, sharp signal, and ML picks for this match.</div></div>`;}
 
   if(g.odds?.bookmakers?.length)h+=renderOdds(g);
   else if(g.eOdds)h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>CONSENSUS LINE</div><div style="font-size:12px">${g.eOdds.details||'N/A'}</div>${g.eOdds.overUnder?`<div style="font-size:12px;color:var(--t2)">O/U ${g.eOdds.overUnder}</div>`:''}<div style="font-size:9px;color:var(--t4);margin-top:8px">Add API key for full book comparison + edge detection</div></div>`;
