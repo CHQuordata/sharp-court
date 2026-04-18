@@ -175,7 +175,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh all data</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
 <script>
-let AK=localStorage.getItem('odds_api_key')||'96603617ef8003d9451cf614c75541b3',cSport='all',selIdx=-1,allG=[],fG=[],allE=[];
+let AK=localStorage.getItem('odds_api_key')||'96603617ef8003d9451cf614c75541b3',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map();
 const E={
   nba:{s:'basketball',l:'nba',lb:'NBA',ic:'\u{1F3C0}',ok:'basketball_nba',ha:3,cat:'nba',isTeam:true},
   nhl:{s:'hockey',l:'nhl',lb:'NHL',ic:'\u{1F3D2}',ok:'icehockey_nhl',ha:.3,cat:'nhl',isTeam:true},
@@ -216,7 +216,7 @@ async function oddsFetch(sk){
 // ══════════════════════════════
 async function refreshAll(){
   $('slateList').innerHTML=Array(6).fill('<div class="loading-row"><div class="skel" style="width:70%"></div><div class="skel" style="width:50%"></div><div class="skel" style="width:40%"></div></div>').join('');
-  allG=[];allE=[];
+  allG=[];allE=[];tennisForm=new Map();
   const now=new Date(), today=dfmt(now);
   const tmrw=new Date(now);tmrw.setDate(now.getDate()+1);const tmrwStr=dfmt(tmrw);
   const startOfToday=new Date(now);startOfToday.setHours(0,0,0,0);
@@ -250,7 +250,10 @@ async function refreshAll(){
           const comps=cp.competitors;if(!comps||comps.length<2)return;
           if(!comps[0].athlete||!comps[1].athlete)return; // skip doubles/mixed
           const mDate=new Date(cp.date||ev.date);const st=cp.status?.type?.name;
-          if(['STATUS_FINAL','STATUS_RETIRED','STATUS_WALKOVER','STATUS_FORFEIT'].includes(st))return;
+          if(['STATUS_FINAL','STATUS_RETIRED','STATUS_WALKOVER','STATUS_FORFEIT'].includes(st)){
+            comps.forEach((cx,i)=>{const aid=cx.id;if(!aid)return;const op=comps[1-i];const sc=(cx.linescores||[]).map((ls,si)=>`${ls.value}-${op.linescores?.[si]?.value??''}`).join(' ');if(!tennisForm.has(aid))tennisForm.set(aid,[]);tennisForm.get(aid).push({W:!!cx.winner,opp:op.athlete?.shortName||op.athlete?.displayName?.split(' ').pop()||'?',score:sc,round:cp.round?.displayName||'',tn:ev.name||'',dt:mDate});});
+            return;
+          }
           if(mDate<startOfToday&&st!=='STATUS_IN_PROGRESS')return;
           const mId=cp.id||`${lg}_${ev.id}_${cp.order||0}`;
           if(seenIds.has(mId))return;seenIds.add(mId);
@@ -501,7 +504,10 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
       if(st?.age)h+=`<div class="tn-stat"><div class="tn-sv">${st.age}</div><div class="tn-sl">AGE</div></div>`;
       if(country)h+=`<div class="tn-stat"><div class="tn-sv" style="font-size:10px;color:var(--t2)">${country.slice(0,3).toUpperCase()}</div><div class="tn-sl">CTY</div></div>`;
       if(pl.rec)h+=`<div class="tn-stat"><div class="tn-sv" style="font-size:10px;color:var(--t2)">${pl.rec}</div><div class="tn-sl">REC</div></div>`;
-      h+=`</div></div>`;
+      h+=`</div>`;
+      const plForm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);
+      if(plForm.length){const rShort=r=>r.replace('Quarterfinal','QF').replace('Semifinal','SF').replace('Final','F').replace('Round ','R');h+=`<div style="margin-top:5px;padding-top:4px;border-top:1px solid rgba(42,42,62,.25)">`;plForm.forEach(f=>{h+=`<div style="font-size:8px;padding:1px 0;display:flex;gap:4px;align-items:baseline"><span style="font-weight:700;min-width:8px;color:${f.W?'var(--grn)':'var(--red)'}">${f.W?'W':'L'}</span><span style="color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.opp}</span><span style="color:var(--t4);white-space:nowrap">${f.score}</span>${f.round?`<span style="color:var(--t4);min-width:14px;text-align:right">${rShort(f.round)}</span>`:''}</div>`;});h+=`</div>`;}
+      h+=`</div>`;
     });
     h+=`</div>`;
     // ── ESPN sourced data (H2H + article) ──
