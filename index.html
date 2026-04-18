@@ -310,6 +310,8 @@ async function refreshAll(){
       allG.filter(g=>g.sp===k).forEach(g=>{const side=g.aw.nm===tn?'aw':g.hm.nm===tn?'hm':null;if(!side)return;
         (ti.injuries||[]).forEach(i=>{g.inj[side].push({nm:i.athlete?.displayName||'?',pos:i.athlete?.position?.abbreviation||'',st:i.status||'',sc:(i.status||'')[0]?.toUpperCase()||'',desc:i.details?.detail||i.details?.type||''})})})});
   }
+  // Deduplicate — ESPN returns MMA/tennis fights across multiple event objects
+  {const seen=new Map();allG.forEach(g=>{const k=g.isTeam?g.id:g.cat+'_'+[g.aw.nm,g.hm.nm].sort().join('|');if(!seen.has(k)||(g.odds&&!seen.get(k).odds))seen.set(k,g)});allG=[...seen.values()]}
   allG.sort((a,b)=>{const al=a.st==='STATUS_IN_PROGRESS'?0:a.st==='STATUS_SCHEDULED'||a.st==='pre'?1:2;const bl=b.st==='STATUS_IN_PROGRESS'?0:b.st==='STATUS_SCHEDULED'||b.st==='pre'?1:2;return al!==bl?al-bl:a.tm-b.tm});
   applyFilters();updateStats();updateEdges();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
 }
