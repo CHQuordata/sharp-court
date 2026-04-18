@@ -125,9 +125,6 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <button class="sport-tab picks-tab" data-sport="picks" onclick="switchToPicksView()">⚡ PICKS</button>
   </div>
   <div class="topbar-sp"></div>
-  <div class="api-st"><div class="api-dot" id="workerDot"></div><span id="workerSt">NO WORKER</span></div>
-  <button class="tb-btn" onclick="showWorkerSetup()">WORKER <span class="kbd">W</span></button>
-  <div class="topbar-div"></div>
   <div class="api-st"><div class="api-dot" id="apiDot"></div><span id="apiSt">NO KEY</span></div>
   <button class="tb-btn" onclick="showSetup()">API KEY <span class="kbd">K</span></button>
   <div class="topbar-div"></div>
@@ -145,13 +142,12 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   </div>
 </div>
 <div class="bottombar"><div><span style="color:var(--grn)">&#9679;</span> SPORTSEDGE v2.9</div><div id="lastScan">LAST SCAN: NEVER</div><div class="bottombar-sp"></div><div id="apiCalls">API: -/500</div><div><span class="kbd">?</span> HELP</div></div>
-<div class="modal-ov" id="workerModal" style="display:none"><div class="modal"><div class="modal-title">CLOUDFLARE WORKER</div><div class="modal-sub">Enter your deployed worker URL to enable Pinnacle odds for MMA and tennis. No API credits consumed — Pinnacle is free with an account.<br><br>Deploy instructions in <code>worker/</code> folder of the repo.</div><input class="modal-input" id="workerUrlInput" type="text" placeholder="https://sportsedge-proxy.yourname.workers.dev" autocomplete="off"><button class="modal-btn" onclick="connectWorker()">CONNECT WORKER</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('workerModal').style.display='none'">Cancel</div></div></div>
 <div class="modal-ov" id="setupModal" style="display:none"><div class="modal"><div class="modal-title">SPORTSEDGE TERMINAL</div><div class="modal-sub">Enter your Odds API key for live odds, EV calculation, and edge detection across 10+ sportsbooks.<br><br>Without a key, ESPN provides schedules, injuries, form, and records for all sports including tennis &amp; UFC.</div><input class="modal-input" id="apiKeyInput" type="password" placeholder="Odds API key..." autocomplete="off"><button class="modal-btn" onclick="connectApi()">CONNECT &amp; SCAN</button><a class="modal-link" href="https://the-odds-api.com/#get-access" target="_blank">Get free key &#8594; the-odds-api.com</a><div style="text-align:center;margin-top:16px;font-size:10px;color:var(--t4);cursor:pointer" onclick="skipApi()">Skip &#8212; ESPN data only</div></div></div>
-<div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-opus-4-7</strong> for best analysis quality. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
+<div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-sonnet-4-6</strong> for analysis. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh all data</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
 <script>
-let AK=localStorage.getItem('odds_api_key')||'96603617ef8003d9451cf614c75541b3',WORKER_URL=localStorage.getItem('worker_url')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[];
+let AK=localStorage.getItem('odds_api_key')||'96603617ef8003d9451cf614c75541b3',cSport='all',selIdx=-1,allG=[],fG=[],allE=[];
 const E={
   nba:{s:'basketball',l:'nba',lb:'NBA',ic:'\u{1F3C0}',ok:'basketball_nba',ha:3,cat:'nba',isTeam:true},
   nhl:{s:'ice-hockey',l:'nhl',lb:'NHL',ic:'\u{1F3D2}',ok:'icehockey_nhl',ha:.3,cat:'nhl',isTeam:true},
@@ -171,16 +167,12 @@ function dfmt(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+S
 function mkAthlete(p){return{nm:p.athlete?.displayName||p.athlete?.fullName||'Unknown',ab:p.athlete?.shortName||p.athlete?.displayName?.split(' ').pop()||'?',id:p.id||null,rec:p.records?.[0]?.summary||'',sc:p.score||null}}
 
 async function init(){
-  if(AK){$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
-  else if(!localStorage.getItem('odds_api_skipped')){$('setupModal').style.display='flex'}
-  if(WORKER_URL){$('workerDot').classList.add('ok');$('workerSt').textContent='PINNACLE'}
+  $('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED';
   if(CLAUDE_KEY){$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY'}
   await refreshAll()}
 function showSetup(){$('setupModal').style.display='flex';$('apiKeyInput').focus()}
-function showWorkerSetup(){$('workerModal').style.display='flex';$('workerUrlInput').value=WORKER_URL;$('workerUrlInput').focus()}
-function connectWorker(){const u=$('workerUrlInput').value.trim().replace(/\/$/,'');if(!u)return;WORKER_URL=u;localStorage.setItem('worker_url',u);$('workerModal').style.display='none';$('workerDot').classList.add('ok');$('workerSt').textContent='PINNACLE';refreshAll()}
 function connectApi(){const k=$('apiKeyInput').value.trim();if(!k)return;AK=k;localStorage.setItem('odds_api_key',k);$('setupModal').style.display='none';$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED';refreshAll()}
-function skipApi(){localStorage.setItem('odds_api_skipped','1');$('setupModal').style.display='none';refreshAll()}
+function skipApi(){$('setupModal').style.display='none';refreshAll()}
 
 async function espnFetch(sport,league,ep='scoreboard',params=''){
   try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/${ep}${params}`);return r.ok?r.json():null}catch(e){return null}}
@@ -189,24 +181,6 @@ async function espnSched(sport,league,tid){
 async function oddsFetch(sk){
   if(!AK)return[];try{const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sk}/odds/?apiKey=${AK}&regions=us,us2&markets=h2h,spreads,totals&oddsFormat=american`);
   if(!r.ok)return[];const rem=r.headers.get('x-requests-remaining');if(rem)$('apiCalls').textContent=`API: ${500-parseInt(rem)}/500`;return r.json()}catch(e){return[]}}
-async function workerFetch(sport){
-  if(!WORKER_URL)return[];
-  try{const r=await fetch(`${WORKER_URL}/pinnacle/${sport}`);
-    if(!r.ok)return[];
-    $('workerDot').classList.add('ok');$('workerSt').textContent='PINNACLE';
-    return r.json()}catch(e){return[]}}
-function mergePinnacle(oddsApi,pinnacle){
-  if(!pinnacle.length)return oddsApi;
-  const merged=[...oddsApi];
-  pinnacle.forEach(po=>{
-    const existing=merged.find(o=>
-      (o.away_team.split(' ').pop()===po.away_team.split(' ').pop()&&o.home_team.split(' ').pop()===po.home_team.split(' ').pop())||
-      (o.away_team.split(' ').pop()===po.home_team.split(' ').pop()&&o.home_team.split(' ').pop()===po.away_team.split(' ').pop()));
-    if(existing){existing.bookmakers.push(...po.bookmakers)}
-    else merged.push(po);
-  });
-  return merged;
-}
 
 // ══════════════════════════════
 // ── MAIN REFRESH
@@ -307,12 +281,8 @@ async function refreshAll(){
         })}));
       }
     }catch(e){}
-    // MMA odds — Odds API + Pinnacle worker merged
-    const [mmaOddsApi,mmaPinnacle]=await Promise.all([
-      oddsFetch('mma_mixed_martial_arts'),
-      workerFetch('mma')
-    ]);
-    const allMmaOdds=mergePinnacle(mmaOddsApi,mmaPinnacle);
+    // MMA odds
+    const allMmaOdds=await oddsFetch('mma_mixed_martial_arts');
     allMmaOdds.forEach(o=>{
       const existing=allG.find(x=>x.cat==='mma'&&(
         (x.aw.nm.includes(o.away_team.split(' ').pop())&&x.hm.nm.includes(o.home_team.split(' ').pop()))||
@@ -591,7 +561,7 @@ function updateEdges(){const el=$('edgeAlerts');if(!allE.length){el.innerHTML=`<
 function jumpTo(id){const i=fG.findIndex(g=>g.id===id);if(i>=0)selGame(i)}
 
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('setupModal').style.display='none';$('scOverlay').classList.remove('vis');return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
-  switch(e.key){case'r':case'R':refreshAll();break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'w':case'W':showWorkerSetup();break;case'a':case'A':showPicksSetup();break;
+  switch(e.key){case'r':case'R':refreshAll();break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'a':case'A':showPicksSetup();break;
     case'p':case'P':switchToPicksView();break;
     case'g':case'G':if(cView==='picks')generatePicks();break;
     case'ArrowDown':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){const pp=todayPicksData.picks.filter(p=>!p.is_lean);selPickIdx=Math.min(selPickIdx+1,pp.length-1);selPick(selPickIdx)}else if(fG.length){selIdx=Math.min(selIdx+1,fG.length-1);selGame(selIdx);scrSel()}break;
