@@ -460,7 +460,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div></div>`;
 
   // PICKS with grading for final games
-  const picks=genPicks(g,af,hf,pitchers,weather,{awTn,hmTn,awNba,hmNba});
+  const picks=genPicks(g,af,hf,pitchers,weather,{awTn,hmTn,awNba,hmNba,tnH2H});
   const isFinal=g.st==='STATUS_FINAL';
   if(isFinal&&(g.aw.sc!=null||g.hm.sc!=null)){
     const awSc=g.aw.sc??'',hmSc=g.hm.sc??'';
@@ -612,7 +612,7 @@ async function fetchWeather(city){if(!city)return null;try{const r=await fetch(`
 function isOutdoor(venue,cat){if(!['mlb','nfl'].includes(cat))return false;if(cat==='nfl')return!/lucas oil|mercedes.benz|state farm|allegiant|ford field|caesars superdome|u\.s\. bank|nrg stadium|dome at|sofi|klimt|kia metlife|dome/i.test(venue||'');return!/tropicana|rogers centre|minute maid|chase field|loandepot|american family field/i.test(venue||'')}
 function cityFromTeam(nm){return(nm||'').split(' ').slice(0,-1).join(' ')||nm}
 function kellyPct(conf,pickStr){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=conf==='HIGH'?0.60:conf==='MEDIUM'?0.54:0.50;const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
-async function fetchTennisH2H(sp,awNm,hmNm){if(!awNm||!hmNm)return null;const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const awL=norm(awNm.split(' ').pop()),hmL=norm(hmNm.split(' ').pop());if(awL.length<3||hmL.length<3)return null;const repo=sp==='wta'?'tennis_wta/master/wta_matches':'tennis_atp/master/atp_matches';try{const csvs=await Promise.all([2024,2023,2022,2021].map(y=>fetch(`https://raw.githubusercontent.com/JeffSackmann/${repo}_${y}.csv`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.text():null).catch(()=>null)));const ms=[];for(const csv of csvs){if(!csv)continue;const lines=csv.split('\n').slice(1);for(const ln of lines){if(!ln.trim())continue;const c=ln.split(',');if(c.length<26)continue;const w=norm(c[10]||''),l=norm(c[18]||'');if(!w||!l)continue;const awWon=w.includes(awL)&&l.includes(hmL),hmWon=w.includes(hmL)&&l.includes(awL);if(!awWon&&!hmWon)continue;ms.push({dt:c[5],tn:c[1],surf:c[2],round:c[25]?.trim(),score:c[23],awWon});}}if(!ms.length)return{awW:0,hmW:0,total:0,recent:[]};ms.sort((a,b)=>b.dt.localeCompare(a.dt));const awW=ms.filter(m=>m.awWon).length;return{awW,hmW:ms.length-awW,total:ms.length,recent:ms.slice(0,5)}}catch(e){return null}}
+async function fetchTennisH2H(sp,awNm,hmNm){if(!awNm||!hmNm)return null;const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const awL=norm(awNm.split(' ').pop()),hmL=norm(hmNm.split(' ').pop());if(awL.length<3||hmL.length<3)return null;const repo=sp==='wta'?'tennis_wta/master/wta_matches':'tennis_atp/master/atp_matches';try{const csvs=await Promise.all([2024,2023,2022,2021].map(y=>fetch(`https://raw.githubusercontent.com/JeffSackmann/${repo}_${y}.csv`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.text():null).catch(()=>null)));const h2h=[];const awM={clay:[],hard:[],grass:[]},hmM={clay:[],hard:[],grass:[]};for(let yi=0;yi<csvs.length;yi++){const csv=csvs[yi];if(!csv)continue;const yr=2024-yi;const lines=csv.split('\n').slice(1);for(const ln of lines){if(!ln.trim())continue;const c=ln.split(',');if(c.length<26)continue;const w=norm(c[10]||''),l=norm(c[18]||'');if(!w||!l)continue;const srf=(c[2]||'').toLowerCase();const sk=srf==='clay'?'clay':srf==='grass'?'grass':'hard';const awWon=w.includes(awL)&&l.includes(hmL),hmWon=w.includes(hmL)&&l.includes(awL);if(awWon||hmWon)h2h.push({dt:c[5],tn:c[1],surf:c[2],round:c[25]?.trim(),score:c[23],awWon});if(yr>=2023){const aw1=w.includes(awL)&&!l.includes(awL),aw2=l.includes(awL)&&!w.includes(awL);const hm1=w.includes(hmL)&&!l.includes(hmL),hm2=l.includes(hmL)&&!w.includes(hmL);if(aw1)awM[sk].push({W:true});else if(aw2)awM[sk].push({W:false});if(hm1)hmM[sk].push({W:true});else if(hm2)hmM[sk].push({W:false});}}}h2h.sort((a,b)=>b.dt.localeCompare(a.dt));const ss=ms=>({w:ms.filter(m=>m.W).length,l:ms.filter(m=>!m.W).length,tot:ms.length});return{awW:h2h.filter(m=>m.awWon).length,hmW:h2h.filter(m=>!m.awWon).length,total:h2h.length,recent:h2h.slice(0,5),awSurf:{clay:ss(awM.clay),hard:ss(awM.hard),grass:ss(awM.grass)},hmSurf:{clay:ss(hmM.clay),hard:ss(hmM.hard),grass:ss(hmM.grass)}}}catch(e){return null}}
 async function fetchTennisPlayerStats(lg,aid){if(!aid)return null;try{const r=await fetch(`https://sports.core.api.espn.com/v2/sports/tennis/leagues/${lg}/athletes/${aid}`);return r.ok?r.json():null}catch(e){return null}}
 async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{const awL=(awNm||'').split(' ').pop().toLowerCase(),hmL=(hmNm||'').split(' ').pop().toLowerCase();const newsUrl=sp=>id=>id?`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/athletes/${id}/news?limit=10`:`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/news?limit=30`;const[sum,awNews,hmNews]=await Promise.all([fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`).then(r=>r.ok?r.json():null).catch(()=>null),fetch(newsUrl(sp)(awId)).then(r=>r.ok?r.json():null).catch(()=>null),hmId&&hmId!==awId?fetch(newsUrl(sp)(hmId)).then(r=>r.ok?r.json():null).catch(()=>null):Promise.resolve(null)]);const out={};if(sum){const comp=sum.header?.competitions?.[0];const comps=comp?.competitors||[];comps.forEach(c=>{if(c.headToHeadMatchups){if(!out.h2hPlayers)out.h2hPlayers=[];out.h2hPlayers.push({nm:c.athlete?.displayName||'',h2h:c.headToHeadMatchups})}});if(comp?.headToHeadMatchups)out.h2hComp=comp.headToHeadMatchups;const art=sum.article;if(art?.story||art?.description){out.espnStory=(art.story||art.description).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();out.espnLink=art.links?.web?.href||null;}out.espnHead=art?.headline||comp?.notes?.[0]?.headline||null;}const findArt=(feed,a,b)=>(feed?.articles||[]).find(x=>{const t=((x.headline||'')+' '+(x.description||'')).toLowerCase();return a.length>2&&b.length>2&&t.includes(a)&&t.includes(b)});const art=findArt(awNews,awL,hmL)||findArt(hmNews,hmL,awL)||findArt(awNews,hmL,awL);if(art){out.newsHead=art.headline;out.newsDesc=art.description;out.newsLink=art.links?.web?.href||null;}console.log('[Tennis]',{sum:!!sum,awNewsCount:awNews?.articles?.length,hmNewsCount:hmNews?.articles?.length,found:!!art,h2h:!!(out.h2hPlayers||out.h2hComp)});return Object.keys(out).length?out:null}catch(e){return null}}
 function extractTennisStats(d){if(!d)return null;return{hand:d.hand?.abbreviation||null,handFull:d.hand?.displayValue||null,age:d.age||null,country:d.birthPlace?.country?.displayName||null}}
@@ -635,7 +635,7 @@ function getSurface(venue){const v=(venue||'').toLowerCase();if(/clay|terre batt
 function rankTier(r){if(!r)return'unranked';if(r<=10)return`#${r} (top 10)`;if(r<=20)return`#${r} (top 20)`;if(r<=50)return`#${r} (top 50)`;if(r<=100)return`#${r} (top 100)`;return`#${r}`}
 function parseRec(rec){const m=(rec||'').match(/(\d+)-(\d+)/);if(!m)return null;const w=parseInt(m[1]),l=parseInt(m[2]);return w+l>0?w/(w+l):null}
 function genPicks(g,af,hf,pitchers,weather,ext={}){
-  const{awTn,hmTn,awNba,hmNba}=ext;
+  const{awTn,hmTn,awNba,hmNba,tnH2H}=ext;
   const awB2B=g.cat==='nba'&&isB2B(af,g.tm),hmB2B=g.cat==='nba'&&isB2B(hf,g.tm);
   const awRecPct=parseRec(g.aw.rec),hmRecPct=parseRec(g.hm.rec);
   const awRank=g.aw.rank||null,hmRank=g.hm.rank||null;
@@ -763,13 +763,34 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     else if(awRank!==null&&hmRank!==null){const sp2=score>=0?hmRank:awRank,op2=score>=0?awRank:hmRank;
       const surf=getSurface(g.ven),surfTxt=surf==='clay'?'clay':surf==='grass'?'grass':'hard court';
       const rd2=Math.abs(awRank-hmRank);
-      if(rd2>=50)reasons.push(`${side.nm} (${rankTier(sp2)}) vs ${other.nm} (${rankTier(op2)}) on ${surfTxt} — a ${rd2}-place gap is a structural edge; ${side.nm} is the clear tier-up in this ${g.spL} draw`);
-      else if(rd2>=10)reasons.push(`${side.nm} (${rankTier(sp2)}) outranks ${other.nm} (${rankTier(op2)}) by ${rd2} places on ${surfTxt} — ranking separation is a reliable ML signal in ${g.spL}`);
-      else reasons.push(`Near-identical rankings on ${surfTxt} — ${side.nm} (#${sp2}) vs ${other.nm} (#${op2}); coin-flip territory, surface form and recent results should break the tie`)}
+      const skMap={clay:'clay',grass:'grass',hard:'hard',indoor:'hard'};
+      const sk=skMap[surf]||'hard';
+      const awS=tnH2H?.awSurf?.[sk],hmS=tnH2H?.hmSurf?.[sk];
+      if(g.cat==='tennis'&&awS?.tot>=5&&hmS?.tot>=5){
+        const awPc=Math.round(awS.w/awS.tot*100),hmPc=Math.round(hmS.w/hmS.tot*100);
+        const edge=Math.abs(awPc-hmPc);
+        const bet=score>=0?{nm:g.hm.nm,pc:hmPc,tot:hmS.tot,w:hmS.w}:{nm:g.aw.nm,pc:awPc,tot:awS.tot,w:awS.w};
+        const dog=score>=0?{nm:g.aw.nm,pc:awPc,tot:awS.tot}:{nm:g.hm.nm,pc:hmPc,tot:hmS.tot};
+        if(edge>=10)reasons.push(`${bet.nm} ${bet.w}-${bet.tot-bet.w} on ${surfTxt} (${bet.pc}%) vs ${dog.nm} ${dog.pc}% — ${edge}pp surface edge (2023-24)`);
+        else reasons.push(`${bet.nm} ${bet.pc}% on ${surfTxt} vs ${dog.nm} ${dog.pc}% — similar surface records, lean to ranking #${sp2} over #${op2}`)
+      } else {
+        if(rd2>=50)reasons.push(`${side.nm} (#${sp2}) vs ${other.nm} (#${op2}) on ${surfTxt} — ${rd2}-place gap is structural; surface stats insufficient for this matchup`);
+        else if(rd2>=10)reasons.push(`${side.nm} (#${sp2}) outranks ${other.nm} (#${op2}) by ${rd2} on ${surfTxt} — insufficient surface data, ranking edge applied`);
+        else reasons.push(`Near-identical rankings — ${side.nm} (#${sp2}) vs ${other.nm} (#${op2}) on ${surfTxt}; defer to H2H and recent form`)
+      }}
     else if(awRank!==null||hmRank!==null){const ranked=awRank?g.aw:g.hm,r=awRank||hmRank,unr=awRank?g.hm:g.aw;
       reasons.push(`${ranked.nm} (${rankTier(r)}) faces ${unr.nm} (unranked) — ranked player holds a structural edge in ${g.spL}`)}
-    if(g.cat==='tennis'&&g.aw.seed&&g.hm.seed){const sd=g.hm.seed-g.aw.seed;if(Math.abs(sd)>=2){score+=sd*0.3;const bs=sd>0?g.aw:g.hm,ws=sd>0?g.hm:g.aw;reasons.push(`Tournament seeding edge: ${bs.nm} (seed ${bs.seed}) vs ${ws.nm} (seed ${ws.seed}) \u2014 lower seed = committee's form assessment, reliable late-round signal`)}}
-    if(g.cat==='tennis'&&awTn?.hand&&hmTn?.hand&&awTn.hand!==hmTn.hand){const surf=getSurface(g.ven);const lhPlayer=awTn.hand==='L'?g.aw:g.hm;if(surf==='clay')reasons.push(`Left-hander advantage: ${lhPlayer.nm} — LH spin kicks to opponent's backhand on clay, historically one of the strongest matchup edges in tennis`);else if(surf==='grass')reasons.push(`${lhPlayer.nm} (left-handed) — LH serve wide in the deuce court is uniquely effective on grass`)}
+    if(g.cat==='tennis'&&tnH2H){
+      if(tnH2H.total>0){const awH2H=tnH2H.awW,hmH2H=tnH2H.hmW,tot=tnH2H.total;
+        const ldr=awH2H>hmH2H?g.aw:hmH2H>awH2H?g.hm:null;
+        const last=tnH2H.recent[0];
+        const lastTxt=last?` (last: ${last.tn} ${last.round}, ${last.score}, ${last.surf})`:''
+        if(ldr)reasons.push(`H2H: ${ldr.nm} leads ${Math.max(awH2H,hmH2H)}-${Math.min(awH2H,hmH2H)}${lastTxt}`);
+        else reasons.push(`H2H: ${tot} meetings, split evenly ${awH2H}-${hmH2H}${lastTxt}`)
+      } else reasons.push(`H2H: no previous meetings — first career matchup`)
+    }
+    if(g.cat==='tennis'&&g.aw.seed&&g.hm.seed){const sd=g.hm.seed-g.aw.seed;if(Math.abs(sd)>=2){score+=sd*0.3;const bs=sd>0?g.aw:g.hm,ws=sd>0?g.hm:g.aw;reasons.push(`Seeds: ${bs.nm} [${bs.seed}] vs ${ws.nm} [${ws.seed}] — draw committee assessment`)}}
+    if(g.cat==='tennis'&&awTn?.hand&&hmTn?.hand&&awTn.hand!==hmTn.hand){const surf=getSurface(g.ven);const lhPlayer=awTn.hand==='L'?g.aw:g.hm;if(surf==='clay')reasons.push(`${lhPlayer.nm} (LH): kick serve to backhand on clay — proven structural edge`);else if(surf==='grass')reasons.push(`${lhPlayer.nm} (LH): wide serve to deuce court on grass — potent on this surface`)}
     if(mlEdges.length)reasons.push(`${mlEdges[0].ep.toFixed(1)}% ML edge at ${mlEdges[0].bb} (${fp(mlEdges[0].bp)}) \u2014 implied probability gap signals sharp value`);
     if(mlO&&Math.abs(mlO.price)>=200)reasons.push(`Price is steep at ${fp(mlO.price)} \u2014 consider spread as safer vehicle unless parlaying`);
     else if(mlO&&mlO.price>0)reasons.push(`Plus-money at ${fp(mlO.price)} adds significant value to an already favorable setup`);
