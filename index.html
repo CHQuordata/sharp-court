@@ -150,6 +150,18 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .sec-title{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--t4);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 /* ── Mobile back button (hidden on desktop) ── */
 .mob-back-btn{display:none}
+/* ── Track button on game rows ── */
+.track-btn{background:none;border:none;cursor:pointer;padding:2px 5px;font-size:11px;color:var(--t4);line-height:1;flex-shrink:0;border-radius:3px;transition:color .15s}
+.track-btn:hover{color:var(--amb)}
+.track-btn.pinned{color:var(--amb)}
+/* ── Tracked game cards in dashboard ── */
+.tracked-card{padding:9px 14px;border-bottom:1px solid rgba(42,42,62,.35);cursor:pointer;transition:background .1s}
+.tracked-card:hover{background:var(--bg2)}
+.tracked-sc{font-size:13px;font-weight:700;color:var(--t1)}
+.tracked-sc.lead{color:var(--grn)}
+.t-live{color:var(--grn);font-weight:700;font-size:9px}
+.t-final{color:var(--t4);font-size:9px}
+.t-pre{color:var(--t3);font-size:9px}
 /* ── Topbar rows: transparent on desktop, used only for mobile layout ── */
 .topbar-row1,.topbar-row2{display:contents}
 
@@ -372,6 +384,8 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   <div class="panel detailPanel-wrap" style="background:var(--bg0)"><button class="mob-back-btn" onclick="mobBack()">&#8592; BACK TO SLATE</button><div class="panel-body" id="detailPanel" style="background:var(--bg1)"><div class="detail-empty"><div class="detail-empty-icon">&#9672;</div><div class="detail-empty-text">SELECT A MATCHUP TO RESEARCH</div><div style="font-size:10px;color:var(--t4);margin-top:8px">Use <span class="kbd">&#8593;</span><span class="kbd">&#8595;</span> to navigate</div></div></div></div>
   <div class="panel dashPanel"><div class="panel-hdr"><span class="panel-title">Dashboard</span></div>
     <div class="stat-grid"><div class="stat-cell"><div class="stat-lbl">GAMES</div><div class="stat-val" id="stG">-</div></div><div class="stat-cell"><div class="stat-lbl">EDGES</div><div class="stat-val g" id="stE">-</div></div><div class="stat-cell"><div class="stat-lbl">SPORTS</div><div class="stat-val a" id="stS">-</div></div><div class="stat-cell"><div class="stat-lbl">INJURIES</div><div class="stat-val r" id="stI">-</div></div></div>
+    <div class="panel-hdr" id="trackedHdr" style="display:none"><span class="panel-title">📌 TRACKED</span><span id="trackedCount" style="font-size:9px;color:var(--t4);margin-left:6px"></span></div>
+    <div id="trackedGames"></div>
     <div class="panel-hdr"><span class="panel-title">Top Edges</span></div><div class="panel-body" id="edgeAlerts"><div class="no-data" style="padding:20px">Scan to populate</div></div>
   </div>
 </div>
@@ -384,6 +398,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 
 <script>
 let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map();
+let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet';
@@ -587,7 +602,7 @@ async function refreshAll(forceOdds=false){
   {const snap={};allG.forEach(g=>{if(!g.odds?.bookmakers?.length)return;const bk=g.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const to=bk.markets.find(m=>m.key==='totals');const ml=bk.markets.find(m=>m.key==='h2h');snap[g.id]={sp:sp?.outcomes?.find(o=>o.point<0)?.point??null,to:to?.outcomes?.find(o=>o.name==='Over')?.point??null,ml:ml?.outcomes?.map(o=>({n:o.name,pr:o.price}))||[],ts:Date.now()}});localStorage.setItem('ln_snap',JSON.stringify(snap))}
   // Compute line movement vs previous snap
   allG.forEach(g=>{const prev=_prevSnap[g.id];if(!prev||!g.odds?.bookmakers?.length)return;const bk=g.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const to=bk.markets.find(m=>m.key==='totals');const curSp=sp?.outcomes?.find(o=>o.point<0)?.point??null;const curTo=to?.outcomes?.find(o=>o.name==='Over')?.point??null;const spMv=curSp!=null&&prev.sp!=null?parseFloat((curSp-prev.sp).toFixed(1)):null;const toMv=curTo!=null&&prev.to!=null?parseFloat((curTo-prev.to).toFixed(1)):null;if(spMv||toMv)g.lineMove={spMv,toMv,prevSp:prev.sp,prevTo:prev.to,ts:prev.ts}});
-  applyFilters();updateStats();updateEdges();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
+  applyFilters();updateStats();updateEdges();renderTracked();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
   if(AK){const ages=[..._oddsCache.values()].map(c=>Date.now()-c.ts);const minAge=ages.length?Math.min(...ages):null;const el=$('oddsCacheAge');if(el&&minAge!=null)el.textContent=minAge<60000?'odds: live':`odds: ${Math.round(minAge/60000)}m ago`}
 }
 
@@ -706,7 +721,8 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
       const serTag=g.playoff&&g.serSum?`<span style="font-size:8px;color:var(--amb);opacity:.8">${g.serSum}</span>`:'';
       const aiConf=getGameAiConf(g);
       const confBadge=aiConf?`<span style="font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;margin-left:4px;${aiConf==='HIGH'?'color:var(--grn);background:var(--grn-bg)':aiConf==='MEDIUM'?'color:var(--amb);background:var(--amb-bg)':'color:var(--t3);background:var(--bg3)'}">⚡${aiConf[0]}</span>`:'';
-      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}${g.playoff?` <span style="font-size:8px;color:var(--amb);font-weight:700">PO</span>`:''}${serTag}${confBadge}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}${g.lineMove&&(Math.abs(g.lineMove.spMv||0)>=0.5||Math.abs(g.lineMove.toMv||0)>=0.5)?`<span style="color:var(--amb);font-weight:700">↕</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
+      const isPinned=trackedIds.has(g.id);
+      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px"><div class="game-teams" style="flex:1">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}${g.playoff?` <span style="font-size:8px;color:var(--amb);font-weight:700">PO</span>`:''}${serTag}${confBadge}</div><button class="track-btn${isPinned?' pinned':''}" onclick="event.stopPropagation();toggleTrack('${g.id}')" title="${isPinned?'Untrack':'Track'}">📌</button></div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}${g.lineMove&&(Math.abs(g.lineMove.spMv||0)>=0.5||Math.abs(g.lineMove.toMv||0)>=0.5)?`<span style="color:var(--amb);font-weight:700">↕</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
   el.innerHTML=h}
 
 // ══════════════════════════════
@@ -1413,6 +1429,75 @@ function gradeResult(pk,g){
     return(gd.side==='OVER')===(tot>gd.line)?'W':'L';
   }
   return null;
+}
+
+function toggleTrack(id){
+  if(trackedIds.has(id))trackedIds.delete(id);else trackedIds.add(id);
+  localStorage.setItem('et_tracked',JSON.stringify([...trackedIds]));
+  renderTracked();renderSlate();
+}
+
+function renderTracked(){
+  const el=$('trackedGames');const hdr=$('trackedHdr');const cnt=$('trackedCount');
+  if(!el)return;
+  // Pull from allG; also keep IDs that loaded from storage even if not in current scan
+  const tracked=allG.filter(g=>trackedIds.has(g.id));
+  if(!tracked.length){
+    if(hdr)hdr.style.display='none';
+    el.innerHTML='';
+    return;
+  }
+  if(hdr)hdr.style.display='';
+  if(cnt)cnt.textContent=`${tracked.length} game${tracked.length>1?'s':''}`;
+  let h='';
+  tracked.forEach(g=>{
+    const live=g.st==='STATUS_IN_PROGRESS';const done=g.st==='STATUS_FINAL';
+    const hasScore=(live||done)&&g.aw.sc!=null&&g.hm.sc!=null;
+    const awSc=hasScore?g.aw.sc:'';const hmSc=hasScore?g.hm.sc:'';
+    const awLd=live&&hasScore&&parseFloat(awSc)>parseFloat(hmSc);
+    const hmLd=live&&hasScore&&parseFloat(hmSc)>parseFloat(awSc);
+    const statusH=live
+      ?`<span class="t-live">● LIVE${g.stD?' '+g.stD:''}</span>`
+      :done?`<span class="t-final">FINAL</span>`
+      :`<span class="t-pre">${g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span>`;
+    // Odds line — spread preferred, then total
+    let oddsLine='';
+    if(g.odds?.bookmakers?.length){
+      const bk=g.odds.bookmakers[0];
+      const sp=bk.markets?.find(m=>m.key==='spreads');
+      const to=bk.markets?.find(m=>m.key==='totals');
+      const fav=sp?.outcomes?.find(o=>parseFloat(o.point)<0);
+      const parts=[];
+      if(fav)parts.push(`${fav.name.split(' ').pop()} ${fav.point>0?'+':''}${fav.point}`);
+      const ou=to?.outcomes?.find(o=>o.name==='Over');
+      if(ou)parts.push(`O/U ${ou.point}`);
+      oddsLine=parts.join(' · ');
+    }else if(g.eOdds){
+      const parts=[];
+      if(g.eOdds.details)parts.push(g.eOdds.details);
+      if(g.eOdds.overUnder)parts.push(`O/U ${g.eOdds.overUnder}`);
+      oddsLine=parts.join(' · ');
+    }
+    const gi=fG.findIndex(x=>x.id===g.id);
+    h+=`<div class="tracked-card" onclick="${gi>=0?`selGame(${gi})`:''}">`;
+    h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">`;
+    h+=`<span style="font-size:9px;color:var(--t4);font-weight:600;letter-spacing:.5px">${g.spI} ${g.spL}${g.playoff?` <span style="color:var(--amb)">PO</span>`:''}</span>`;
+    h+=`<button onclick="event.stopPropagation();toggleTrack('${g.id}')" style="background:none;border:none;cursor:pointer;font-family:var(--mono);font-size:9px;color:var(--t4);padding:0;letter-spacing:.3px" title="Untrack">✕</button>`;
+    h+=`</div>`;
+    // Score row
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">`;
+    h+=`<span class="tracked-sc${awLd?' lead':''}">${g.aw.ab}${hasScore?' '+awSc:''}</span>`;
+    h+=`<span style="font-size:9px;color:var(--t4)">${g.isTeam?'@':'vs'}</span>`;
+    h+=`<span class="tracked-sc${hmLd?' lead':''}">${hasScore?hmSc+' ':''}${g.hm.ab}</span>`;
+    h+=`</div>`;
+    // Status + odds
+    h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">`;
+    h+=statusH;
+    if(oddsLine)h+=`<span style="font-size:9px;color:var(--t4)">${oddsLine}</span>`;
+    h+=`</div>`;
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
 }
 
 function updateStats(){$('stG').textContent=allG.length;$('stE').textContent=allE.length;$('stS').textContent=new Set(allG.map(g=>g.cat)).size;let inj=0;allG.forEach(g=>{inj+=g.inj.aw.filter(i=>i.sc==='O').length+g.inj.hm.filter(i=>i.sc==='O').length});$('stI').textContent=inj}
