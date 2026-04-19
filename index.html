@@ -788,13 +788,15 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   }
   if(picks.length){h+=`<div class="picks-section">`;
     picks.forEach((pk,i)=>{const noOdds=!pk.evData&&!pk.lineRange;
-      const cls=noOdds?' low':pk.conf==='HIGH'?'':pk.conf==='MEDIUM'?' medium':' low';
+      const hasTnData=pk.tnSigs?.length>0;
+      const cls=noOdds&&!hasTnData?' low':pk.conf==='HIGH'?'':pk.conf==='MEDIUM'?' medium':' low';
       const hasMetrics=!noOdds&&(pk.evData||pk.lineRange||(pk.sharp&&pk.sharp.r>0)||kellyPct(pk.conf,pk.pick,pk.evData)>0);
       const r=isFinal?gradeResult(pk,g):null;
-      const rBadge=r?`<span class="pib pib-${r}" style="float:right">${r==='W'?'\u2713 WIN':r==='L'?'\u2717 LOSS':'\u25CF PUSH'}</span>`:'';
-      const confTxt=noOdds?`<span style="font-size:9px;color:var(--t4);font-weight:400"> · analytics only, no odds</span>`:'';
-      const scoreSub=pk.score!=null&&!noOdds?`<span style="font-size:9px;opacity:.55;font-weight:500;margin-left:6px">${pk.score.toFixed(1)}</span>`:'';
-      h+=`<div class="pick-card${cls}"><div class="pick-label">\u26A1 ${pk.label}${rBadge}</div><div class="pick-main">${pk.pick}</div><div class="pick-conf ${noOdds?'low':pk.conf.toLowerCase()}">\u25CF ${noOdds?'LEAN':pk.conf}${scoreSub}${confTxt}</div>${hasMetrics?renderMetrics(pk):''}<div class="pick-reasoning">${pk.reasoning}</div></div>`;
+      const rBadge=r?`<span class="pib pib-${r}" style="float:right">${r==='W'?'\u2713 WIN':r==='L'?'\u2717 LOSS':'\u25CF PUSH'}</span>`:'';  
+      const confTxt=noOdds&&!hasTnData?`<span style="font-size:9px;color:var(--t4);font-weight:400"> · analytics only, no odds</span>`:noOdds&&hasTnData?`<span style="font-size:9px;color:var(--t4);font-weight:400"> · no odds · ${pk.tnSigs.filter(s=>s.edge?.nm===pk.pick.split(' ')[0]||(s.edge&&pk.pick.includes(s.edge.nm.split(' ').pop()))).length||pk.tnSigs.length} signals</span>`:'';  
+      const scoreSub=pk.score!=null&&!noOdds?`<span style="font-size:9px;opacity:.55;font-weight:500;margin-left:6px">${pk.score.toFixed(1)}</span>`:'';  
+      const tnTagsH=hasTnData?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 2px">${pk.tnSigs.map(s=>{const aligned=s.edge&&pk.pick.includes(s.edge.nm.split(' ').pop());const clr=aligned?'var(--grn)':s.edge?'var(--t3)':'var(--t4)';const bdr=aligned?'rgba(0,230,118,.25)':'rgba(42,42,62,.5)';return`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;color:${clr};background:var(--bg3);border:1px solid ${bdr};letter-spacing:.3px">${s.k}</span>`}).join('')}</div>`:'';
+      h+=`<div class="pick-card${cls}"><div class="pick-label">\u26A1 ${pk.label}${rBadge}</div><div class="pick-main">${pk.pick}</div><div class="pick-conf ${noOdds&&!hasTnData?'low':pk.conf.toLowerCase()}">\u25CF ${noOdds&&!hasTnData?'LEAN':pk.conf}${scoreSub}${confTxt}</div>${tnTagsH}${hasMetrics?renderMetrics(pk):''}<div class="pick-reasoning">${pk.reasoning}</div></div>`;  
     });h+=`</div>`;}
   else if(!g.isTeam){h+=`<div style="margin:2px 16px 8px;font-size:9px;color:var(--t4);padding:6px 10px;border:1px solid var(--bdr);border-radius:3px">No odds found — ${g.spL} market may not be covered by Odds API. Rankings + form signals still applied above.</div>`;}
 
@@ -874,18 +876,48 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
       }
       h+=`</div>`;
     }
-    // ── Computed matchup signals ──
-    const awR2=g.aw.rank,hmR2=g.hm.rank,awS2=g.aw.seed,hmS2=g.hm.seed;
-    const awH2=awTn?.hand,hmH2=hmTn?.hand,awAge2=awTn?.age,hmAge2=hmTn?.age;
-    const sigs=[];
-    if(awR2&&hmR2){const gap=Math.abs(awR2-hmR2),hi=awR2<hmR2?g.aw:g.hm;const wp=gap>=50?'72':gap>=25?'65':gap>=10?'60':gap>=5?'57':'53';sigs.push(`Rankings #${Math.min(awR2,hmR2)} vs #${Math.max(awR2,hmR2)} — ${gap}-rank gap favors ${hi.nm.split(' ').pop()}, est. ~${wp}% win probability on ${surfTxt}`);}
-    if(awS2&&hmS2){const sg=Math.abs(awS2-hmS2),loS=Math.min(awS2,hmS2);sigs.push(`Draw seeds [${loS}] vs [${Math.max(awS2,hmS2)}] — ${sg}-seed gap: ${sg>=5?'draw committee gave significant form edge to ['+loS+']':sg>=2?'moderate advantage to ['+loS+'] per committee assessment':'near-even seeding'}`);}
-    else if(awS2&&!hmS2)sigs.push(`${g.aw.nm.split(' ').pop()} seeded [${awS2}] vs unseeded — committee's form read favors ${g.aw.nm.split(' ').pop()}`);
-    else if(!awS2&&hmS2)sigs.push(`${g.hm.nm.split(' ').pop()} seeded [${hmS2}] vs unseeded — committee's form read favors ${g.hm.nm.split(' ').pop()}`);
-    if(awH2&&hmH2&&awH2!==hmH2){const lhNm=(awH2==='L'?g.aw:g.hm).nm.split(' ').pop();if(surf==='clay')sigs.push(`${lhNm} (LH) vs RH on clay — kick serve angles out wide, ${lhNm}'s topspin curves into opponent backhand; structural LH advantage on clay`);else if(surf==='grass')sigs.push(`${lhNm} (LH) on grass — wide serve to deuce court and T serve into body are uniquely effective; LH grass advantage`);else sigs.push(`${lhNm} left-handed — LH/RH tactical variation, marginal edge on ${surfTxt}`);}
-    if(awAge2&&hmAge2&&Math.abs(awAge2-hmAge2)>=5){const olderNm=(awAge2>hmAge2?g.aw:g.hm).nm.split(' ').pop(),youngNm=(awAge2>hmAge2?g.hm:g.aw).nm.split(' ').pop(),oldA=Math.max(awAge2,hmAge2),youngA=Math.min(awAge2,hmAge2);sigs.push(`Age: ${olderNm} ${oldA} vs ${youngNm} ${youngA} — ${oldA>=34?oldA+' puts physical recovery at a premium in long sets':'age gap is '+Math.abs(oldA-youngA)+' years, trajectory signal'}`);}
-    const awWp=parseRec(g.aw.rec),hmWp=parseRec(g.hm.rec);if(awWp!==null&&hmWp!==null&&Math.abs(awWp-hmWp)>=0.08){const better=awWp>hmWp?g.aw:g.hm;sigs.push(`Season record: ${better.nm.split(' ').pop()} (${better.rec}) — ${(Math.abs(awWp-hmWp)*100).toFixed(0)}pp higher win rate this season`);}
-    if(sigs.length){h+=`<div style="${bdr}"><div style="font-size:8px;color:var(--t4);letter-spacing:1px;font-weight:600;margin-bottom:4px">MATCHUP SIGNALS</div>${sigs.map(s=>`<div style="font-size:9px;color:var(--t2);padding:2px 0;line-height:1.45">▸ ${s}</div>`).join('')}</div>`;}
+    // ── Edge Scorecard ──
+    {
+      const _sk=surf==='clay'?'clay':surf==='grass'?'grass':'hard';
+      const _st=_sk==='clay'?'CLAY':_sk==='grass'?'GRASS':'HARD';
+      const _getS=d=>{if(!d)return null;const arr=Array.isArray(d.surface)?d.surface:(d.surface?[d.surface]:[]);const r=arr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return _sk==='clay'?sn.includes('clay'):_sk==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});if(!r)return null;const w=parseInt(r.wins??r.win??r.w??0)||0,l=parseInt(r.losses??r.loss??r.l??0)||0;return w+l>=3?{w,l,pct:Math.round(w/(w+l)*100)}:null};
+      const _getBP=d=>{if(!d)return null;const s=Array.isArray(d.stats)?d.stats[0]:(d.stats||{});const sv=parseInt(s.breakPointSavedGm||0),fa=parseInt(s.breakPointFacedGm||0);return fa>5?Math.round(sv/fa*100):null};
+      const awTNS2=_getS(awTnApi),hmTNS2=_getS(hmTnApi);
+      const awBP2=_getBP(awTnApi),hmBP2=_getBP(hmTnApi);
+      const eRows=[];
+      // 2025 surface (TN API)
+      if(awTNS2&&hmTNS2){const d=awTNS2.pct-hmTNS2.pct;const edge=Math.abs(d)>=8?d>0?g.aw:g.hm:null;eRows.push({lbl:`2025 ${_st}`,aw:`${awTNS2.w}-${awTNS2.l} (${awTNS2.pct}%)`,hm:`${hmTNS2.w}-${hmTNS2.l} (${hmTNS2.pct}%)`,edge,diff:Math.abs(d)})}
+      else if(awTNS2||hmTNS2){const d=awTNS2||hmTNS2,pl=awTNS2?g.aw:g.hm;eRows.push({lbl:`2025 ${_st}`,aw:awTNS2?`${d.w}-${d.l} (${d.pct}%)`:'—',hm:hmTNS2?`${d.w}-${d.l} (${d.pct}%)`:'—',edge:pl,diff:12})}
+      // Sackmann surface (only if TN API not available)
+      const awCS3=tnH2H?.awSurf?.[_sk],hmCS3=tnH2H?.hmSurf?.[_sk];
+      if(!awTNS2&&!hmTNS2&&awCS3?.tot>=5&&hmCS3?.tot>=5){const ap=Math.round(awCS3.w/awCS3.tot*100),hp=Math.round(hmCS3.w/hmCS3.tot*100);const d=ap-hp;const edge=Math.abs(d)>=10?d>0?g.aw:g.hm:null;eRows.push({lbl:`${_st} (23-24)`,aw:`${awCS3.w}-${awCS3.l} (${ap}%)`,hm:`${hmCS3.w}-${hmCS3.l} (${hp}%)`,edge,diff:Math.abs(d)})}
+      // H2H
+      if(tnH2H&&tnH2H.total>0){const edge=tnH2H.awW>tnH2H.hmW?g.aw:tnH2H.hmW>tnH2H.awW?g.hm:null;eRows.push({lbl:'H2H',aw:`${tnH2H.awW}-${tnH2H.hmW}`,hm:`${tnH2H.hmW}-${tnH2H.awW}`,edge,diff:Math.abs(tnH2H.awW-tnH2H.hmW)*8})}
+      else if(tnH2H&&tnH2H.total===0)eRows.push({lbl:'H2H',aw:'FIRST',hm:'MEETING',edge:null,diff:0});
+      // BP Save
+      if(awBP2!==null&&hmBP2!==null){const d=awBP2-hmBP2;const edge=Math.abs(d)>=8?d>0?g.aw:g.hm:null;eRows.push({lbl:'BP SAVE',aw:awBP2+'%',hm:hmBP2+'%',edge,diff:Math.abs(d)})}
+      // Ranking
+      if(g.aw.rank&&g.hm.rank){const d=Math.abs(g.aw.rank-g.hm.rank);const edge=d>=5?g.aw.rank<g.hm.rank?g.aw:g.hm:null;eRows.push({lbl:'RANK',aw:'#'+g.aw.rank,hm:'#'+g.hm.rank,edge,diff:d*0.5})}
+      else if(g.aw.rank&&!g.hm.rank)eRows.push({lbl:'RANK',aw:'#'+g.aw.rank,hm:'NR',edge:g.aw,diff:12});
+      else if(!g.aw.rank&&g.hm.rank)eRows.push({lbl:'RANK',aw:'NR',hm:'#'+g.hm.rank,edge:g.hm,diff:12});
+      // Seeds
+      if(g.aw.seed||g.hm.seed){const edge=g.aw.seed&&g.hm.seed?(g.aw.seed<g.hm.seed?g.aw:g.hm):g.aw.seed?g.aw:g.hm;eRows.push({lbl:'SEED',aw:g.aw.seed?`[${g.aw.seed}]`:'unseed',hm:g.hm.seed?`[${g.hm.seed}]`:'unseed',edge:g.aw.seed&&g.hm.seed&&Math.abs(g.aw.seed-g.hm.seed)>=2?edge:null,diff:g.aw.seed&&g.hm.seed?Math.abs(g.aw.seed-g.hm.seed)*3:8})}
+      // Handedness edge
+      if(awTn?.hand&&hmTn?.hand&&awTn.hand!==hmTn.hand){const lhPl=awTn.hand==='L'?g.aw:g.hm;const surfEdge=surf==='clay'||surf==='grass';if(surfEdge)eRows.push({lbl:'HANDEDNESS',aw:awTn.hand==='L'?'LH ✓':'RH',hm:hmTn.hand==='L'?'LH ✓':'RH',edge:lhPl,diff:7})}
+      if(eRows.length){
+        // Compute composite edge
+        const ec={aw:0,hm:0};eRows.forEach(r=>{if(r.edge)ec[r.edge===g.aw?'aw':'hm']+=r.diff});
+        const compEdge=ec.aw>ec.hm?g.aw:ec.hm>ec.aw?g.hm:null;
+        const compMag=Math.abs(ec.aw-ec.hm);
+        h+=`<div style="${bdr}">`;
+        h+=`<div style="font-size:8px;color:var(--t4);letter-spacing:1px;font-weight:600;margin-bottom:5px">EDGE SCORECARD</div>`;
+        h+=`<table style="width:100%;border-collapse:collapse"><tr><td style="font-size:7px;color:var(--t4);padding:1px 0;width:80px"> </td><td style="font-size:8px;font-weight:600;color:var(--cyn);padding:1px 4px">${g.aw.nm.split(' ').pop()}</td><td style="font-size:8px;font-weight:600;color:var(--amb);padding:1px 4px">${g.hm.nm.split(' ').pop()}</td><td style="font-size:8px;color:var(--t4);padding:1px 4px">EDGE</td></tr>`;
+        eRows.forEach(r=>{const awC=r.edge===g.aw?'var(--grn)':r.diff===0?'var(--t4)':'var(--t2)';const hmC=r.edge===g.hm?'var(--grn)':r.diff===0?'var(--t4)':'var(--t2)';const ind=r.edge?`<span style="color:var(--grn);font-size:9px;font-weight:700">${r.edge.nm.split(' ').pop()} ←</span>`:`<span style="color:var(--t4)">—</span>`;h+=`<tr><td style="font-size:8px;color:var(--t4);padding:2px 0;font-weight:600;white-space:nowrap">${r.lbl}</td><td style="font-size:9px;padding:2px 4px;color:${awC}">${r.aw}</td><td style="font-size:9px;padding:2px 4px;color:${hmC}">${r.hm}</td><td style="font-size:9px;padding:2px 0">${ind}</td></tr>`});
+        h+=`</table>`;
+        if(compEdge&&compMag>=20){const cc=compMag>=50?'var(--grn)':compMag>=25?'var(--amb)':'var(--t2)';h+=`<div style="margin-top:7px;padding:5px 8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);border-radius:3px;font-size:10px;font-weight:700;color:${cc};letter-spacing:.5px">▶ PLAY: ${compEdge.nm} ML</div>`}
+        h+=`</div>`;
+      }
+    }
     h+=`</div>`}
   // ── SP Matchup (MLB) ──
   if(pitchers){const ap=pitchers.away,hp=pitchers.home;h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>SP MATCHUP</div><div class="sp-matchup">`;
@@ -1102,20 +1134,48 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     if(hmMarg&&awMarg)score+=(hmMarg-awMarg)*0.3;
     if(Math.abs(restDiff)>=2)score+=restDiff*0.5;
     if(Math.abs(awOut-hmOut)>1)score+=(awOut-hmOut)*0.7;
-    const side=score>=0?g.hm:g.aw,other=score>=0?g.aw:g.hm,mlO=score>=0?mlHm:mlAw;
-    const mag=Math.abs(score),conf=mag>=5?'HIGH':mag>=2.5?'MEDIUM':'LOW';
+  // ── Tennis: pre-score all surface/H2H/serve signals BEFORE side decision ──
+  const tnSigs=[];
+  if(g.cat==='tennis'){
+    const _tnSk=getSurface(g.ven)==='clay'?'clay':getSurface(g.ven)==='grass'?'grass':'hard';
+    const _tnST=_tnSk==='clay'?'CLAY':_tnSk==='grass'?'GRASS':'HARD';
+    const _getTNSurf=d=>{if(!d)return null;const arr=Array.isArray(d.surface)?d.surface:(d.surface?[d.surface]:[]);const r=arr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return _tnSk==='clay'?sn.includes('clay'):_tnSk==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});if(!r)return null;const w=parseInt(r.wins??r.win??r.w??0)||0,l=parseInt(r.losses??r.loss??r.l??0)||0;return w+l>=3?{w,l,pct:Math.round(w/(w+l)*100)}:null};
+    const _getTNBP=d=>{if(!d)return null;const s=Array.isArray(d.stats)?d.stats[0]:(d.stats||{});const sv=parseInt(s.breakPointSavedGm||0),fa=parseInt(s.breakPointFacedGm||0);return fa>5?Math.round(sv/fa*100):null};
+    const awTS=_getTNSurf(awTnApi),hmTS=_getTNSurf(hmTnApi);
+    const awBpL=_getTNBP(awTnApi),hmBpL=_getTNBP(hmTnApi);
+    // 2025 surface record from TN API (highest quality)
+    if(awTS&&hmTS){const d=awTS.pct-hmTS.pct;score+=d*0.15;if(Math.abs(d)>=8)tnSigs.push({k:'2025 '+_tnST,aw:`${awTS.w}-${awTS.l} (${awTS.pct}%)`,hm:`${hmTS.w}-${hmTS.l} (${hmTS.pct}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
+    else if(awTS||hmTS){const d=awTS||hmTS,pl=awTS?g.aw:g.hm;score+=(awTS?6:-6);tnSigs.push({k:'2025 '+_tnST,aw:awTS?`${d.w}-${d.l} (${d.pct}%)`:'—',hm:hmTS?`${d.w}-${d.l} (${d.pct}%)`:'—',edge:pl,mag:12})}
+    // Sackmann surface W-L 2023-24 (secondary, only if TN API missing)
+    const awCS=tnH2H?.awSurf?.[_tnSk],hmCS=tnH2H?.hmSurf?.[_tnSk];
+    if(!tnSigs.find(s=>s.k.includes(_tnST))&&awCS?.tot>=5&&hmCS?.tot>=5){const ap=Math.round(awCS.w/awCS.tot*100),hp=Math.round(hmCS.w/hmCS.tot*100);const d=ap-hp;score+=d*0.10;if(Math.abs(d)>=10)tnSigs.push({k:_tnST+' (23-24)',aw:`${awCS.w}-${awCS.l} (${ap}%)`,hm:`${hmCS.w}-${hmCS.l} (${hp}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
+    // H2H head-to-head
+    if(tnH2H?.total>=2){const d=(tnH2H.hmW-tnH2H.awW)/tnH2H.total;score+=d*4;const ldr=tnH2H.awW>tnH2H.hmW?g.aw:tnH2H.hmW>tnH2H.awW?g.hm:null;const last=tnH2H.recent[0];tnSigs.push({k:'H2H',aw:String(tnH2H.awW),hm:String(tnH2H.hmW),edge:ldr,mag:Math.abs(tnH2H.awW-tnH2H.hmW)*8+(tnH2H.total>=4?5:0),lastMatch:last?`${(last.dt||'').slice(0,4)} ${last.tn||''} ${last.round||''}: ${last.score||''}`.trim():''})}
+    // Break-point save % (TN API)
+    if(awBpL!==null&&hmBpL!==null){const d=awBpL-hmBpL;score+=d*0.08;if(Math.abs(d)>=6)tnSigs.push({k:'BP SAVE',aw:awBpL+'%',hm:hmBpL+'%',edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
+    // Ranking gap
+    if(awRank&&hmRank&&Math.abs(awRank-hmRank)>=10)tnSigs.push({k:'RANK',aw:'#'+awRank,hm:'#'+hmRank,edge:awRank<hmRank?g.aw:g.hm,mag:Math.min(Math.abs(awRank-hmRank)*0.6,25)});
+    else if(awRank&&!hmRank)tnSigs.push({k:'RANK',aw:'#'+awRank,hm:'NR',edge:g.aw,mag:15});
+    else if(!awRank&&hmRank)tnSigs.push({k:'RANK',aw:'NR',hm:'#'+hmRank,edge:g.hm,mag:15});
+    // Seeds
+    if(g.aw.seed&&g.hm.seed){const sd=g.hm.seed-g.aw.seed;score+=sd*0.3}
+  }
+  const side=score>=0?g.hm:g.aw,other=score>=0?g.aw:g.hm,mlO=score>=0?mlHm:mlAw;
+  const mag=Math.abs(score);
+  const _alignedSigs=g.cat==='tennis'?tnSigs.filter(s=>s.edge===side).length:0;
+  const conf=g.cat==='tennis'?(_alignedSigs>=3||tnSigs.some(s=>s.edge===side&&s.mag>=25)?'HIGH':_alignedSigs>=2||mag>=4?'MEDIUM':'LOW'):(mag>=5?'HIGH':mag>=2.5?'MEDIUM':'LOW');
     let mlPrice=mlO?` (${fp(mlO.price)})`:'';
     if(g.cat==='tennis'){
-      // Use LWOT pick paragraph if available, else fall back to form summary
-      if(lwotArt?.paras?.length){
-        const pickPara=lwotArt.paras[lwotArt.paras.length-1];
-        reasons.push(pickPara.length>220?pickPara.slice(0,220)+'…':pickPara);
-      } else {
-        const fmtForm=(id,nm)=>{const ms=(tennisForm.get(String(id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!ms.length)return null;const w=ms.filter(m=>m.W).length;const last=ms[0];const res=last.W?`def. ${last.opp}`:`lost to ${last.opp}`;const ctx=[last.round,last.score].filter(Boolean).join(', ');return`${nm} ${w}-${ms.length-w} L${ms.length} (${res}${ctx?', '+ctx:''})`};
-        const awFmt=fmtForm(g.aw.id,g.aw.nm),hmFmt=fmtForm(g.hm.id,g.hm.nm);
-        if(awFmt&&hmFmt)reasons.push(`${awFmt}. ${hmFmt}`);
-        else if(awFmt||hmFmt)reasons.push(awFmt||hmFmt);
-      }
+      // Structured signal reasons — sorted by magnitude, strongest first
+      [...tnSigs].sort((a,b)=>b.mag-a.mag).slice(0,2).forEach(sig=>{
+        const en=sig.edge?sig.edge.nm.split(' ').pop():null;
+        if(sig.k==='H2H'){const tot=parseInt(sig.aw)+parseInt(sig.hm);const lbl=en?`${en} leads H2H ${Math.max(parseInt(sig.aw),parseInt(sig.hm))}-${Math.min(parseInt(sig.aw),parseInt(sig.hm))}`:tot>=2?`H2H split ${sig.aw}-${sig.hm}`:`H2H tied`;reasons.push(`${lbl}${sig.lastMatch?' (last: '+sig.lastMatch+')':''}`)}
+        else if(en)reasons.push(`${sig.k}: ${en} ${sig.edge===g.aw?sig.aw:sig.hm} vs opponent ${sig.edge===g.aw?sig.hm:sig.aw} — ${sig.mag.toFixed(0)}pp edge`);
+      });
+      // L5 tournament form from ESPN
+      const fmtF=(id,nm)=>{const ms=(tennisForm.get(String(id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!ms.length)return null;const w=ms.filter(m=>m.W).length;return`${nm.split(' ').pop()} L${ms.length}: ${w}-${ms.length-w}`};
+      const awF2=fmtF(g.aw.id,g.aw.nm),hmF2=fmtF(g.hm.id,g.hm.nm);
+      if(awF2||hmF2)reasons.push(`Tournament form: ${[awF2,hmF2].filter(Boolean).join(' · ')}`);
     } else {
       reasons.push(`${side.nm} is the straight-up play${g.ha>0&&score>=0?', backed by home-court advantage':''}${mlEdges.length?', with sharp book edge':''}`);
     }
@@ -1145,8 +1205,8 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     else if(awRank!==null||hmRank!==null){const ranked=awRank?g.aw:g.hm,r=awRank||hmRank,unr=awRank?g.hm:g.aw;
       reasons.push(`${ranked.nm} (${rankTier(r)}) faces ${unr.nm} (unranked) — ranked player holds a structural edge in ${g.spL}`)}
     if(g.cat==='tennis'&&tnH2H?.awServe&&tnH2H?.hmServe){const svSk2=getSurface(g.ven)==='clay'?'clay':getSurface(g.ven)==='grass'?'grass':'hard';const awSv2=tnH2H.awServe[svSk2],hmSv2=tnH2H.hmServe[svSk2];const awBp=awSv2?.bp_save_pct?parseFloat(awSv2.bp_save_pct):null,hmBp=hmSv2?.bp_save_pct?parseFloat(hmSv2.bp_save_pct):null;const awF1w=awSv2?.first_won_pct?parseFloat(awSv2.first_won_pct):null,hmF1w=hmSv2?.first_won_pct?parseFloat(hmSv2.first_won_pct):null;if(awBp!==null&&hmBp!==null&&Math.abs(awBp-hmBp)>=8){const btr=awBp>hmBp?g.aw:g.hm,wrs=awBp>hmBp?g.hm:g.aw,btrPct=Math.max(awBp,hmBp),wrsPct=Math.min(awBp,hmBp);reasons.push(`Serve data (${svSk2} 2023-24): ${btr.nm.split(' ').pop()} saves ${btrPct.toFixed(0)}% of BP vs ${wrs.nm.split(' ').pop()} ${wrsPct.toFixed(0)}% — ${(btrPct-wrsPct).toFixed(0)}pp edge holding serve`)}else if(awF1w!==null&&hmF1w!==null&&Math.abs(awF1w-hmF1w)>=6){const btr=awF1w>hmF1w?g.aw:g.hm,btrP=Math.max(awF1w,hmF1w).toFixed(0);reasons.push(`${btr.nm.split(' ').pop()} wins ${btrP}% on 1st serve on ${svSk2} — dominant hold rate vs opponent (Sackmann 2023-24)`)}}
-    if(g.cat==='tennis'&&(awTnApi||hmTnApi)){const svSk2=getSurface(g.ven)==='clay'?'clay':getSurface(g.ven)==='grass'?'grass':'hard';const surfTxt2=svSk2==='clay'?'Clay':svSk2==='grass'?'Grass':'Hard';const getTNSurf=(d)=>{if(!d)return null;const arr=Array.isArray(d.surface)?d.surface:(d.surface?[d.surface]:[]);const r=arr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return svSk2==='clay'?sn.includes('clay'):svSk2==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});if(!r)return null;const w=parseInt(r.wins??r.win??r.w??0)||0,l=parseInt(r.losses??r.loss??r.l??0)||0;return w+l>0?{w,l,pct:Math.round(w/(w+l)*100)}:null};const getTNBP=(d)=>{if(!d)return null;const s=Array.isArray(d.stats)?d.stats[0]:(d.stats||{});const sv=parseInt(s.breakPointSavedGm||0),fa=parseInt(s.breakPointFacedGm||0);return fa>0?Math.round(sv/fa*100):null};const awSurf=getTNSurf(awTnApi),hmSurf=getTNSurf(hmTnApi);const awBpLive=getTNBP(awTnApi),hmBpLive=getTNBP(hmTnApi);if(awSurf&&hmSurf){const diff=awSurf.pct-hmSurf.pct;if(Math.abs(diff)>=12){const btr=diff>0?g.aw:g.hm,btrS=diff>0?awSurf:hmSurf,wrsS=diff>0?hmSurf:awSurf;score+=Math.abs(diff)*0.04*(side===btr?1:-1);reasons.push(`2025 ${surfTxt2} record: ${btr.nm.split(' ').pop()} ${btrS.w}-${btrS.l} (${btrS.pct}%) vs opponent ${wrsS.w}-${wrsS.l} (${wrsS.pct}%) — current-season surface edge`)}}else if(awSurf||hmSurf){const d=awSurf||hmSurf,pl=awSurf?g.aw:g.hm;if(d.w+d.l>=5)reasons.push(`${pl.nm.split(' ').pop()} 2025 ${surfTxt2}: ${d.w}-${d.l} (${d.pct}%) — contextual surface form`)}if(awBpLive!==null&&hmBpLive!==null&&Math.abs(awBpLive-hmBpLive)>=8){const btr=awBpLive>hmBpLive?g.aw:g.hm,btrP=Math.max(awBpLive,hmBpLive),wrsP=Math.min(awBpLive,hmBpLive);score+=(awBpLive>hmBpLive&&side===g.aw||hmBpLive>awBpLive&&side===g.hm)?0.3:-0.3;reasons.push(`Live career BP save: ${btr.nm.split(' ').pop()} ${btrP}% vs ${wrsP}% — ${(btrP-wrsP)}pp serve pressure edge (matchstat.com)`)}}
-    if(g.cat==='tennis'&&tnH2H){
+    if(g.cat==='tennis'&&(awTnApi||hmTnApi)&&!tnSigs.find(s=>s.k.includes('2025'))){const svSk2=getSurface(g.ven)==='clay'?'clay':getSurface(g.ven)==='grass'?'grass':'hard';const surfTxt2=svSk2==='clay'?'Clay':svSk2==='grass'?'Grass':'Hard';const getTNSurf=(d)=>{if(!d)return null;const arr=Array.isArray(d.surface)?d.surface:(d.surface?[d.surface]:[]);const r=arr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return svSk2==='clay'?sn.includes('clay'):svSk2==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});if(!r)return null;const w=parseInt(r.wins??r.win??r.w??0)||0,l=parseInt(r.losses??r.loss??r.l??0)||0;return w+l>0?{w,l,pct:Math.round(w/(w+l)*100)}:null};const getTNBP=(d)=>{if(!d)return null;const s=Array.isArray(d.stats)?d.stats[0]:(d.stats||{});const sv=parseInt(s.breakPointSavedGm||0),fa=parseInt(s.breakPointFacedGm||0);return fa>0?Math.round(sv/fa*100):null};const awSurf=getTNSurf(awTnApi),hmSurf=getTNSurf(hmTnApi);const awBpLive=getTNBP(awTnApi),hmBpLive=getTNBP(hmTnApi);if(awSurf&&hmSurf){const diff=awSurf.pct-hmSurf.pct;if(Math.abs(diff)>=12){const btr=diff>0?g.aw:g.hm,btrS=diff>0?awSurf:hmSurf,wrsS=diff>0?hmSurf:awSurf;score+=Math.abs(diff)*0.04*(side===btr?1:-1);reasons.push(`2025 ${surfTxt2} record: ${btr.nm.split(' ').pop()} ${btrS.w}-${btrS.l} (${btrS.pct}%) vs opponent ${wrsS.w}-${wrsS.l} (${wrsS.pct}%) — current-season surface edge`)}}else if(awSurf||hmSurf){const d=awSurf||hmSurf,pl=awSurf?g.aw:g.hm;if(d.w+d.l>=5)reasons.push(`${pl.nm.split(' ').pop()} 2025 ${surfTxt2}: ${d.w}-${d.l} (${d.pct}%) — contextual surface form`)}if(awBpLive!==null&&hmBpLive!==null&&Math.abs(awBpLive-hmBpLive)>=8){const btr=awBpLive>hmBpLive?g.aw:g.hm,btrP=Math.max(awBpLive,hmBpLive),wrsP=Math.min(awBpLive,hmBpLive);score+=(awBpLive>hmBpLive&&side===g.aw||hmBpLive>awBpLive&&side===g.hm)?0.3:-0.3;reasons.push(`Live career BP save: ${btr.nm.split(' ').pop()} ${btrP}% vs ${wrsP}% — ${(btrP-wrsP)}pp serve pressure edge (matchstat.com)`)}}
+    if(g.cat==='tennis'&&tnH2H&&!tnSigs.find(s=>s.k==='H2H')){
       if(tnH2H.total>0){const awH2H=tnH2H.awW,hmH2H=tnH2H.hmW,tot=tnH2H.total;
         const ldr=awH2H>hmH2H?g.aw:hmH2H>awH2H?g.hm:null;
         const last=tnH2H.recent[0];
@@ -1162,8 +1222,9 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     else if(mlO&&mlO.price>0)reasons.push(`Plus-money at ${fp(mlO.price)} adds significant value to an already favorable setup`);
     else if(mlO&&mlO.price>-150)reasons.push(`Reasonable juice at ${fp(mlO.price)} makes ML viable standalone or as parlay leg`);
     const pickStr=`${side.nm} ML${mlPrice}`;
-    if(reasons.length)picks.push({label:'MONEYLINE ANALYSIS',pick:pickStr,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,4).join('. ')+'.',
+    if(reasons.length)picks.push({label:g.cat==='tennis'?'TENNIS ANALYSIS':'MONEYLINE ANALYSIS',pick:pickStr,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,5).join('. ')+'.',
       evData:calcEV(g,'h2h',side.nm.split(' ').pop()),lineRange:null,sharp:getSharp(mlEdges),
+      tnSigs:g.cat==='tennis'?[...tnSigs].sort((a,b)=>b.mag-a.mag):null,
       gradeData:{type:'ml',isHm:side===g.hm}});
   }
   return picks;
