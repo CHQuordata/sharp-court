@@ -744,8 +744,9 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
 
   // ── AI Pick cross-reference ──
   {const _nm=s=>(s||'').toLowerCase().split(' ').pop();const _an=_nm(g.aw.nm),_hn=_nm(g.hm.nm);
-   // Require BOTH team names in matchup AND sport must match — prevents false positives across games
-   const _match=p=>{if(p.sport&&p.sport!==g.cat)return false;const mu=(p.matchup||'').toLowerCase();return mu.includes(_an)&&mu.includes(_hn)};
+   // Sport must match + either team name present — sport scoping prevents cross-sport false positives
+   // (within a sport a team only plays once/day so OR is safe)
+   const _match=p=>{if(p.sport&&p.sport!==g.cat)return false;const mu=(p.matchup||'').toLowerCase();return mu.includes(_an)||mu.includes(_hn)};
    const aiPk=todayPicksData?.picks?.find(_match);
    const aiLn=!aiPk&&todayPicksData?.leans?.find(_match);
    const aiPrs=(todayPicksData?.parlays||[]).filter(par=>par.legs?.some(leg=>leg.toLowerCase().includes(_an)&&leg.toLowerCase().includes(_hn)));
@@ -1691,7 +1692,7 @@ function buildUserMsg(gamesCtx,yesterdayPicks){
 
 async function prefetchStatsForPicks(){
   const games=allG.filter(g=>g.st!=='STATUS_FINAL'&&g.isTeam);
-  await Promise.allSettled(games.map(async g=>{
+  const _fetch=async g=>{
     try{
       if(g.cat==='nba'&&g.aw.id&&g.hm.id&&!gameStatsCache.has(g.id)){
         const [a,h]=await Promise.all([fetchNBATeamStats(g.aw.id),fetchNBATeamStats(g.hm.id)]);
@@ -1708,7 +1709,12 @@ async function prefetchStatsForPicks(){
         if(sm){const p=extractPitchers(sm);if(p)gamePitcherCache.set(g.id,p)}
       }
     }catch(e){}
-  }));
+  };
+  // Hard 10s cap — if any fetch hangs, we don't block the entire generate flow
+  await Promise.race([
+    Promise.allSettled(games.map(_fetch)),
+    new Promise(r=>setTimeout(r,10000))
+  ]);
 }
 
 async function generatePicks(){
