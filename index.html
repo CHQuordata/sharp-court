@@ -31,9 +31,9 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .panel-body{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bdr) transparent}
 .panel-body::-webkit-scrollbar{width:4px}.panel-body::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:2px}
 .sport-group-hdr{padding:6px 12px;font-size:9px;font-weight:600;letter-spacing:1.5px;color:var(--t4);background:var(--bg0);text-transform:uppercase;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:5}
-.game-row{padding:8px 12px;border-bottom:1px solid rgba(42,42,62,.4);cursor:pointer;transition:background .1s}.game-row:hover{background:var(--bg3)}.game-row.sel{background:var(--bg4);border-left:2px solid var(--grn);padding-left:10px}
+.game-row{padding:8px 12px;border-bottom:1px solid rgba(42,42,62,.4);cursor:pointer;transition:background .1s}.game-row:hover{background:var(--bg3)}.game-row.sel{background:var(--bg4);border-left:2px solid var(--grn);padding-left:10px}.game-row.final{opacity:.45}.game-row.final .game-teams{color:var(--t3)}
 .game-teams{font-size:11px;font-weight:500;color:var(--t1);margin-bottom:3px}
-.game-meta{display:flex;gap:10px;font-size:9px;color:var(--t3);flex-wrap:wrap}.game-meta .live{color:var(--grn);font-weight:600}
+.game-meta{display:flex;gap:10px;font-size:9px;color:var(--t3);flex-wrap:wrap}.game-meta .live{color:var(--grn);font-weight:600}.game-meta .period{color:var(--t2);font-weight:500}.game-meta .final-lbl{color:var(--t4)}
 .game-odds{display:flex;gap:8px;margin-top:4px;font-size:10px}.game-odds span{color:var(--t2)}.game-odds .fav{color:var(--cyn);font-weight:500}
 .detail-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t4);gap:12px}.detail-empty-icon{font-size:48px;opacity:.2}.detail-empty-text{font-size:12px;letter-spacing:1px}
 .det-header{padding:16px;border-bottom:1px solid var(--bdr);background:var(--bg2)}
@@ -423,12 +423,17 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
   const grp={};fG.forEach((g,i)=>{const lb=g.spL;if(!grp[lb])grp[lb]=[];grp[lb].push({...g,_i:i})});
   let h='';Object.entries(grp).forEach(([lb,gs])=>{h+=`<div class="sport-group-hdr">${gs[0].spI} ${lb} (${gs.length})</div>`;
     gs.forEach(g=>{const live=g.st==='STATUS_IN_PROGRESS';const done=g.st==='STATUS_FINAL';
-      const t=live?g.stD:done?'FINAL':g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      const rowCls=[g._i===selIdx?'sel':'',done?'final':''].filter(Boolean).join(' ');
       let od='';if(g.eOdds){od=`<span class="fav">${g.eOdds.details||''}</span>`;if(g.eOdds.overUnder)od+=`<span>O/U ${g.eOdds.overUnder}</span>`}
       else if(g.odds){const h2=g.odds.bookmakers?.[0]?.markets?.find(m=>m.key==='h2h');if(h2)od=`<span>${h2.outcomes.map(o=>o.name.split(' ').pop()+' '+fp(o.price)).join(' / ')}</span>`}
       const te=allE.filter(e=>e.g.id===g.id)[0];const ic=g.inj.aw.length+g.inj.hm.length;
       const dateStr=g.tm.toDateString()!==new Date().toDateString()?` \u00B7 ${g.tm.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`:'';
-      h+=`<div class="game-row ${g._i===selIdx?'sel':''}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc?g.hm.sc:''}</div><div class="game-meta"><span>${live?'<span class="live">LIVE</span>':t}${dateStr}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
+      const scoreStr=done&&g.aw.sc!=null?` ${g.aw.sc}-${g.hm.sc}`:'';
+      const statusEl=live
+        ?`<span class="live">LIVE</span>${g.stD?` <span class="period">${g.stD}</span>`:''}`
+        :done?`<span class="final-lbl">FINAL${scoreStr}</span>`
+        :`${g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}${dateStr}`;
+      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
   el.innerHTML=h}
 
 // ══════════════════════════════
