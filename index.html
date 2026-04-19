@@ -193,6 +193,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 
 <script>
 let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map();
+let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet';
 const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals,alternate_spreads,alternate_totals',icehockey_nhl:'h2h,spreads,totals,alternate_spreads,alternate_totals',baseball_mlb:'h2h,spreads,totals,alternate_spreads,alternate_totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals,alternate_spreads,alternate_totals',_tennis:'h2h'};
@@ -244,8 +245,8 @@ async function oddsFetch(sk,force=false){
   const tf=now.toISOString().split('T')[0]+'T00:00:00Z',tt=tmrw.toISOString().split('T')[0]+'T23:59:59Z';
   const mkts=getSportMarkets(sk);
   try{const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sk}/odds/?apiKey=${AK}&bookmakers=${ODDS_BOOKS}&markets=${mkts}&oddsFormat=american&commenceTimeFrom=${tf}&commenceTimeTo=${tt}`);
-  if(!r.ok){if(r.status===401){$('apiDot').classList.remove('ok');$('apiSt').textContent='Invalid key'}else if(r.status===429){$('apiDot').classList.remove('ok');$('apiSt').textContent='Rate limited'}/* 422 = unsupported market for this sport — not a key error, skip silently */;return cached?.data||[];}
-  const rem=r.headers.get('x-requests-remaining');if(rem!=null)$('apiCalls').textContent=`${parseInt(rem).toLocaleString()} calls left`;
+  if(!r.ok){if(r.status===429){$('apiDot').classList.remove('ok');$('apiSt').textContent='Rate limited'}else if(r.status===401&&!_oddsEverOk){$('apiDot').classList.remove('ok');$('apiSt').textContent='Invalid key'}/* all other errors (401 after confirmed, 422 unsupported market, etc.) silent */;return cached?.data||[];}
+  const rem=r.headers.get('x-requests-remaining');if(rem!=null){_oddsEverOk=true;$('apiCalls').textContent=`${parseInt(rem).toLocaleString()} calls left`;$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
   const data=await r.json();_oddsCache.set(sk,{data,ts:Date.now()});return data;}catch(e){return cached?.data||[]}}
 
 // ══════════════════════════════
