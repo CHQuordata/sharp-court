@@ -245,12 +245,16 @@ async function refreshAll(){
       const cp=ev.competitions?.[0];if(!cp)return;
       const aw=cp.competitors?.find(x=>x.homeAway==='away'),hm=cp.competitors?.find(x=>x.homeAway==='home');
       if(!aw||!hm)return;
+      const _isPlayoff=ev.season?.type?.id==3||ev.season?.type?.type==3;
+      const _ser=cp.series;const _serAw=_ser?.competitors?.find(x=>x.id==aw.team.id);const _serHm=_ser?.competitors?.find(x=>x.id==hm.team.id);
+      const seriesStr=_ser?.summary||(_serAw&&_serHm?`${aw.team.abbreviation} leads ${_serAw.wins}-${_serHm.wins}`:null);
       allG.push({id:ev.id,sp:k,cat:c.cat,spL:c.lb,spI:c.ic,
-        aw:{nm:aw.team.displayName,ab:aw.team.abbreviation,id:aw.team.id,rec:aw.records?.[0]?.summary||'',sc:aw.score},
-        hm:{nm:hm.team.displayName,ab:hm.team.abbreviation,id:hm.team.id,rec:hm.records?.[0]?.summary||'',sc:hm.score},
+        aw:{nm:aw.team.displayName,ab:aw.team.abbreviation,id:aw.team.id,rec:aw.records?.[0]?.summary||'',sc:aw.score,serW:_serAw?.wins??null},
+        hm:{nm:hm.team.displayName,ab:hm.team.abbreviation,id:hm.team.id,rec:hm.records?.[0]?.summary||'',sc:hm.score,serW:_serHm?.wins??null},
         tm:new Date(ev.date),st:ev.status?.type?.name,stD:ev.status?.type?.shortDetail||'',
         ven:cp.venue?.fullName||'',bc:cp.broadcasts?.[0]?.names?.[0]||'',
-        odds:null,inj:{aw:[],hm:[]},eOdds:cp.odds?.[0]||null,ha:c.ha,isTeam:true});
+        odds:null,inj:{aw:[],hm:[]},eOdds:cp.odds?.[0]||null,ha:c.ha,isTeam:true,
+        playoff:_isPlayoff,serSum:seriesStr});
     });
   })));
 
@@ -453,7 +457,8 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
         ?`<span class="live">LIVE</span>${g.stD?` <span class="period">${g.stD}</span>`:''}`
         :done?`<span class="final-lbl">FINAL${scoreStr}</span>`
         :`${g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}${dateStr}`;
-      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}${g.lineMove&&(Math.abs(g.lineMove.spMv||0)>=0.5||Math.abs(g.lineMove.toMv||0)>=0.5)?`<span style="color:var(--amb);font-weight:700">↕</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
+      const serTag=g.playoff&&g.serSum?`<span style="font-size:8px;color:var(--amb);opacity:.8">${g.serSum}</span>`:'';
+      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}${g.playoff?` <span style="font-size:8px;color:var(--amb);font-weight:700">PO</span>`:''}${serTag}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}${g.lineMove&&(Math.abs(g.lineMove.spMv||0)>=0.5||Math.abs(g.lineMove.toMv||0)>=0.5)?`<span style="color:var(--amb);font-weight:700">↕</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
   el.innerHTML=h}
 
 // ══════════════════════════════
@@ -512,7 +517,9 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   if(_lwot)lwotArt=_lwot;
   let h='';
   const ts=g.tm.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00B7 '+g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div><div style="margin-top:8px"><button class="analyze-btn" id="aiAnalyzeBtn" onclick="aiAnalyzeGame(${idx})" ${!CLAUDE_KEY?'disabled':''}>${aiAnalysisCache.has(g.id)?'⚡ RE-ANALYZE':'⚡ AI ANALYZE'}</button></div></div>`;
+  const playoffBadge=g.playoff?`<span style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--amb);background:rgba(251,191,36,.12);padding:2px 6px;border-radius:3px;margin-left:8px">PLAYOFFS</span>`:'';
+  const serBadge=g.serSum?`<div style="font-size:10px;color:var(--amb);font-weight:600;margin-top:3px">📊 ${g.serSum}</div>`:'';
+  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}${playoffBadge}</div>${serBadge}<div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div><div style="margin-top:8px"><button class="analyze-btn" id="aiAnalyzeBtn" onclick="aiAnalyzeGame(${idx})" ${!CLAUDE_KEY?'disabled':''}>${aiAnalysisCache.has(g.id)?'⚡ RE-ANALYZE':'⚡ AI ANALYZE'}</button></div></div>`;
 
   // ── AI Pick cross-reference ──
   {const _nm=s=>(s||'').toLowerCase().split(' ').pop();const _an=_nm(g.aw.nm),_hn=_nm(g.hm.nm);
@@ -1112,7 +1119,8 @@ function buildGamesContext(){
   let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${allG.length}):\n\n`;
   allG.forEach(g=>{
     const t=g.st==='STATUS_IN_PROGRESS'?`LIVE ${g.stD}`:g.st==='STATUS_FINAL'?`FINAL${g.aw.sc!=null?' '+g.aw.sc+'-'+g.hm.sc:''}`:g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}\n`;
+    const playoffTag=g.playoff?` [PLAYOFFS${g.serSum?' — '+g.serSum:''}]`:'';
+    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}\n`;
     if(g.aw.rec||g.hm.rec)ctx+=`  Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
     if(g.aw.rank||g.hm.rank)ctx+=`  Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:'?'} vs ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:'?'}\n`;
     if(g.cat==='tennis'){const surf=getSurface(g.ven);if(g.round||g.tnName)ctx+=`  Tournament: ${g.tnName||''}${g.round?' — '+g.round:''}\n`;if(g.aw.seed||g.hm.seed)ctx+=`  Seeds: ${g.aw.nm}${g.aw.seed?' ['+g.aw.seed+']':''} vs ${g.hm.nm}${g.hm.seed?' ['+g.hm.seed+']':''}\n`;ctx+=`  Surface: ${surf} — ${surf==='clay'?'clay specialist/heavy topspin players have structural edge':surf==='grass'?'serve dominance elevated, LH advantage in deuce court':surf==='indoor'?'fast conditions, serve hold rates elevated':'balanced hard court'}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!fm.length)return;const w=fm.filter(m=>m.W).length;const last=fm[0];ctx+=`  ${pl.nm} L5: ${w}-${fm.length-w} (last: ${last.W?'W':'L'} vs ${last.opp}${last.round?', '+last.round:''}${last.tn?', '+last.tn:''})\n`})}
@@ -1193,6 +1201,7 @@ ${learnedRules}
 ## SIGNALS
 Team sports: ≥2 of — line move, rest edge, injury edge, ATS trend ≥60%, sharp signal, situational spot.
 Tennis: ≥1 of — surface form, H2H on surface, tournament momentum, fatigue/load, ranking-form divergence.
+Playoffs (NBA/NHL): Series context is primary — series score, elimination games, desperation, home/away splits in THIS series, coaching adjustments game-to-game. Regular season ATS trends are secondary to series momentum. MLB regular season signals apply normally.
 
 ## CRITICAL RULES
 - Max 8 graded picks (is_lean:false). Extras go to leans.
@@ -1269,6 +1278,7 @@ async function aiAnalyzeGame(idx){
   const btn=$('aiAnalyzeBtn');if(btn){btn.disabled=true;btn.textContent='ANALYZING...'}
   let ctx=`Analyze this specific matchup for betting value:\n\n`;
   ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm}\n`;
+  if(g.playoff){ctx+=`CONTEXT: NBA/NHL PLAYOFFS — best-of-7 series. Series stakes and elimination pressure matter more than regular season signals.\n`;if(g.serSum)ctx+=`Series status: ${g.serSum}\n`;}
   if(g.aw.rec||g.hm.rec)ctx+=`Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
   if(g.aw.rank||g.hm.rank)ctx+=`Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:''} ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:''}\n`;
   if(g.cat==='tennis'){const surf=getSurface(g.ven);ctx+=`Surface: ${surf}\n`;if(g.round)ctx+=`Round: ${g.round}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+' vs '+m.opp+(m.round?' ('+m.round+')':'')).join(', ')}\n`}})}
