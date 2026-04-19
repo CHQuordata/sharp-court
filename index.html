@@ -1026,7 +1026,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
       const shVal=st?.shootPct?parseFloat(st.shootPct):null;
       const shCl=shVal!=null?(shVal>=10?'color:var(--grn)':shVal<8?'color:var(--red)':'color:var(--t2)'):'';
       const fatigue=b2b?`<span style="font-size:8px;font-weight:700;color:var(--red);background:rgba(255,71,87,.12);border-radius:2px;padding:1px 4px;margin-left:3px">B2B</span>`:'';
-      h+=`<tr><td style="color:var(--cyn);font-weight:500">${tm.ab}${fatigue}</td><td>${st?.gpg||'--'}</td><td>${st?.gaa||'--'}</td><td style="${netClr};font-weight:700">${net!=null?(net>=0?'+':'')+net:'--'}</td><td style="${ppClr}">${st?.ppPct!=null?st.ppPct+'%':'--'}</td><td style="${pkClr}">${st?.pkPct!=null?st.pkPct+'%':'--'}</td><td style="${shCl}">${shVal!=null?shVal+'%':'--'}</td></tr>`);
+      h+=`<tr><td style="color:var(--cyn);font-weight:500">${tm.ab}${fatigue}</td><td>${st?.gpg||'--'}</td><td>${st?.gaa||'--'}</td><td style="${netClr};font-weight:700">${net!=null?(net>=0?'+':'')+net:'--'}</td><td style="${ppClr}">${st?.ppPct!=null?st.ppPct+'%':'--'}</td><td style="${pkClr}">${st?.pkPct!=null?st.pkPct+'%':'--'}</td><td style="${shCl}">${shVal!=null?shVal+'%':'--'}</td></tr>`});
     h+=`</tbody></table></div>`}
   if(g.cat==='nhl'&&goalies){const ag=goalies.away,hg=goalies.home;
     const _glEdge=ag&&hg?(parseFloat(ag.savePct)<parseFloat(hg.savePct)&&hg.savePct!=='--'?g.hm:parseFloat(ag.savePct)>parseFloat(hg.savePct)&&ag.savePct!=='--'?g.aw:null):null;
