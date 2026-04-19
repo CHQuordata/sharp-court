@@ -113,6 +113,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .pib-HIGH,.pib-W{color:var(--grn);background:var(--grn-bg)}.pib-MEDIUM{color:var(--amb);background:var(--amb-bg)}.pib-LOW{color:var(--t3);background:var(--bg3)}.pib-L{color:var(--red);background:var(--red-bg)}.pib-P,.pib-Q{color:var(--t2);background:var(--bg3)}
 .pick-gen-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:24px;text-align:center}
 .gen-btn{padding:10px 20px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:1px;color:var(--bg0);background:var(--amb);border:none;border-radius:4px;cursor:pointer}.gen-btn:hover{opacity:.9}.gen-btn:disabled{opacity:.4;cursor:not-allowed}
+.analyze-btn{padding:4px 10px;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.5px;color:var(--bg0);background:var(--amb);border:none;border-radius:3px;cursor:pointer;margin-left:auto}.analyze-btn:hover{opacity:.9}.analyze-btn:disabled{opacity:.4;cursor:not-allowed}
 .pick-det-hdr{padding:14px 16px;border-bottom:1px solid var(--bdr);background:var(--bg2)}.pick-det-match{font-size:16px;font-weight:700;color:var(--t1);margin-bottom:4px;font-family:var(--sans)}.pick-det-pick{font-size:13px;font-weight:600;color:var(--amb);margin-bottom:6px}
 .filter-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.filter-tag{padding:2px 7px;font-size:9px;background:var(--bg3);border:1px solid var(--bdr);border-radius:10px;color:var(--t3)}
 .parlay-card{margin:6px 12px;padding:10px 12px;background:var(--bg2);border:1px solid var(--bdr);border-radius:4px}.parlay-title{font-size:9px;font-weight:600;letter-spacing:1.2px;color:var(--amb);text-transform:uppercase;margin-bottom:8px}
@@ -169,6 +170,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   <button class="tb-btn" onclick="showPicksSetup()">AI KEY <span class="kbd">A</span></button>
   <button class="tb-btn" onclick="refreshAll()">SCAN <span class="kbd">R</span></button>
   <button class="tb-btn" onclick="toggleSC()">?</button>
+  <div class="topbar-div"></div><button class="tb-btn" id="bankrollBtn" onclick="showBankroll()" style="color:var(--amb)">BANKROLL</button>
 </div>
 <div class="main">
   <div class="panel"><div class="panel-hdr"><span class="panel-title" id="panelHdrTitle">Today's Slate</span><div style="display:flex;align-items:center;gap:6px"><div class="date-toggle"><button class="dt-btn active" id="dtToday" onclick="setDateFilter('today')">TODAY</button><button class="dt-btn" id="dtTomorrow" onclick="setDateFilter('tomorrow')">TMW</button><button class="dt-btn" id="dtAll" onclick="setDateFilter('all')">ALL</button></div><span class="badge a" id="slateCount">LOADING</span></div></div><div class="panel-body" id="slateList"></div></div>
@@ -181,6 +183,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 <div class="bottombar"><div><span style="color:var(--grn)">&#9679;</span> SPORTSEDGE v2.6</div><div id="lastScan">LAST SCAN: NEVER</div><div class="bottombar-sp"></div><div id="apiCalls">API: -/500</div><div><span class="kbd">?</span> HELP</div></div>
 <div class="modal-ov" id="setupModal" style="display:none"><div class="modal"><div class="modal-title">SPORTSEDGE TERMINAL</div><div class="modal-sub">Enter your Odds API key for live odds, EV calculation, and edge detection across 10+ sportsbooks.<br><br>Without a key, ESPN provides schedules, injuries, form, and records for all sports including tennis &amp; UFC.</div><input class="modal-input" id="apiKeyInput" type="password" placeholder="Odds API key..." autocomplete="off"><button class="modal-btn" onclick="connectApi()">CONNECT &amp; SCAN</button><a class="modal-link" href="https://the-odds-api.com/#get-access" target="_blank">Get free key &#8594; the-odds-api.com</a><div style="text-align:center;margin-top:16px;font-size:10px;color:var(--t4);cursor:pointer" onclick="skipApi()">Skip &#8212; ESPN data only</div></div></div>
 <div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-sonnet-4-6</strong> for analysis. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
+<div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh all data</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
 <script>
@@ -206,6 +209,7 @@ function mkAthlete(p){return{nm:p.athlete?.displayName||p.athlete?.fullName||'Un
 async function init(){
   $('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED';
   if(CLAUDE_KEY){$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY'}
+  if(BANKROLL>0){const btn=$('bankrollBtn');if(btn)btn.textContent='$'+BANKROLL.toLocaleString()}
   await refreshAll()}
 function showSetup(){$('setupModal').style.display='flex';$('apiKeyInput').focus()}
 function connectApi(){const k=$('apiKeyInput').value.trim();if(!k)return;AK=k;localStorage.setItem('odds_api_key',k);$('setupModal').style.display='none';$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED';refreshAll()}
@@ -225,6 +229,7 @@ async function oddsFetch(sk){
 // ══════════════════════════════
 async function refreshAll(){
   $('slateList').innerHTML=Array(6).fill('<div class="loading-row"><div class="skel" style="width:70%"></div><div class="skel" style="width:50%"></div><div class="skel" style="width:40%"></div></div>').join('');
+  const _prevSnap=JSON.parse(localStorage.getItem('ln_snap')||'{}');
   allG=[];allE=[];tennisForm=new Map();
   const now=new Date(), today=dfmt(now);
   const tmrw=new Date(now);tmrw.setDate(now.getDate()+1);const tmrwStr=dfmt(tmrw);
@@ -355,6 +360,10 @@ async function refreshAll(){
   // Deduplicate — ESPN returns MMA/tennis fights across multiple event objects
   {const seen=new Map();allG.forEach(g=>{const k=g.isTeam?g.id:g.cat+'_'+[g.aw.nm,g.hm.nm].sort().join('|');if(!seen.has(k)||(g.odds&&!seen.get(k).odds))seen.set(k,g)});allG=[...seen.values()]}
   allG.sort((a,b)=>{const al=a.st==='STATUS_IN_PROGRESS'?0:a.st==='STATUS_SCHEDULED'||a.st==='pre'?1:2;const bl=b.st==='STATUS_IN_PROGRESS'?0:b.st==='STATUS_SCHEDULED'||b.st==='pre'?1:2;return al!==bl?al-bl:a.tm-b.tm});
+  // Save line snapshot for movement detection
+  {const snap={};allG.forEach(g=>{if(!g.odds?.bookmakers?.length)return;const bk=g.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const to=bk.markets.find(m=>m.key==='totals');const ml=bk.markets.find(m=>m.key==='h2h');snap[g.id]={sp:sp?.outcomes?.find(o=>o.point<0)?.point??null,to:to?.outcomes?.find(o=>o.name==='Over')?.point??null,ml:ml?.outcomes?.map(o=>({n:o.name,pr:o.price}))||[],ts:Date.now()}});localStorage.setItem('ln_snap',JSON.stringify(snap))}
+  // Compute line movement vs previous snap
+  allG.forEach(g=>{const prev=_prevSnap[g.id];if(!prev||!g.odds?.bookmakers?.length)return;const bk=g.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const to=bk.markets.find(m=>m.key==='totals');const curSp=sp?.outcomes?.find(o=>o.point<0)?.point??null;const curTo=to?.outcomes?.find(o=>o.name==='Over')?.point??null;const spMv=curSp!=null&&prev.sp!=null?parseFloat((curSp-prev.sp).toFixed(1)):null;const toMv=curTo!=null&&prev.to!=null?parseFloat((curTo-prev.to).toFixed(1)):null;if(spMv||toMv)g.lineMove={spMv,toMv,prevSp:prev.sp,prevTo:prev.to,ts:prev.ts}});
   applyFilters();updateStats();updateEdges();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
 }
 
@@ -413,9 +422,10 @@ function renderMetrics(pk){
   h+=`<div class="pm"><div class="pm-lbl">LINE RANGE</div><div class="pm-val neu tx3">${pk.lineRange||'N/A'}</div></div>`;
   h+=`<div class="pm"><div class="pm-lbl">SHARP</div><div class="sharp-bars">${pk.sharp?.bars||Array(5).fill('<div class="sb"></div>').join('')}</div><div class="pm-sub">${pk.sharp?.n||'No data'}</div></div>`;
   h+='</div>';
-  const k=kellyPct(pk.conf,pk.pick);
+  const k=kellyPct(pk.conf,pk.pick,pk.evData);
   if(k>0){const qk=(k/4).toFixed(1),fk=k.toFixed(1);const kc=k>=8?'var(--grn)':k>=3?'var(--amb)':'var(--t3)';
-    h+=`<div class="kelly-row"><div class="kel"><div class="kel-v" style="color:${kc}">${fk}%</div><div class="kel-l">Full Kelly</div></div><div class="kel"><div class="kel-v" style="color:${kc}">${qk}%</div><div class="kel-l">¼ Kelly (rec)</div></div><div class="tx4" style="align-self:center">of bankroll</div></div>`}
+    const qkDol=BANKROLL>0?` = $${Math.round(BANKROLL*parseFloat(qk)/100).toLocaleString()}`:'';const fkDol=BANKROLL>0?` = $${Math.round(BANKROLL*parseFloat(fk)/100).toLocaleString()}`:'';
+    h+=`<div class="kelly-row"><div class="kel"><div class="kel-v" style="color:${kc}">${fk}%${BANKROLL>0?`<span style="font-size:9px;color:var(--t3);font-weight:400;margin-left:4px">${fkDol}</span>`:''}</div><div class="kel-l">Full Kelly</div></div><div class="kel"><div class="kel-v" style="color:${kc}">${qk}%${BANKROLL>0?`<span style="font-size:9px;color:var(--t3);font-weight:400;margin-left:4px">${qkDol}</span>`:''}</div><div class="kel-l">¼ Kelly (rec)</div></div><div class="tx4" style="align-self:center">of bankroll</div></div>`}
   return h;
 }
 
@@ -443,7 +453,7 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
         ?`<span class="live">LIVE</span>${g.stD?` <span class="period">${g.stD}</span>`:''}`
         :done?`<span class="final-lbl">FINAL${scoreStr}</span>`
         :`${g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}${dateStr}`;
-      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
+      h+=`<div class="game-row ${rowCls}" onclick="selGame(${g._i})" data-i="${g._i}"><div class="game-teams">${g.aw.ab} ${live&&g.aw.sc!=null?g.aw.sc:''} ${g.isTeam?'@':'vs'} ${g.hm.ab} ${live&&g.hm.sc!=null?g.hm.sc:''}</div><div class="game-meta"><span>${statusEl}</span>${g.bc?`<span>${g.bc}</span>`:''}${te?`<span style="color:var(--grn);font-weight:600">${te.ep.toFixed(1)}%</span>`:''}${ic?`<span style="color:var(--red)">\u26A0${ic}</span>`:''}${g.lineMove&&(Math.abs(g.lineMove.spMv||0)>=0.5||Math.abs(g.lineMove.toMv||0)>=0.5)?`<span style="color:var(--amb);font-weight:700">↕</span>`:''}</div>${od?`<div class="game-odds">${od}</div>`:''}</div>`})});
   el.innerHTML=h}
 
 // ══════════════════════════════
@@ -502,7 +512,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   if(_lwot)lwotArt=_lwot;
   let h='';
   const ts=g.tm.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00B7 '+g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div></div>`;
+  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div><div style="margin-top:8px"><button class="analyze-btn" id="aiAnalyzeBtn" onclick="aiAnalyzeGame(${idx})" ${!CLAUDE_KEY?'disabled':''}>⚡ AI ANALYZE</button></div></div>`;
 
   // ── AI Pick cross-reference ──
   {const _nm=s=>(s||'').toLowerCase().split(' ').pop();const _an=_nm(g.aw.nm),_hn=_nm(g.hm.nm);
@@ -647,6 +657,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   // ── Weather (outdoor MLB/NFL) ──
   if(weather){const flags=[];if(weather.wind>15)flags.push(`<span class="wx-flag wind">WIND ${weather.wind} MPH ${weather.windDir}</span>`);if(weather.temp<45)flags.push(`<span class="wx-flag cold">COLD ${weather.temp}°F</span>`);if(weather.temp>92)flags.push(`<span class="wx-flag hot">HOT ${weather.temp}°F</span>`);const icon=weather.temp<40?'🥶':weather.temp>85?'☀️':weather.wind>20?'💨':weather.desc?.toLowerCase().includes('rain')||weather.desc?.toLowerCase().includes('shower')?'🌧️':'⛅';
     h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>WEATHER — ${(g.ven||'').toUpperCase()||'OUTDOOR'}</div><div class="wx-row"><span style="font-size:18px">${icon}</span><span class="wx-stat">${weather.temp}°F</span><span class="wx-stat">${weather.wind} mph ${weather.windDir}</span><span class="wx-stat" style="color:var(--t3)">${weather.desc}</span>${flags.join('')}</div></div>`}
+  if(g.lineMove){const lm=g.lineMove;let mvParts=[];if(lm.spMv&&lm.spMv!==0){const dir=lm.spMv>0?'▲':'▼';const steam=Math.abs(lm.spMv)>=1;mvParts.push(`<span style="color:${steam?'var(--red)':'var(--amb)'};font-weight:700">SPREAD ${dir}${lm.spMv>0?'+':''}${lm.spMv} (was ${lm.prevSp>0?'+':''}${lm.prevSp})${steam?' ⚡ STEAM':''}</span>`)}if(lm.toMv&&lm.toMv!==0){const dir=lm.toMv>0?'▲':'▼';mvParts.push(`<span style="color:var(--amb);font-weight:600">TOTAL ${dir}${lm.toMv>0?'+':''}${lm.toMv} (was ${lm.prevTo})</span>`)}if(mvParts.length)h+=`<div class="sec" style="background:var(--bg0);border-left:3px solid var(--amb)"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>LINE MOVEMENT <span class="tx4" style="margin-left:4px">since last scan</span></div><div class="sc-bd" style="display:flex;gap:16px;flex-wrap:wrap">${mvParts.join('')}</div></div>`}
   if(g.odds?.bookmakers?.length)h+=renderOdds(g);
   else if(g.eOdds){const eo=g.eOdds;const awML=eo.moneyline?.away?.close?.odds,hmML=eo.moneyline?.home?.close?.odds;const sp=eo.pointSpread?.home?.close?.line;const ou=eo.overUnder;
     h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>CONSENSUS LINE <span style="font-size:9px;color:var(--t4);font-weight:400;letter-spacing:0">via ${eo.provider?.name||'ESPN'}</span></div><div class="cl-grid">`;
@@ -687,7 +698,7 @@ function extractPitchers(d){const comp=d?.header?.competitions?.[0];if(!comp)ret
 async function fetchWeather(city){if(!city)return null;try{const r=await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);if(!r.ok)return null;const d=await r.json();const c=d.current_condition?.[0];if(!c)return null;return{temp:parseInt(c.temp_F),wind:parseInt(c.windspeedMiles),windDir:c.winddir16Point,desc:c.weatherDesc?.[0]?.value||''}}catch(e){return null}}
 function isOutdoor(venue,cat){if(!['mlb','nfl'].includes(cat))return false;if(cat==='nfl')return!/lucas oil|mercedes.benz|state farm|allegiant|ford field|caesars superdome|u\.s\. bank|nrg stadium|dome at|sofi|klimt|kia metlife|dome/i.test(venue||'');return!/tropicana|rogers centre|minute maid|chase field|loandepot|american family field/i.test(venue||'')}
 function cityFromTeam(nm){return(nm||'').split(' ').slice(0,-1).join(' ')||nm}
-function kellyPct(conf,pickStr){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=conf==='HIGH'?0.60:conf==='MEDIUM'?0.54:0.50;const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
+function kellyPct(conf,pickStr,evData){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=evData?.tp?Math.min(Math.max(parseFloat(evData.tp)/100,0.45),0.75):(conf==='HIGH'?0.58:conf==='MEDIUM'?0.53:0.50);const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
 async function fetchTennisH2H(sp,awNm,hmNm){if(!awNm||!hmNm)return null;const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const awL=norm(awNm.split(' ').pop()),hmL=norm(hmNm.split(' ').pop());if(awL.length<3||hmL.length<3)return null;const repo=sp==='wta'?'tennis_wta/master/wta_matches':'tennis_atp/master/atp_matches';try{const csvs=await Promise.all([2024,2023,2022,2021].map(y=>fetch(`https://raw.githubusercontent.com/JeffSackmann/${repo}_${y}.csv`,{signal:AbortSignal.timeout(8000)}).then(r=>r.ok?r.text():null).catch(()=>null)));const h2h=[];const awM={clay:[],hard:[],grass:[]},hmM={clay:[],hard:[],grass:[]};for(let yi=0;yi<csvs.length;yi++){const csv=csvs[yi];if(!csv)continue;const yr=2024-yi;const lines=csv.split('\n').slice(1);for(const ln of lines){if(!ln.trim())continue;const c=ln.split(',');if(c.length<26)continue;const w=norm(c[10]||''),l=norm(c[18]||'');if(!w||!l)continue;const srf=(c[2]||'').toLowerCase();const sk=srf==='clay'?'clay':srf==='grass'?'grass':'hard';const awWon=w.includes(awL)&&l.includes(hmL),hmWon=w.includes(hmL)&&l.includes(awL);if(awWon||hmWon)h2h.push({dt:c[5],tn:c[1],surf:c[2],round:c[25]?.trim(),score:c[23],awWon});if(yr>=2023){const aw1=w.includes(awL)&&!l.includes(awL),aw2=l.includes(awL)&&!w.includes(awL);const hm1=w.includes(hmL)&&!l.includes(hmL),hm2=l.includes(hmL)&&!w.includes(hmL);if(aw1)awM[sk].push({W:true});else if(aw2)awM[sk].push({W:false});if(hm1)hmM[sk].push({W:true});else if(hm2)hmM[sk].push({W:false});}}}h2h.sort((a,b)=>b.dt.localeCompare(a.dt));const ss=ms=>({w:ms.filter(m=>m.W).length,l:ms.filter(m=>!m.W).length,tot:ms.length});return{awW:h2h.filter(m=>m.awWon).length,hmW:h2h.filter(m=>!m.awWon).length,total:h2h.length,recent:h2h.slice(0,5),awSurf:{clay:ss(awM.clay),hard:ss(awM.hard),grass:ss(awM.grass)},hmSurf:{clay:ss(hmM.clay),hard:ss(hmM.hard),grass:ss(hmM.grass)}}}catch(e){return null}}
 async function fetchTennisPlayerStats(lg,aid){if(!aid)return null;try{const r=await fetch(`https://sports.core.api.espn.com/v2/sports/tennis/leagues/${lg}/athletes/${aid}`);return r.ok?r.json():null}catch(e){return null}}
 async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{const awL=(awNm||'').split(' ').pop().toLowerCase(),hmL=(hmNm||'').split(' ').pop().toLowerCase();const newsUrl=sp=>id=>id?`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/athletes/${id}/news?limit=10`:`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/news?limit=30`;const[sum,awNews,hmNews]=await Promise.all([fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`).then(r=>r.ok?r.json():null).catch(()=>null),fetch(newsUrl(sp)(awId)).then(r=>r.ok?r.json():null).catch(()=>null),hmId&&hmId!==awId?fetch(newsUrl(sp)(hmId)).then(r=>r.ok?r.json():null).catch(()=>null):Promise.resolve(null)]);const out={};if(sum){const comp=sum.header?.competitions?.[0];const comps=comp?.competitors||[];comps.forEach(c=>{if(c.headToHeadMatchups){if(!out.h2hPlayers)out.h2hPlayers=[];out.h2hPlayers.push({nm:c.athlete?.displayName||'',h2h:c.headToHeadMatchups})}});if(comp?.headToHeadMatchups)out.h2hComp=comp.headToHeadMatchups;const art=sum.article;if(art?.story||art?.description){out.espnStory=(art.story||art.description).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();out.espnLink=art.links?.web?.href||null;}out.espnHead=art?.headline||comp?.notes?.[0]?.headline||null;}const findArt=(feed,a,b)=>(feed?.articles||[]).find(x=>{const t=((x.headline||'')+' '+(x.description||'')).toLowerCase();return a.length>2&&b.length>2&&t.includes(a)&&t.includes(b)});const art=findArt(awNews,awL,hmL)||findArt(hmNews,hmL,awL)||findArt(awNews,hmL,awL);if(art){out.newsHead=art.headline;out.newsDesc=art.description;out.newsLink=art.links?.web?.href||null;}console.log('[Tennis]',{sum:!!sum,awNewsCount:awNews?.articles?.length,hmNewsCount:hmNews?.articles?.length,found:!!art,h2h:!!(out.h2hPlayers||out.h2hComp)});return Object.keys(out).length?out:null}catch(e){return null}}
@@ -920,7 +931,7 @@ function updateEdges(){const el=$('edgeAlerts');if(!allE.length){el.innerHTML=`<
   el.innerHTML=allE.slice(0,15).map(e=>`<div class="edge-alert" onclick="jumpTo('${e.g.id}')"><div class="edge-top"><div class="edge-matchup">${e.g.aw.ab} ${e.g.isTeam?'@':'vs'} ${e.g.hm.ab}</div><div class="edge-pct ${e.tier}">${e.ep.toFixed(1)}%</div></div><div class="edge-detail">${e.ml}: ${e.side} \u00B7 ${e.bb} \u00B7 ${fp(e.bp)}</div></div>`).join('')}
 function jumpTo(id){const i=fG.findIndex(g=>g.id===id);if(i>=0)selGame(i)}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('setupModal').style.display='none';$('claudeModal').style.display='none';$('scOverlay').classList.remove('vis');return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('setupModal').style.display='none';$('claudeModal').style.display='none';$('bankrollModal').style.display='none';$('scOverlay').classList.remove('vis');return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
   switch(e.key){case'r':case'R':refreshAll();break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'a':case'A':showPicksSetup();break;
     case'p':case'P':switchToPicksView();break;
     case'g':case'G':if(cView==='picks')generatePicks();break;
@@ -935,6 +946,7 @@ function toggleSC(){$('scOverlay').classList.toggle('vis')}
 // ── AI PICKS ENGINE
 // ══════════════════════════════════════════════════
 let CLAUDE_KEY=localStorage.getItem('et_claude_key')||'',cView='slate',selPickIdx=-1,isGenerating=false,todayPicksData=null,cDateFilter='today';
+let BANKROLL=parseFloat(localStorage.getItem('bankroll'))||0;
 
 const DEFAULT_LEARNED_RULES=`1. Max 8 graded picks per slate. Pick #9 goes to leans.
 2. Max 4 MEDIUM-confidence picks. Demote weakest to leans if exceeded.
@@ -948,6 +960,8 @@ const DEFAULT_LEARNED_RULES=`1. Max 8 graded picks per slate. Pick #9 goes to le
 10. Shootout/OT losses are variance, not process errors. Do not over-correct after bad beats.`;
 
 function showPicksSetup(){$('claudeModal').style.display='flex';$('claudeKeyInput').focus()}
+function showBankroll(){$('bankrollModal').style.display='flex';$('bankrollInput').value=BANKROLL||'';$('bankrollInput').focus()}
+function saveBankroll(){const v=parseFloat($('bankrollInput').value)||0;BANKROLL=v;localStorage.setItem('bankroll',v);$('bankrollModal').style.display='none';const btn=$('bankrollBtn');if(btn)btn.textContent=v>0?'$'+v.toLocaleString():'BANKROLL';if(selIdx>=0)selGame(selIdx)}
 function connectClaude(){const k=$('claudeKeyInput').value.trim();if(!k)return;CLAUDE_KEY=k;localStorage.setItem('et_claude_key',k);$('claudeModal').style.display='none';$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY';if(cView==='picks')renderPicksOverview()}
 
 function switchToPicksView(){
@@ -1032,7 +1046,12 @@ function renderPicksOverview(){
     const gradable=todayPicksData.grading.filter(g=>g.result&&g.result!=='?');
     if(gradable.length){
       h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>YESTERDAY GRADED</div>`;
-      todayPicksData.grading.forEach(g=>{h+=`<div class="grade-row"><span class="pib pib-${g.result||'Q'}" style="flex-shrink:0">${g.result||'?'}</span><span class="grade-pick">${g.pick}</span><span class="grade-note">${g.note||''}</span></div>`});
+      todayPicksData.grading.forEach(gr=>{h+=`<div class="grade-row"><span class="pib pib-${gr.result||'Q'}" style="flex-shrink:0">${gr.result||'?'}</span><span class="grade-pick">${gr.pick}</span><span class="grade-note">${gr.note||''}</span></div>`;
+        const clvKey=`${gr.matchup||gr.pick}|${gr.pick}`;const clvData=JSON.parse(localStorage.getItem('et_clv_lines')||'{}')[clvKey];
+        const clvGm=gr.sport&&allG.find(gm=>{const mu=(gr.matchup||gr.pick||'').toLowerCase();const an=gm.aw.nm.toLowerCase().split(' ').pop(),hn=gm.hm.nm.toLowerCase().split(' ').pop();return mu.includes(an)||mu.includes(hn)});
+        const clvSp=clvGm?.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='spreads')?.outcomes?.find(o=>o.point<0)?.point;
+        if(clvData?.sp!=null&&clvSp!=null){const clv=parseFloat((clvData.sp-clvSp).toFixed(1));if(clv!==0){const clvClr=clv>0?'var(--grn)':'var(--red)';h+=`<div class="tx4" style="margin-left:28px;margin-bottom:4px">CLV: ${clv>0?'+':''}${clv}pt ${clv>0?'✓ beat close':'✗ missed close'}</div>`}}
+      });
       h+='</div>';
     }
   }
@@ -1092,7 +1111,7 @@ function buildGamesContext(){
     ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}\n`;
     if(g.aw.rec||g.hm.rec)ctx+=`  Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
     if(g.aw.rank||g.hm.rank)ctx+=`  Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:'?'} vs ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:'?'}\n`;
-    if(g.cat==='tennis'){const surf=getSurface(g.ven);if(g.round||g.tnName)ctx+=`  Tournament: ${g.tnName||''}${g.round?' — '+g.round:''}\n`;if(g.aw.seed||g.hm.seed)ctx+=`  Seeds: ${g.aw.nm}${g.aw.seed?' ['+g.aw.seed+']':''} vs ${g.hm.nm}${g.hm.seed?' ['+g.hm.seed+']':''}\n`;ctx+=`  Surface: ${surf} — ${surf==='clay'?'clay specialist/heavy topspin players have structural edge':surf==='grass'?'serve dominance elevated, LH advantage in deuce court':surf==='indoor'?'fast conditions, serve hold rates elevated':'balanced hard court'}\n`}
+    if(g.cat==='tennis'){const surf=getSurface(g.ven);if(g.round||g.tnName)ctx+=`  Tournament: ${g.tnName||''}${g.round?' — '+g.round:''}\n`;if(g.aw.seed||g.hm.seed)ctx+=`  Seeds: ${g.aw.nm}${g.aw.seed?' ['+g.aw.seed+']':''} vs ${g.hm.nm}${g.hm.seed?' ['+g.hm.seed+']':''}\n`;ctx+=`  Surface: ${surf} — ${surf==='clay'?'clay specialist/heavy topspin players have structural edge':surf==='grass'?'serve dominance elevated, LH advantage in deuce court':surf==='indoor'?'fast conditions, serve hold rates elevated':'balanced hard court'}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!fm.length)return;const w=fm.filter(m=>m.W).length;const last=fm[0];ctx+=`  ${pl.nm} L5: ${w}-${fm.length-w} (last: ${last.W?'W':'L'} vs ${last.opp}${last.round?', '+last.round:''}${last.tn?', '+last.tn:''})\n`})}
     if(g.odds?.bookmakers?.length){const bk=g.odds.bookmakers[0];
       const ml=bk.markets.find(m=>m.key==='h2h'),sp=bk.markets.find(m=>m.key==='spreads'),to=bk.markets.find(m=>m.key==='totals');
       if(ml)ctx+=`  ML: ${ml.outcomes.map(o=>o.name+' '+(o.price>0?'+':'')+o.price).join(' | ')}\n`;
@@ -1229,6 +1248,8 @@ async function generatePicks(){
     todayPicksData=result;
     localStorage.setItem('et_picks_today',JSON.stringify(result));
     localStorage.setItem('et_picks_date',new Date().toDateString());
+    // Store line at pick time for CLV tracking
+    {const clvLines={};(result.picks||[]).forEach(p=>{const gm=allG.find(gm=>{const mu=(p.matchup||'').toLowerCase();const an=gm.aw.nm.toLowerCase().split(' ').pop(),hn=gm.hm.nm.toLowerCase().split(' ').pop();return mu.includes(an)||mu.includes(hn)});if(!gm?.odds?.bookmakers?.length)return;const bk=gm.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const ml=bk.markets.find(m=>m.key==='h2h');const to=bk.markets.find(m=>m.key==='totals');clvLines[`${p.matchup}|${p.pick}`]={sp:sp?.outcomes?.find(o=>o.point<0)?.point??null,to:to?.outcomes?.find(o=>o.name==='Over')?.point??null,ml:ml?.outcomes?.map(o=>o.price)||[],ts:Date.now(),gid:gm.id}});localStorage.setItem('et_clv_lines',JSON.stringify(clvLines))}
     if(result.learned_rules_update)localStorage.setItem('et_learned_rules',result.learned_rules_update);
     if(result.grading?.length)updateCumulativeRecord(result.grading,result.picks);
     saveTodayToHistory();
@@ -1237,6 +1258,41 @@ async function generatePicks(){
     isGenerating=false;return;
   }
   isGenerating=false;renderPicksLeaderboard();renderPicksOverview();
+}
+
+async function aiAnalyzeGame(idx){
+  const g=fG[idx];if(!g||!CLAUDE_KEY)return;
+  const btn=$('aiAnalyzeBtn');if(btn){btn.disabled=true;btn.textContent='ANALYZING...'}
+  let ctx=`Analyze this specific matchup for betting value:\n\n`;
+  ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm}\n`;
+  if(g.aw.rec||g.hm.rec)ctx+=`Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
+  if(g.aw.rank||g.hm.rank)ctx+=`Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:''} ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:''}\n`;
+  if(g.cat==='tennis'){const surf=getSurface(g.ven);ctx+=`Surface: ${surf}\n`;if(g.round)ctx+=`Round: ${g.round}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+' vs '+m.opp+(m.round?' ('+m.round+')':'')).join(', ')}\n`}})}
+  if(g.odds?.bookmakers?.length){const bk=g.odds.bookmakers[0];const ml=bk.markets.find(m=>m.key==='h2h'),sp=bk.markets.find(m=>m.key==='spreads'),to=bk.markets.find(m=>m.key==='totals');if(ml)ctx+=`ML: ${ml.outcomes.map(o=>o.name+' '+fp(o.price)).join(' / ')}\n`;if(sp)ctx+=`Spread: ${sp.outcomes.map(o=>o.name+' '+fp(o.point)+' ('+fp(o.price)+')').join(' / ')}\n`;if(to)ctx+=`Total: O/U ${to.outcomes.find(o=>o.name==='Over')?.point}\n`}
+  const ge=allE.filter(e=>e.g.id===g.id);if(ge.length)ctx+=`Book edges: ${ge.map(e=>e.ml+' '+e.side+' '+e.ep.toFixed(1)+'% @ '+e.bb).join(', ')}\n`;
+  if(g.lineMove){if(g.lineMove.spMv)ctx+=`Line moved: spread ${g.lineMove.spMv>0?'+':''}${g.lineMove.spMv} since last scan\n`}
+  const rules=localStorage.getItem('et_learned_rules')||'';
+  const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
+  const bySp=rec.by_sport?.[g.cat];
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:512,
+        system:`You are a sharp sports betting analyst. Give a focused, direct analysis of this specific matchup. Be concise and specific — no generic statements. Cite the actual data points.${rules?'\n\nLEARNED RULES:\n'+rules:''}${bySp?(bySp.w||0)+(bySp.l||0)>0?'\n\nYour record in '+g.cat.toUpperCase()+': '+(bySp.w||0)+'-'+(bySp.l||0):'':''}`,
+        messages:[{role:'user',content:ctx+'\n\nProvide: 1) Best bet and why (2-3 sentences max), 2) Key risk factor, 3) Confidence (HIGH/MEDIUM/LOW) with score 1-10. Be direct.'}]})});
+    if(!resp.ok)throw new Error('API error');
+    const data=await resp.json();
+    const txt=data.content[0].text;
+    const existing=$('aiGameAnalysis');
+    const div=existing||document.createElement('div');
+    div.id='aiGameAnalysis';
+    div.className='sec';
+    div.style.borderLeft='3px solid var(--amb)';
+    div.style.background='var(--bg0)';
+    div.innerHTML=`<div class="sec-title"><div class="ind" style="background:var(--amb)"></div>⚡ AI GAME ANALYSIS <span class="tx4">${new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span></div><div class="sc-bd"><div class="tx2" style="white-space:pre-wrap">${txt}</div></div>`;
+    if(!existing){const panel=$('detailPanel');const firstSec=panel.querySelector('.sec,.picks-section');if(firstSec)panel.insertBefore(div,firstSec);else panel.appendChild(div)}
+  }catch(e){if(btn){btn.textContent='⚡ AI ANALYZE';btn.disabled=false}return}
+  if(btn){btn.textContent='✓ ANALYZED';setTimeout(()=>{if(btn){btn.textContent='⚡ RE-ANALYZE';btn.disabled=false}},2000)}
 }
 
 init();
