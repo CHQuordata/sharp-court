@@ -1643,16 +1643,16 @@ ${bySp?'By Sport: '+bySp:''}
 ## LEARNED RULES (enforce every slate — update when new patterns emerge)
 ${learnedRules}
 
-## SIGNALS
-Team sports: ≥2 of — line move, rest edge, injury edge, ATS trend ≥60%, sharp signal, situational spot.
-Tennis: ≥1 of — surface form, H2H on surface, tournament momentum, fatigue/load, ranking-form divergence.
+## SIGNALS — minimum for a graded pick (is_lean:false)
+All sports: ≥1 clear edge. Any of: favorable odds vs model (EV+), statistical advantage (net rating, ERA gap, GAA gap, PP% edge), rest/fatigue edge, injury edge, line move, sharp signal, park/surface advantage.
+Tennis: surface form, H2H on surface, ranking-form divergence, tournament momentum. ≥1 qualifies.
 Playoffs (NBA/NHL): Series context is primary — series score, elimination games, desperation, home/away splits in THIS series, coaching adjustments game-to-game. Regular season ATS trends are secondary to series momentum. MLB regular season signals apply normally.
 
 ## CRITICAL RULES
 - Max 8 graded picks (is_lean:false). Extras go to leans.
 - Max 4 MEDIUM picks. Demote weakest if exceeded.
 - Never 2+ graded picks on same game.
-- Tennis is highest-ROI — always include when active. Clay parlay every clay tournament.
+- Include tennis when clear edge exists. Clay surface form is a strong signal — prioritize clay picks when data supports it.
 - List every inactive sport explicitly with reason.
 - Grade all yesterday picks. Use "?" only if truly no result found.
 
@@ -1682,11 +1682,34 @@ function buildUserMsg(gamesCtx,yesterdayPicks){
   return msg;
 }
 
+async function prefetchStatsForPicks(){
+  const games=allG.filter(g=>g.st!=='STATUS_FINAL'&&g.isTeam);
+  await Promise.allSettled(games.map(async g=>{
+    try{
+      if(g.cat==='nba'&&g.aw.id&&g.hm.id&&!gameStatsCache.has(g.id)){
+        const [a,h]=await Promise.all([fetchNBATeamStats(g.aw.id),fetchNBATeamStats(g.hm.id)]);
+        const awSt=extractNBAStats(a),hmSt=extractNBAStats(h);
+        if(awSt||hmSt)gameStatsCache.set(g.id,{awSt,hmSt,cat:'nba'});
+      }
+      if(g.cat==='nhl'&&g.aw.id&&g.hm.id&&!gameStatsCache.has(g.id)){
+        const [a,h]=await Promise.all([fetchNHLTeamStats(g.aw.id),fetchNHLTeamStats(g.hm.id)]);
+        const awSt=extractNHLStats(a),hmSt=extractNHLStats(h);
+        if(awSt||hmSt)gameStatsCache.set(g.id,{awSt,hmSt,cat:'nhl'});
+      }
+      if(g.cat==='mlb'&&!gamePitcherCache.has(g.id)){
+        const sm=await fetchGameSummary('mlb',g.id);
+        if(sm){const p=extractPitchers(sm);if(p)gamePitcherCache.set(g.id,p)}
+      }
+    }catch(e){}
+  }));
+}
+
 async function generatePicks(){
   if(!CLAUDE_KEY){showPicksSetup();return}
   if(isGenerating)return;
   isGenerating=true;renderPicksOverview();
   try{
+    await prefetchStatsForPicks();
     const gamesCtx=buildGamesContext();
     const yPicks=getYesterdayPicks();
     const rules=localStorage.getItem('et_learned_rules')||DEFAULT_LEARNED_RULES;
