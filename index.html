@@ -409,7 +409,7 @@ const PROP_BOOKS='fanduel,draftkings,betmgm,pointsbet';
 let _tennisKeys=null,_tennisKeysTs=0;
 let TN_API_KEY=localStorage.getItem('tn_api_key')||'';
 const _tnFixCache=new Map(),tnPlayerCache=new Map(),tnGameCache=new Map();
-const gameStatsCache=new Map(),gamePitcherCache=new Map(),tennisCache=new Map();
+const gameStatsCache=new Map(),gamePitcherCache=new Map(),tennisCache=new Map(),gameFormCache=new Map();
 const E={
   nba:{s:'basketball',l:'nba',lb:'NBA',ic:'\u{1F3C0}',ok:'basketball_nba',ha:3,cat:'nba',isTeam:true},
   nhl:{s:'hockey',l:'nhl',lb:'NHL',ic:'\u{1F3D2}',ok:'icehockey_nhl',ha:.3,cat:'nhl',isTeam:true},
@@ -785,6 +785,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   if(_awnh)awNhl=extractNHLStats(_awnh);
   if(_hmnh)hmNhl=extractNHLStats(_hmnh);
   if(pitchers)gamePitcherCache.set(g.id,pitchers);
+  if(af.length||hf.length)gameFormCache.set(g.id,{af,hf});
   if(awNba||hmNba)gameStatsCache.set(g.id,{awSt:awNba,hmSt:hmNba,cat:'nba'});
   if(awNhl||hmNhl)gameStatsCache.set(g.id,{awSt:awNhl,hmSt:hmNhl,cat:'nhl'});
   if(_tns)tnSum=_tns;
@@ -1534,7 +1535,12 @@ const DEFAULT_LEARNED_RULES=`1. Max 8 graded picks per slate. Pick #9 goes to le
 8. Tennis only when bettable on a major US book (FanDuel/DraftKings/BetMGM). No picks OR leans on unbettable matches. analyst_note must be 1-2 sentences max — no system alerts or grading complaints.
 9. NBA/NHL/MLB picks do not require live odds — use stats, form, and situational edges from context.
 10. NHL motivation plays are high-signal. Desperate playoff teams vs eliminated opponents.
-11. Shootout/OT losses are variance, not process errors. Do not over-correct after bad beats.`;
+11. Shootout/OT losses are variance, not process errors. Do not over-correct after bad beats.
+12. NBA FATIGUE: BACK-TO-BACK teams cover at ~44% ATS and undershoots total by avg 4.5 pts. Lean under and fade them against rested opponents. 3-IN-4 NIGHTS is even stronger — treat as major fade signal.
+13. NBA PLAYOFFS: ignore regular season ATS trends entirely. Focus on: series score/momentum, home-court patterns in THIS series, coaching adjustments, desperation factor (must-win Game X). Spread is secondary to series context.
+14. TENNIS SERVE EDGE: when BP save% ≥65% vs opponent ≤55%, the stronger server holds with high frequency — lean on that player ML. First serve % in (≥68%) + first serve won% (≥78%) on surface is elite tier.
+15. TENNIS SURFACE FORM: 2025 surface W-L% from live data (matchstat.com) outweighs ATP ranking when divergence is ≥15%. A #40 with 85% clay win rate beats a #12 with 55% clay record.
+16. NHL SPECIAL TEAMS: PP% gap ≥5 points is a genuine edge for puck line. PK% ≥82% AND opponent PP% ≥22% = team likely wins special teams battle. Weight this heavily in close line matchups.`;
 
 function resetLearnedRules(){localStorage.removeItem('et_learned_rules');renderPicksOverview()}
 function showPicksSetup(){$('claudeModal').style.display='flex';$('claudeKeyInput').focus()}
@@ -1723,8 +1729,17 @@ function buildGamesContext(){
     if(hmI.length)ctx+=`  ${g.hm.nm} INJ: ${hmI.map(i=>i.nm+' ('+i.sc+')').join(', ')}\n`;
     // Cached team stats
     const cached=gameStatsCache.get(g.id);
-    if(cached?.cat==='nba'){const{awSt,hmSt}=cached;if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} PPG ${awSt?.ppg||'?'} FG% ${awSt?.fgPct||'?'} | ${g.hm.nm} PPG ${hmSt?.ppg||'?'} FG% ${hmSt?.fgPct||'?'}\n`}
-    if(cached?.cat==='nhl'){const{awSt,hmSt}=cached;if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} GF/G ${awSt?.gpg||'?'} GAA ${awSt?.gaa||'?'} PP% ${awSt?.ppPct||'?'} PK% ${awSt?.pkPct||'?'} SV% ${awSt?.savePct||'?'} | ${g.hm.nm} GF/G ${hmSt?.gpg||'?'} GAA ${hmSt?.gaa||'?'} PP% ${hmSt?.ppPct||'?'} PK% ${hmSt?.pkPct||'?'} SV% ${hmSt?.savePct||'?'}\n`}
+    const cachedForm=gameFormCache.get(g.id);
+    if(cached?.cat==='nba'){const{awSt,hmSt}=cached;
+      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} PPG ${awSt?.ppg||'?'} FG% ${awSt?.fgPct||'?'} 3P% ${awSt?.tpPct||'?'} TO/G ${awSt?.toPg||'?'} | ${g.hm.nm} PPG ${hmSt?.ppg||'?'} FG% ${hmSt?.fgPct||'?'} 3P% ${hmSt?.tpPct||'?'} TO/G ${hmSt?.toPg||'?'}\n`;
+      if(cachedForm){const{af,hf}=cachedForm;const awB2b=isB2B(af,g.tm),hmB2b=isB2B(hf,g.tm),awF3=is3in4(af,g.tm),hmF3=is3in4(hf,g.tm);
+        const fat=[];if(awF3)fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmF3)fat.push(`${g.hm.nm} 3-IN-4 NIGHTS`);else if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
+        if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')} — significant impact on totals and spread\n`;}}
+    if(cached?.cat==='nhl'){const{awSt,hmSt}=cached;
+      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} GF/G ${awSt?.gpg||'?'} GAA ${awSt?.gaa||'?'} PP% ${awSt?.ppPct||'?'} PK% ${awSt?.pkPct||'?'} SH% ${awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${hmSt?.gpg||'?'} GAA ${hmSt?.gaa||'?'} PP% ${hmSt?.ppPct||'?'} PK% ${hmSt?.pkPct||'?'} SH% ${hmSt?.shootPct||'?'}\n`;
+      if(cachedForm){const{af,hf}=cachedForm;const awB2b=isB2B(af,g.tm),hmB2b=isB2B(hf,g.tm);
+        const fat=[];if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
+        if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')}\n`;}}
     const pitchers=gamePitcherCache.get(g.id);
     if(pitchers){const ap=pitchers.away,hp=pitchers.home;if(ap||hp)ctx+=`  SP: ${ap?g.aw.nm+' — '+ap.name+' '+ap.era+' ERA '+ap.k9+' K/9':'TBD'} | ${hp?g.hm.nm+' — '+hp.name+' '+hp.era+' ERA '+hp.k9+' K/9':'TBD'}\n`}
     ctx+='\n';
@@ -1747,7 +1762,14 @@ function updateCumulativeRecord(grading,picks){
   grading.forEach(g=>{
     if(!['W','L','P'].includes(g.result))return;
     const k=g.result.toLowerCase();rec.overall[k]=(rec.overall[k]||0)+1;
-    const mp=picks?.find(p=>p.pick===g.pick||(p.matchup&&g.pick?.includes(p.matchup.split(' vs ')[0]?.split(' ').pop()||'')));
+    // Match by: exact pick text → matchup overlap → sport+name token
+    const mp=picks?.find(p=>{
+      if(p.pick===g.pick)return true;
+      if(p.matchup&&g.matchup&&p.matchup.toLowerCase()===g.matchup.toLowerCase())return true;
+      if(p.sport&&g.sport&&p.sport!==g.sport)return false;
+      const toks=(p.matchup||'').toLowerCase().split(/[\s@,|]+/).filter(w=>w.length>=3);
+      return toks.length&&toks.every(t=>(g.pick||'').toLowerCase().includes(t)||(g.matchup||'').toLowerCase().includes(t));
+    });
     if(mp){const sp=mp.sport||'unknown',cf=mp.confidence||'MEDIUM';
       if(!rec.by_sport[sp])rec.by_sport[sp]={w:0,l:0,p:0};
       if(!rec.by_confidence[cf])rec.by_confidence[cf]={w:0,l:0,p:0};
@@ -1836,6 +1858,12 @@ async function prefetchStatsForPicks(){
   const games=allG.filter(g=>g.st!=='STATUS_FINAL'&&g.isTeam);
   const _fetch=async g=>{
     try{
+      if((g.cat==='nba'||g.cat==='nhl')&&g.aw.id&&g.hm.id&&!gameFormCache.has(g.id)){
+        const c2=E[g.sp],szn=sportSeason(g.cat);
+        if(c2){const [awFr,hmFr]=await Promise.all([espnSched(c2.s,c2.l,g.aw.id,szn),espnSched(c2.s,c2.l,g.hm.id,szn)]);
+          const af2=xForm(awFr,g.aw.id),hf2=xForm(hmFr,g.hm.id);
+          if(af2.length||hf2.length)gameFormCache.set(g.id,{af:af2,hf:hf2});}
+      }
       if(g.cat==='nba'&&g.aw.id&&g.hm.id&&!gameStatsCache.has(g.id)){
         const [a,h]=await Promise.all([fetchNBATeamStats(g.aw.id),fetchNBATeamStats(g.hm.id)]);
         const awSt=extractNBAStats(a),hmSt=extractNBAStats(h);
@@ -1881,6 +1909,11 @@ async function generatePicks(){
     if(!m)throw new Error('No JSON in response');
     const cleaned=m[1].replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
     let result;try{result=JSON.parse(cleaned)}catch(pe){const snip=cleaned.slice(Math.max(0,pe.message.match(/position (\d+)/)?.[1]-50|0),+(pe.message.match(/position (\d+)/)?.[1]||0)+80);throw new Error(`JSON: ${pe.message} — near: ...${snip}...`)}
+    // Enforce: picks on NO US BOOK ODDS tennis/MMA games get demoted to leans
+    if(result.picks){
+      const _unbettable=new Set(allG.filter(g=>!hasUsBookOdds(g)&&(g.cat==='tennis'||g.cat==='mma')).flatMap(g=>[g.aw.nm.split(' ').pop().toLowerCase(),g.hm.nm.split(' ').pop().toLowerCase()]));
+      const demoted=[];result.picks=result.picks.filter(p=>{if(!p.is_lean&&(p.sport==='tennis'||p.sport==='mma')){const mu=(p.matchup||'').toLowerCase();const bad=_unbettable.size&&[...mu.split(/[\s@,|]+/)].some(t=>t.length>=3&&_unbettable.has(t));if(bad){p.is_lean=true;p.lean=p.pick+' — '+p.reasoning?.slice(0,120);p.trigger='Odds appear on FanDuel/DraftKings';demoted.push(p);return false}}return true});result.leans=[...(result.leans||[]),...demoted];
+    }
     todayPicksData=result;
     localStorage.setItem('et_picks_today',JSON.stringify(result));
     localStorage.setItem('et_picks_date',new Date().toDateString());
@@ -1912,6 +1945,14 @@ async function aiAnalyzeGame(idx){
   if(g.aw.rec||g.hm.rec)ctx+=`Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
   if(g.aw.rank||g.hm.rank)ctx+=`Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:''} ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:''}\n`;
   if(g.cat==='tennis'){const surf=getSurface(g.ven);ctx+=`Surface: ${surf}\n`;if(g.round)ctx+=`Round: ${g.round}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+' vs '+m.opp+(m.round?' ('+m.round+')':'')).join(', ')}\n`}})}
+  // Team stats + fatigue
+  const _cs=gameStatsCache.get(g.id);const _cf=gameFormCache.get(g.id);
+  if(_cs?.cat==='nba'&&(_cs.awSt||_cs.hmSt)){ctx+=`Team stats: ${g.aw.nm} PPG ${_cs.awSt?.ppg||'?'} FG% ${_cs.awSt?.fgPct||'?'} TO/G ${_cs.awSt?.toPg||'?'} | ${g.hm.nm} PPG ${_cs.hmSt?.ppg||'?'} FG% ${_cs.hmSt?.fgPct||'?'} TO/G ${_cs.hmSt?.toPg||'?'}\n`}
+  if(_cs?.cat==='nhl'&&(_cs.awSt||_cs.hmSt)){ctx+=`Team stats: ${g.aw.nm} GF/G ${_cs.awSt?.gpg||'?'} PP% ${_cs.awSt?.ppPct||'?'} PK% ${_cs.awSt?.pkPct||'?'} SH% ${_cs.awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${_cs.hmSt?.gpg||'?'} PP% ${_cs.hmSt?.ppPct||'?'} PK% ${_cs.hmSt?.pkPct||'?'} SH% ${_cs.hmSt?.shootPct||'?'}\n`}
+  if(_cf&&(g.cat==='nba'||g.cat==='nhl')){const{af,hf}=_cf;const fat=[];
+    if(is3in4(af,g.tm))fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(isB2B(af,g.tm))fat.push(`${g.aw.nm} BACK-TO-BACK`);
+    if(is3in4(hf,g.tm))fat.push(`${g.hm.nm} 3-IN-4 NIGHTS`);else if(isB2B(hf,g.tm))fat.push(`${g.hm.nm} BACK-TO-BACK`);
+    if(fat.length)ctx+=`⚠️ FATIGUE: ${fat.join(' | ')}\n`;}
   if(g.odds?.bookmakers?.length){const bk=g.odds.bookmakers[0];const ml=bk.markets.find(m=>m.key==='h2h'),sp=bk.markets.find(m=>m.key==='spreads'),to=bk.markets.find(m=>m.key==='totals');if(ml)ctx+=`ML: ${ml.outcomes.map(o=>o.name+' '+fp(o.price)).join(' / ')}\n`;if(sp)ctx+=`Spread: ${sp.outcomes.map(o=>o.name+' '+fp(o.point)+' ('+fp(o.price)+')').join(' / ')}\n`;if(to)ctx+=`Total: O/U ${to.outcomes.find(o=>o.name==='Over')?.point}\n`}
   const ge=allE.filter(e=>e.g.id===g.id);if(ge.length)ctx+=`Book edges: ${ge.map(e=>e.ml+' '+e.side+' '+e.ep.toFixed(1)+'% @ '+e.bb).join(', ')}\n`;
   if(g.lineMove){if(g.lineMove.spMv)ctx+=`Line moved: spread ${g.lineMove.spMv>0?'+':''}${g.lineMove.spMv} since last scan\n`}
