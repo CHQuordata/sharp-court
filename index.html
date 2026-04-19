@@ -1399,10 +1399,12 @@ const DEFAULT_LEARNED_RULES=`1. Max 8 graded picks per slate. Pick #9 goes to le
 5. MLB SP edge alone is not enough. Require offensive or bullpen advantage on top.
 6. H2H records are supporting factors, never primary edges. Rosters turn over.
 7. Contextualize tennis W-L records — check opposition quality, surface splits, and trajectory.
-8. Tennis is the #1 sport — be aggressive. Clay plays are the single best edge in the portfolio.
-9. NHL motivation plays are high-signal. Desperate playoff teams vs eliminated opponents.
-10. Shootout/OT losses are variance, not process errors. Do not over-correct after bad beats.`;
+8. Tennis only when bettable on a major US book (FanDuel/DraftKings/BetMGM). No picks on unbettable matches.
+9. NBA/NHL/MLB picks do not require live odds — use stats, form, and situational edges from context.
+10. NHL motivation plays are high-signal. Desperate playoff teams vs eliminated opponents.
+11. Shootout/OT losses are variance, not process errors. Do not over-correct after bad beats.`;
 
+function resetLearnedRules(){localStorage.removeItem('et_learned_rules');renderPicksOverview()}
 function showPicksSetup(){$('claudeModal').style.display='flex';$('claudeKeyInput').focus()}
 function showBankroll(){$('bankrollModal').style.display='flex';$('bankrollInput').value=BANKROLL||'';$('bankrollInput').focus()}
 function saveBankroll(){const v=parseFloat($('bankrollInput').value)||0;BANKROLL=v;localStorage.setItem('bankroll',v);$('bankrollModal').style.display='none';const btn=$('bankrollBtn');if(btn)btn.textContent=v>0?'$'+v.toLocaleString():'BANKROLL';if(selIdx>=0)selGame(selIdx)}
@@ -1516,7 +1518,7 @@ function renderPicksOverview(){
   h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--grn)"></div>LEARNED RULES (${rules.length})</div>`;
   rules.forEach((r,i)=>{h+=`<div class="rule-item"><span class="rule-num">${i+1}.</span>${r.replace(/^\d+\.\s*/,'')}</div>`});
   h+='</div>';
-  h+=`<div style="padding:12px 16px"><button class="gen-btn${isGenerating?' pulse':''}" onclick="generatePicks()" ${isGenerating?'disabled':''}>${isGenerating?'ANALYZING...':'↻ REGENERATE PICKS'}</button></div>`;
+  h+=`<div style="padding:12px 16px;display:flex;gap:8px"><button class="gen-btn${isGenerating?' pulse':''}" onclick="generatePicks()" ${isGenerating?'disabled':''}>${isGenerating?'ANALYZING...':'↻ REGENERATE PICKS'}</button><button onclick="resetLearnedRules()" style="padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--t3);background:var(--bg2);border:1px solid var(--bdr);border-radius:4px;cursor:pointer" title="Reset to default rules">RESET RULES</button></div>`;
   el.innerHTML=h;el.scrollTop=0;
 }
 
@@ -1554,7 +1556,10 @@ function buildGamesContext(){
     const t=g.st==='STATUS_IN_PROGRESS'?`LIVE ${g.stD}`:g.st==='STATUS_FINAL'?`FINAL${g.aw.sc!=null?' '+g.aw.sc+'-'+g.hm.sc:''}`:g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     const playoffTag=g.playoff?` [PLAYOFFS${g.serSum?' — '+g.serSum:''}]`:'';
     const hasUsOdds=g.odds?.bookmakers?.length>0;
-    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${!hasUsOdds?' [NO US BOOK ODDS — DO NOT PICK]':''}\n`;
+    // Only block on missing odds for tennis/MMA — US books may not carry these markets
+    // For NBA/NHL/MLB/NFL missing odds just means the feed hasn't loaded, stats are still pickable
+    const noOddsBlock=!hasUsOdds&&(g.cat==='tennis'||g.cat==='mma');
+    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}\n`;
     if(g.aw.rec||g.hm.rec)ctx+=`  Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
     if(g.aw.rank||g.hm.rank)ctx+=`  Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:'?'} vs ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:'?'}\n`;
     if(g.cat==='tennis'){const surf=getSurface(g.ven);if(g.round||g.tnName)ctx+=`  Tournament: ${g.tnName||''}${g.round?' — '+g.round:''}\n`;if(g.aw.seed||g.hm.seed)ctx+=`  Seeds: ${g.aw.nm}${g.aw.seed?' ['+g.aw.seed+']':''} vs ${g.hm.nm}${g.hm.seed?' ['+g.hm.seed+']':''}\n`;ctx+=`  Surface: ${surf} — ${surf==='clay'?'clay specialist/heavy topspin players have structural edge':surf==='grass'?'serve dominance elevated, LH advantage in deuce court':surf==='indoor'?'fast conditions, serve hold rates elevated':'balanced hard court'}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!fm.length)return;const w=fm.filter(m=>m.W).length;const last=fm[0];ctx+=`  ${pl.nm} L5: ${w}-${fm.length-w} (last: ${last.W?'W':'L'} vs ${last.opp}${last.round?', '+last.round:''}${last.tn?', '+last.tn:''})\n`});const tc=tennisCache.get(g.id);if(tc){const sk2=surf==='clay'?'clay':surf==='grass'?'grass':'hard';if(tc.total>0)ctx+=`  H2H: ${g.aw.nm.split(' ').pop()} ${tc.awW}-${tc.hmW} (${tc.total} meetings since 2021)\n`;const awSv=tc.awServe?.[sk2],hmSv=tc.hmServe?.[sk2];if(awSv?.m>=3||hmSv?.m>=3)ctx+=`  Serve stats (${surf} 2023-24): ${g.aw.nm.split(' ').pop()} 1stIn=${awSv?.first_pct||'N/A'}% 1stWon=${awSv?.first_won_pct||'N/A'}% BPsave=${awSv?.bp_save_pct||'N/A'}% | ${g.hm.nm.split(' ').pop()} 1stIn=${hmSv?.first_pct||'N/A'}% 1stWon=${hmSv?.first_won_pct||'N/A'}% BPsave=${hmSv?.bp_save_pct||'N/A'}%\n`}const tng=tnGameCache.get(g.id);if(tng){const svK=surf==='clay'?'clay':surf==='grass'?'grass':'hard';const getTNCtx=(d,nm)=>{if(!d)return null;const sfArr=Array.isArray(d.surface)?d.surface:[];const sfR=sfArr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return svK==='clay'?sn.includes('clay'):svK==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};let out=nm+':';if(sfR){const w=parseInt(sfR.wins??sfR.win??sfR.w??0)||0,l=parseInt(sfR.losses??sfR.loss??sfR.l??0)||0;if(w+l>0)out+=` 2025-${surf}=${w}-${l}(${Math.round(w/(w+l)*100)}%)`}const bp1=parseInt(st.breakPointSavedGm||0),bp2=parseInt(st.breakPointFacedGm||0);if(bp2>0)out+=` BPsave=${Math.round(bp1/bp2*100)}%`;const f1=parseInt(st.firstServeGm||0),f1of=parseInt(st.firstServeOfGm||0);if(f1of>0)out+=` 1stIn=${Math.round(f1/f1of*100)}%`;const fw=parseInt(st.winningOnFirstServeGm||0),fwof=parseInt(st.winningOnFirstServeOfGm||0);if(fwof>0)out+=` 1stWon=${Math.round(fw/fwof*100)}%`;return out};const awCtx=getTNCtx(tng.awData,g.aw.nm.split(' ').pop()),hmCtx=getTNCtx(tng.hmData,g.hm.nm.split(' ').pop());if(awCtx||hmCtx)ctx+=`  Live stats (matchstat.com): ${[awCtx,hmCtx].filter(Boolean).join(' | ')}\n`}}
@@ -1658,8 +1663,9 @@ Playoffs (NBA/NHL): Series context is primary — series score, elimination game
 - Max 8 graded picks (is_lean:false). Extras go to leans.
 - Max 4 MEDIUM picks. Demote weakest if exceeded.
 - Never 2+ graded picks on same game.
-- NEVER make a graded pick (is_lean:false) on any game tagged [NO US BOOK ODDS — DO NOT PICK]. These are unbettable on US sportsbooks — put in leans only with a trigger of "line appears on US book".
-- Include tennis only when US book odds are present. Clay surface form is a strong signal when bettable.
+- NEVER make a graded pick on any game tagged [NO US BOOK ODDS — DO NOT PICK]. These are tennis/MMA matches not carried by US books — leans only, trigger "line appears on US book".
+- Games tagged [ODDS LOADING — USE STATS] are NBA/NHL/MLB with odds not yet fetched — pick freely using stats, form, and situational context.
+- Include tennis only when NOT tagged [NO US BOOK ODDS — DO NOT PICK].
 - Every pick and lean MUST have "sport" set to the exact category (nba/nhl/mlb/nfl/tennis/mma) and "matchup" must contain BOTH team/player last names exactly as shown in the slate so picks map to the correct game.
 - List every inactive sport explicitly with reason.
 - Grade all yesterday picks. Use "?" only if truly no result found.
