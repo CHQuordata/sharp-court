@@ -137,6 +137,16 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .surf-badge.hard{color:var(--blu);background:rgba(68,138,255,.12)}
 .surf-badge.indoor{color:var(--t2);background:var(--bg3)}
 .b2b-badge{display:inline-block;padding:1px 5px;font-size:8px;font-weight:700;color:var(--red);background:rgba(255,71,87,.12);border-radius:2px;letter-spacing:.5px;margin-left:5px}
+/* ── Utility ── */
+.sc-bd{padding:8px 16px 12px}.sc-bd-sm{padding:6px 16px 10px}
+.tx4{font-size:10px;color:var(--t4)}.tx3{font-size:10px;color:var(--t3)}.tx2{font-size:12px;color:var(--t2);line-height:1.65}
+.ft{font-size:9px;background:var(--bg2);color:var(--cyn);padding:2px 6px;border-radius:3px;letter-spacing:.4px}
+.ftags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.row-sep{border-top:1px solid rgba(42,42,62,.3);margin-top:6px;padding-top:6px}
+/* ── Visual polish ── */
+.pick-reasoning{font-size:11px;color:var(--t2);line-height:1.7}
+.det-header{padding:16px;border-bottom:1px solid var(--bdr);background:var(--bg2);border-top:2px solid var(--bdr)}
+.sec-title{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--t4);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 </style>
 </head>
 <body>
@@ -400,12 +410,12 @@ function renderMetrics(pk){
   let h='<div class="pick-metrics">';
   if(pk.evData){h+=`<div class="pm"><div class="pm-lbl">EV</div><div class="pm-val ${pk.evData.ev>=0?'pos':'neg'}">${pk.evData.ev>=0?'+':''}${pk.evData.ev}%</div><div class="pm-sub">Best: ${pk.evData.bk}</div></div>`}
   else{h+=`<div class="pm"><div class="pm-lbl">EV</div><div class="pm-val neu">N/A</div><div class="pm-sub">Need odds</div></div>`}
-  h+=`<div class="pm"><div class="pm-lbl">LINE RANGE</div><div class="pm-val neu" style="font-size:10px">${pk.lineRange||'N/A'}</div></div>`;
+  h+=`<div class="pm"><div class="pm-lbl">LINE RANGE</div><div class="pm-val neu tx3">${pk.lineRange||'N/A'}</div></div>`;
   h+=`<div class="pm"><div class="pm-lbl">SHARP</div><div class="sharp-bars">${pk.sharp?.bars||Array(5).fill('<div class="sb"></div>').join('')}</div><div class="pm-sub">${pk.sharp?.n||'No data'}</div></div>`;
   h+='</div>';
   const k=kellyPct(pk.conf,pk.pick);
   if(k>0){const qk=(k/4).toFixed(1),fk=k.toFixed(1);const kc=k>=8?'var(--grn)':k>=3?'var(--amb)':'var(--t3)';
-    h+=`<div class="kelly-row"><div class="kel"><div class="kel-v" style="color:${kc}">${fk}%</div><div class="kel-l">Full Kelly</div></div><div class="kel"><div class="kel-v" style="color:${kc}">${qk}%</div><div class="kel-l">¼ Kelly (rec)</div></div><div style="font-size:9px;color:var(--t4);align-self:center">of bankroll</div></div>`}
+    h+=`<div class="kelly-row"><div class="kel"><div class="kel-v" style="color:${kc}">${fk}%</div><div class="kel-l">Full Kelly</div></div><div class="kel"><div class="kel-v" style="color:${kc}">${qk}%</div><div class="kel-l">¼ Kelly (rec)</div></div><div class="tx4" style="align-self:center">of bankroll</div></div>`}
   return h;
 }
 
@@ -502,14 +512,15 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
    const aiPrs=(todayPicksData?.parlays||[]).filter(par=>par.legs?.some(leg=>leg.toLowerCase().includes(_an)||leg.toLowerCase().includes(_hn)));
    if(aiPk){const cc=aiPk.confidence==='HIGH'?'var(--grn)':aiPk.confidence==='MEDIUM'?'var(--amb)':'var(--t3)';
      const rk=aiPk.rank?` · RANK #${aiPk.rank}`:'';
-     const filH=aiPk.filters?.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">${aiPk.filters.map(f=>`<span style="font-size:9px;background:var(--bg2);color:var(--cyn);padding:2px 6px;border-radius:3px;letter-spacing:.4px">${f.replace(/_/g,' ').toUpperCase()}</span>`).join('')}</div>`:'';
-     const parH=aiPrs.length?`<div style="font-size:10px;color:var(--amb);margin-top:8px">⚡ Parlay: ${aiPrs.map(p=>p.type||(p.legs||[]).join(' + ')).join(' | ')}</div>`:'';
-     const resH=aiPk.result&&aiPk.result!=='?'?`<span style="font-size:10px;font-weight:700;color:${aiPk.result==='W'?'var(--grn)':aiPk.result==='L'?'var(--red)':'var(--t3)'};margin-left:8px">${aiPk.result}</span>`:'';
+     const filH=aiPk.filters?.length?`<div class="ftags">${aiPk.filters.map(f=>`<span class="ft">${f.replace(/_/g,' ').toUpperCase()}</span>`).join('')}</div>`:'';
+     const parH=aiPrs.length?`<div class="tx4 row-sep">⚡ Parlay: ${aiPrs.map(p=>p.type||(p.legs||[]).join(' + ')).join(' | ')}</div>`:'';
+     const resClr=aiPk.result==='W'?'var(--grn)':aiPk.result==='L'?'var(--red)':'var(--t3)';
+     const resH=aiPk.result&&aiPk.result!=='?'?`<span class="pib pib-${aiPk.result}" style="margin-left:8px">${aiPk.result}</span>`:'';
      h+=`<div class="sec" style="border-left:3px solid ${cc};background:var(--bg0)"><div class="sec-title"><div class="ind" style="background:${cc}"></div>⚡ AI PICK${rk} <span style="font-size:9px;font-weight:700;color:${cc};letter-spacing:.5px">${aiPk.confidence}</span>${resH}</div>`;
-     h+=`<div style="padding:8px 16px 12px"><div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:8px">${aiPk.pick}</div><div style="font-size:12px;color:var(--t2);line-height:1.65">${aiPk.reasoning||''}</div>${filH}${parH}</div></div>`;
+     h+=`<div class="sc-bd"><div class="pick-main" style="font-size:15px;margin-bottom:8px">${aiPk.pick}</div><div class="tx2">${aiPk.reasoning||''}</div>${filH}${parH}</div></div>`;
    } else if(aiLn){
      h+=`<div class="sec" style="background:var(--bg0)"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>AI LEAN</div>`;
-     h+=`<div style="padding:6px 16px 10px"><div style="font-size:12px;color:var(--t2);line-height:1.6">${aiLn.lean||''}</div>${aiLn.trigger?`<div style="font-size:10px;color:var(--t4);margin-top:4px">Trigger: ${aiLn.trigger}</div>`:''}</div></div>`;
+     h+=`<div class="sc-bd-sm"><div class="tx2">${aiLn.lean||''}</div>${aiLn.trigger?`<div class="tx4" style="margin-top:4px">Trigger: ${aiLn.trigger}</div>`:''}</div></div>`;
    }
   }
 
@@ -1155,24 +1166,9 @@ ${bySp?'By Sport: '+bySp:''}
 ## LEARNED RULES (enforce every slate — update when new patterns emerge)
 ${learnedRules}
 
-## METHODOLOGY
-Team sports (NBA/NHL/MLB/NFL) — qualify with 2+ signals:
-• Line Movement: ≥0.5pt spread shift or ≥15¢ ML move from opener
-• Rest Edge: back-to-back, 3-in-4 nights, short rest vs long rest
-• Injury Edge: key player out not fully priced in
-• ATS Trend: covering ≥60% in relevant split
-• Sharp Signal: book edge detected in live data, reverse line movement
-• Situational: revenge, letdown, playoff positioning, eliminated team
-
-Tennis (ATP/WTA) — qualify with 1 strong signal:
-• Surface Form: clay specialist vs hard-court player on clay
-• H2H on Surface: head-to-head record on specific surface
-• Tournament Form/Momentum: recent results in current swing
-• Ranking-Form Divergence: ranked much higher/lower than current form
-• Fatigue/Load: deep run last week, back-to-back tournaments
-• Surface Transition R1: round 1 after surface switch = upset spot
-
-MMA: record, recent finishes, opponent quality, reach/style matchup.
+## SIGNALS
+Team sports: ≥2 of — line move, rest edge, injury edge, ATS trend ≥60%, sharp signal, situational spot.
+Tennis: ≥1 of — surface form, H2H on surface, tournament momentum, fatigue/load, ranking-form divergence.
 
 ## CRITICAL RULES
 - Max 8 graded picks (is_lean:false). Extras go to leans.
