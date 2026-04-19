@@ -920,8 +920,17 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
     }
     h+=`</div>`}
   // ── SP Matchup (MLB) ──
-  if(pitchers){const ap=pitchers.away,hp=pitchers.home;h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>SP MATCHUP</div><div class="sp-matchup">`;
-    [['away',ap,g.aw],[' home',hp,g.hm]].forEach(([side,p,tm])=>{if(!p)return;h+=`<div class="sp-card"><div class="sp-nm">${tm.ab}<span class="sp-hand">${p.hand}HP</span><div style="font-size:10px;color:var(--t2);margin-top:2px">${p.name}</div></div><div class="sp-stats"><div class="sp-stat"><div class="sp-sv" style="color:${parseFloat(p.era)<3.5?'var(--grn)':parseFloat(p.era)>4.5?'var(--red)':'var(--cyn)'}">${p.era}</div><div class="sp-sl">ERA</div></div><div class="sp-stat"><div class="sp-sv">${p.whip}</div><div class="sp-sl">WHIP</div></div><div class="sp-stat"><div class="sp-sv">${p.k9}</div><div class="sp-sl">K/9</div></div><div class="sp-stat"><div class="sp-sv" style="color:var(--t3)">${p.w}-${p.l}</div><div class="sp-sl">W-L</div></div></div></div>`});
+  if(pitchers){const ap=pitchers.away,hp=pitchers.home;
+    const _spEdge=ap&&hp?(parseFloat(ap.era)<parseFloat(hp.era)?g.aw:parseFloat(hp.era)<parseFloat(ap.era)?g.hm:null):null;
+    h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>SP MATCHUP${_spEdge?` <span style="font-size:9px;color:var(--grn);font-weight:700;margin-left:6px">EDGE: ${_spEdge.ab}</span>`:''}${getMLBParkFactor(g.ven)!==1.0?` <span style="font-size:8px;color:var(--t4);font-weight:400;margin-left:6px">PF:${(getMLBParkFactor(g.ven)>=1?'+':'')+((getMLBParkFactor(g.ven)-1)*100).toFixed(0)}%</span>`:''}</div><div class="sp-matchup">`;
+    [['away',ap,g.aw],['home',hp,g.hm]].forEach(([side,p,tm])=>{if(!p)return;
+      const era=parseFloat(p.era)||99,whip=parseFloat(p.whip)||99;
+      const qlbl=p.era==='--'?'TBD':era<3.00?'ACE':era<3.80?'SOLID':era<4.50?'AVG':'WEAK';
+      const qclr=p.era==='--'?'var(--t4)':era<3.00?'var(--grn)':era<3.80?'var(--cyn)':era<4.50?'var(--amb)':'var(--red)';
+      const eraClr=era<3.00?'var(--grn)':era<3.80?'var(--cyn)':era<4.50?'var(--amb)':'var(--red)';
+      const bbClr=p.bb9==='--'?'var(--t3)':parseFloat(p.bb9)<2.5?'var(--grn)':parseFloat(p.bb9)>4.0?'var(--red)':'var(--t2)';
+      h+=`<div class="sp-card"><div class="sp-nm">${tm.ab}<span class="sp-hand">${p.hand}HP</span><span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;color:${qclr};background:var(--bg3);margin-left:5px">${qlbl}</span><div style="font-size:10px;color:var(--t2);margin-top:2px">${p.name}</div></div><div class="sp-stats"><div class="sp-stat"><div class="sp-sv" style="color:${eraClr}">${p.era}</div><div class="sp-sl">ERA</div></div><div class="sp-stat"><div class="sp-sv" style="color:${parseFloat(p.whip)<1.1?'var(--grn)':parseFloat(p.whip)>1.4?'var(--red)':'var(--t2)'}">${p.whip}</div><div class="sp-sl">WHIP</div></div><div class="sp-stat"><div class="sp-sv" style="color:${parseFloat(p.k9)>=9?'var(--grn)':parseFloat(p.k9)<6?'var(--red)':'var(--cyn)'}">${p.k9}</div><div class="sp-sl">K/9</div></div><div class="sp-stat"><div class="sp-sv" style="color:${bbClr}">${p.bb9||'--'}</div><div class="sp-sl">BB/9</div></div><div class="sp-stat"><div class="sp-sv" style="color:var(--t3)">${p.w}-${p.l}</div><div class="sp-sl">W-L</div></div></div></div>`;
+    });
     h+=`</div></div>`}
   // ── Weather (outdoor MLB/NFL) ──
   if(weather){const flags=[];if(weather.wind>15)flags.push(`<span class="wx-flag wind">WIND ${weather.wind} MPH ${weather.windDir}</span>`);if(weather.temp<45)flags.push(`<span class="wx-flag cold">COLD ${weather.temp}°F</span>`);if(weather.temp>92)flags.push(`<span class="wx-flag hot">HOT ${weather.temp}°F</span>`);const icon=weather.temp<40?'🥶':weather.temp>85?'☀️':weather.wind>20?'💨':weather.desc?.toLowerCase().includes('rain')||weather.desc?.toLowerCase().includes('shower')?'🌧️':'⛅';
@@ -979,8 +988,9 @@ function formBar(nm,f){if(!f.length)return'';const w=f.filter(x=>x.r==='W').leng
   return h+`</div><div class="form-streak ${sc}">${sk}</div><div style="font-size:10px;color:var(--t3)">${w}-${f.length-w}</div><div style="font-size:9px;font-weight:600;color:${l5clr};margin-left:6px">L5:${l5w}-${5-l5w}</div></div>`}
 function streak(f){if(!f.length)return'';let c=1;for(let i=1;i<f.length;i++){if(f[i].r===f[0].r)c++;else break}return f[0].r+c}
 async function fetchGameSummary(cat,gid){const ep=cat==='mlb'?'baseball/mlb':cat==='nfl'?'football/nfl':null;if(!ep)return null;try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${ep}/summary?event=${gid}`);return r.ok?r.json():null}catch(e){return null}}
-function extractPitchers(d){const comp=d?.header?.competitions?.[0];if(!comp)return null;const res={};(comp.competitors||[]).forEach(c=>{const p=c.probables?.[0];if(!p?.athlete)return;const cats=p.statistics?.splits?.categories||[];const sv=n=>cats.find(x=>x.name===n);const fi=sv('fullInnings')?.value||0,pi=sv('partInnings')?.value||0,ip=fi+pi/3,k=sv('strikeouts')?.value||0;res[c.homeAway]={name:p.athlete.shortName||p.athlete.fullName,hand:p.athlete.throws?.abbreviation||'?',era:sv('ERA')?.displayValue||'--',whip:sv('WHIP')?.displayValue||'--',ip:ip.toFixed(1),k9:ip>1?(k/ip*9).toFixed(1):'--',w:sv('wins')?.value||0,l:sv('losses')?.value||0}});return Object.keys(res).length?res:null}
+function extractPitchers(d){const comp=d?.header?.competitions?.[0];if(!comp)return null;const res={};(comp.competitors||[]).forEach(c=>{const p=c.probables?.[0];if(!p?.athlete)return;const cats=p.statistics?.splits?.categories||[];const sv=n=>cats.find(x=>x.name===n);const fi=sv('fullInnings')?.value||0,pi=sv('partInnings')?.value||0,ip=fi+pi/3,k=sv('strikeouts')?.value||0,bb=sv('baseOnBalls')?.value||sv('walks')?.value||0,hr=sv('homeRunsAllowed')?.value||sv('homeRuns')?.value||0;res[c.homeAway]={name:p.athlete.shortName||p.athlete.fullName,hand:p.athlete.throws?.abbreviation||'?',era:sv('ERA')?.displayValue||'--',whip:sv('WHIP')?.displayValue||'--',ip:ip.toFixed(1),k9:ip>1?(k/ip*9).toFixed(1):'--',bb9:ip>1?(bb/ip*9).toFixed(1):'--',hr9:ip>1?(hr/ip*9).toFixed(1):'--',w:sv('wins')?.value||0,l:sv('losses')?.value||0}});return Object.keys(res).length?res:null}
 async function fetchWeather(city){if(!city)return null;try{const r=await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);if(!r.ok)return null;const d=await r.json();const c=d.current_condition?.[0];if(!c)return null;return{temp:parseInt(c.temp_F),wind:parseInt(c.windspeedMiles),windDir:c.winddir16Point,desc:c.weatherDesc?.[0]?.value||''}}catch(e){return null}}
+function getMLBParkFactor(ven){const pf={'coors':1.15,'great american':1.09,'globe life':1.07,'citizens bank':1.06,'yankee':1.05,'fenway':1.04,'angel':1.03,'wrigley':1.03,'guaranteed rate':1.02,'oracle':0.93,'petco':0.92,'t-mobile':0.93,'dodger':0.95,'kauffman':0.96,'tropicana':0.93,'camden':0.96,'progressive':0.97,'marlins':0.94,'busch':0.97};const vl=(ven||'').toLowerCase();for(const[k,v]of Object.entries(pf)){if(vl.includes(k))return v}return 1.0}
 function isOutdoor(venue,cat){if(!['mlb','nfl'].includes(cat))return false;if(cat==='nfl')return!/lucas oil|mercedes.benz|state farm|allegiant|ford field|caesars superdome|u\.s\. bank|nrg stadium|dome at|sofi|klimt|kia metlife|dome/i.test(venue||'');return!/tropicana|rogers centre|minute maid|chase field|loandepot|american family field/i.test(venue||'')}
 function cityFromTeam(nm){return(nm||'').split(' ').slice(0,-1).join(' ')||nm}
 function kellyPct(conf,pickStr,evData){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=evData?.tp?Math.min(Math.max(parseFloat(evData.tp)/100,0.45),0.75):(conf==='HIGH'?0.58:conf==='MEDIUM'?0.53:0.50);const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
@@ -1010,7 +1020,9 @@ function isB2B(form,gameTm){return form.length>0&&Math.round((gameTm-form[0].dt)
 function is3in4(form,gameTm){if(form.length<2)return false;const d1=Math.round((gameTm-form[0].dt)/864e5),d2=Math.round((gameTm-form[1].dt)/864e5);return d1<=2&&d2<=3}
 
 function renderOdds(g){const bks=g.odds.bookmakers;let h=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>LINES (${bks.length} BOOKS)</div>`;
-  ['h2h','spreads','totals'].forEach(mk=>{const lb=mk==='h2h'?'MONEYLINE':mk==='spreads'?'SPREAD':'TOTAL';const R={};
+  const mkts=g.cat==='mlb'?['h2h','spreads','totals','h2h_1st_5_innings','totals_1st_5_innings']:['h2h','spreads','totals'];
+  const mktLbl={'h2h':'MONEYLINE','spreads':'SPREAD','totals':'TOTAL','h2h_1st_5_innings':'F5 ML','totals_1st_5_innings':'F5 TOTAL'};
+  mkts.forEach(mk=>{const lb=mktLbl[mk]||mk.toUpperCase();const R={};
     bks.forEach(b=>{const m=b.markets.find(x=>x.key===mk);if(!m)return;m.outcomes.forEach(o=>{const s=o.point!==undefined?`${o.name} ${o.point>0?'+':''}${o.point}`:o.name;if(!R[s])R[s]={};R[s][b.title]=o.price})});
     if(!Object.keys(R).length)return;h+=`<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:600;color:var(--amb);letter-spacing:1px;margin-bottom:6px">${lb}</div><table class="dtable"><thead><tr><th>SIDE</th>`;
     const bn=[...new Set(bks.map(b=>b.title))].slice(0,6);bn.forEach(b=>h+=`<th>${b.replace(/\s+/g,'').slice(0,8)}</th>`);h+=`<th>BEST</th></tr></thead><tbody>`;
@@ -1125,7 +1137,14 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     if(awOut+hmOut>=4){reasons.push(`${awOut+hmOut} combined players out could slow pace and depress scoring`);ts2-=0.8}
     if(toEdges.length){reasons.push(`${toEdges[0].ep.toFixed(1)}% total edge at ${toEdges[0].bb} on ${toEdges[0].side}`);ts2+=toEdges[0].side.toLowerCase().includes('over')?1:-1}
     // ── Probable pitchers (MLB) ──
-    if(pitchers&&g.cat==='mlb'){const ap=pitchers.away,hp=pitchers.home;if(ap||hp){const aEra=parseFloat(ap?.era)||4.0,hEra=parseFloat(hp?.era)||4.0;const combined=aEra+hEra;const adj=(combined-8.2)*0.3;ts2+=adj;const aStr=ap?`${ap.name} (${ap.era} ERA, ${ap.k9} K/9, ${ap.w}-${ap.l})`:'TBD';const hStr=hp?`${hp.name} (${hp.era} ERA, ${hp.k9} K/9, ${hp.w}-${hp.l})`:'TBD';reasons.unshift(`SP matchup: ${g.aw.ab} sends ${aStr} vs ${g.hm.ab} with ${hStr}`)}}
+    if(pitchers&&g.cat==='mlb'){const ap=pitchers.away,hp=pitchers.home;if(ap||hp){const aEra=parseFloat(ap?.era)||4.2,hEra=parseFloat(hp?.era)||4.2;const combined=aEra+hEra;const adj=(combined-8.4)*0.3;ts2+=adj;
+      // K/9 signal: high strikeouts = fewer balls in play = under lean
+      const aK=parseFloat(ap?.k9)||8.0,hK=parseFloat(hp?.k9)||8.0;const combK=(aK+hK)/2;if(combK>=9.5){ts2-=0.8;reasons.push(`High-K duel: ${ap?.name||'SP'} ${ap?.k9||'--'} K/9 + ${hp?.name||'SP'} ${hp?.k9||'--'} K/9 — strikeout pitchers suppress offense, UNDER lean`)}
+      // BB/9 signal: high walks = more baserunners = over lean
+      const aBB=parseFloat(ap?.bb9)||3.5,hBB=parseFloat(hp?.bb9)||3.5;if(aBB>4.0||hBB>4.0){ts2+=0.6;reasons.push(`Walk concerns: ${aBB>4.0?ap?.name+' BB/9 '+ap?.bb9:''}${aBB>4.0&&hBB>4.0?' / ':''}${hBB>4.0?hp?.name+' BB/9 '+hp?.bb9:''} — baserunner risk supports OVER`)}
+      const aStr=ap?`${ap.name} (${ap.era} ERA, ${ap.k9} K/9, ${ap.bb9||'--'} BB/9)`:'TBD';const hStr=hp?`${hp.name} (${hp.era} ERA, ${hp.k9} K/9, ${hp.bb9||'--'} BB/9)`:'TBD';reasons.unshift(`SP: ${g.aw.ab} ${aStr} vs ${g.hm.ab} ${hStr}`)}}
+    // ── Park factor (MLB) ──
+    if(g.cat==='mlb'){const pf=getMLBParkFactor(g.ven);if(pf!==1.0){const pfAdj=(pf-1.0)*3;ts2+=pfAdj;const pfPct=Math.abs((pf-1)*100).toFixed(0);reasons.push(`${g.ven||'Park'}: ${pf>1?'+'+pfPct+'% hitter-friendly (OVER lean)':'-'+pfPct+'% pitcher-friendly (UNDER lean)'} park factor`)}}
     // ── Weather (MLB/NFL outdoor) ──
     if(weather){if(weather.wind>15){const suppressing=weather.wind>20;ts2+=suppressing?-1.5:-0.8;reasons.push(`Wind ${weather.wind} mph ${weather.windDir} — ${suppressing?'strong':'moderate'} wind suppresses scoring, lean UNDER`)}if(weather.temp<45){ts2-=0.8;reasons.push(`Cold weather (${weather.temp}°F) historically depresses MLB run scoring by 5-10%`)}if(weather.temp>90){ts2+=0.5;reasons.push(`Heat (${weather.temp}°F) can cause ball to carry and pitchers to fatigue faster`)}}
     if(g.cat==='nba'){
@@ -1149,6 +1168,49 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     picks.push({label:'TOTAL ANALYSIS',pick:pickStr,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,4).join('. ')+'.',
       evData:calcEV(g,'totals',ou==='OVER'?'Over':'Under'),lineRange:getLineRange(g,'totals'),sharp:getSharp(toEdges),
       gradeData:{type:'total',side:ou,line:toOver?.point??null}});
+  }
+
+  // ── F5 (First 5 Innings) — MLB only ──
+  if(g.cat==='mlb'&&pitchers){
+    const ap=pitchers.away,hp=pitchers.home;
+    if(ap||hp){
+      const aEra=parseFloat(ap?.era)||4.2,hEra=parseFloat(hp?.era)||4.2,aK=parseFloat(ap?.k9)||8.0,hK=parseFloat(hp?.k9)||8.0,aBB=parseFloat(ap?.bb9)||3.5,hBB=parseFloat(hp?.bb9)||3.5;
+      const f5Over=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='totals_1st_5_innings')?.outcomes?.find(o=>o.name==='Over');
+      const f5Under=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='totals_1st_5_innings')?.outcomes?.find(o=>o.name==='Under');
+      const f5AwML=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='h2h_1st_5_innings')?.outcomes?.find(o=>g.aw.nm.includes(o.name.split(' ').pop())||o.name.includes(g.aw.ab));
+      const f5HmML=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='h2h_1st_5_innings')?.outcomes?.find(o=>g.hm.nm.includes(o.name.split(' ').pop())||o.name.includes(g.hm.ab));
+      const haF5=(f5Over||f5Under||f5AwML||f5HmML);
+      if(haF5){
+        let f5ts=0;const f5reasons=[];
+        const combinedEra=aEra+hEra;
+        const f5label=aEra<3.5&&hEra<3.5?'ACE DUEL':aEra>4.5||hEra>4.5?'WEAK ARM':'SP MATCHUP';
+        f5reasons.push(`F5 ${f5label}: ${ap?.name||'TBD'} (${ap?.era||'--'} ERA, ${ap?.k9||'--'} K/9) vs ${hp?.name||'TBD'} (${hp?.era||'--'} ERA, ${hp?.k9||'--'} K/9)`);
+        if(combinedEra<7.0){f5ts-=2;f5reasons.push(`Both starters below 3.50 ERA — elite SP duel locks in F5 UNDER`)}
+        else if(combinedEra>9.5){f5ts+=2;f5reasons.push(`Combined ERA ${combinedEra.toFixed(2)} — weak starters drive F5 OVER`)}
+        else{f5ts+=(combinedEra-8.4)*0.25}
+        if((aK+hK)/2>=9.5){f5ts-=0.7;f5reasons.push(`High-K pitchers (${aK.toFixed(1)}/game avg K/9) — low contact rate suppresses F5 scoring`)}
+        if(aBB>4.0||hBB>4.0){f5ts+=0.6;f5reasons.push(`Walk concerns (${Math.max(aBB,hBB).toFixed(1)} BB/9) add baserunner risk`)}
+        const pf=getMLBParkFactor(g.ven);if(pf!==1.0){const pfAdj=(pf-1.0)*2;f5ts+=pfAdj}
+        if(weather?.wind>20){f5ts-=0.5}
+        const f5ou=f5ts<0?'UNDER':'OVER';
+        const f5ouOdds=f5ou==='OVER'?f5Over:f5Under;
+        const f5mag=Math.abs(f5ts),f5conf=f5mag>=2?'HIGH':f5mag>=1?'MEDIUM':'LOW';
+        if(f5Over||f5Under){
+          const f5pick=f5ouOdds?`F5 ${f5ou} ${f5ouOdds.point} (${fp(f5ouOdds.price)})`:`F5 ${f5ou}`;
+          picks.push({label:'F5 TOTAL',pick:f5pick,conf:f5conf,score:parseFloat(f5mag.toFixed(1)),reasoning:f5reasons.slice(0,3).join('. ')+'.',
+            evData:calcEV(g,'totals_1st_5_innings',f5ou==='OVER'?'Over':'Under'),lineRange:null,sharp:{r:0,n:'No F5 data',bars:Array(5).fill('<div class="sb"></div>').join('')},gradeData:{type:'total',side:f5ou,line:f5ouOdds?.point??null}});
+        }
+        // F5 ML — only when SP talent gap is clear
+        const f5mlSide=aEra<hEra-0.75?g.aw:hEra<aEra-0.75?g.hm:null;
+        const f5mlOdds=f5mlSide===g.aw?f5AwML:f5mlSide===g.hm?f5HmML:null;
+        if(f5mlSide&&f5mlOdds){
+          const betterSP=f5mlSide===g.aw?ap:hp,worseSP=f5mlSide===g.aw?hp:ap;
+          picks.push({label:'F5 ML',pick:`${f5mlSide.nm} F5 ML (${fp(f5mlOdds.price)})`,conf:'MEDIUM',score:2.5,
+            reasoning:`SP edge: ${betterSP?.name||f5mlSide.ab} (${betterSP?.era||'--'} ERA) vs ${worseSP?.name||'opp'} (${worseSP?.era||'--'} ERA) — ${Math.abs(aEra-hEra).toFixed(2)} ERA gap. F5 ML removes bullpen variance entirely.`,
+            evData:calcEV(g,'h2h_1st_5_innings',f5mlSide.nm.split(' ').pop()),lineRange:null,sharp:{r:0,n:'',bars:Array(5).fill('<div class="sb"></div>').join('')},gradeData:{type:'ml',isHm:f5mlSide===g.hm}});
+        }
+      }
+    }
   }
 
   // ── MONEYLINE ──
