@@ -465,8 +465,8 @@ async function refreshAll(forceOdds=false){
       const _ser=cp.series;const _serAw=_ser?.competitors?.find(x=>x.id==aw.team.id);const _serHm=_ser?.competitors?.find(x=>x.id==hm.team.id);
       const seriesStr=_ser?.summary||(_serAw&&_serHm?`${aw.team.abbreviation} leads ${_serAw.wins}-${_serHm.wins}`:null);
       allG.push({id:ev.id,sp:k,cat:c.cat,spL:c.lb,spI:c.ic,
-        aw:{nm:aw.team.displayName,ab:aw.team.abbreviation,id:aw.team.id,rec:aw.records?.[0]?.summary||'',sc:aw.score,serW:_serAw?.wins??null},
-        hm:{nm:hm.team.displayName,ab:hm.team.abbreviation,id:hm.team.id,rec:hm.records?.[0]?.summary||'',sc:hm.score,serW:_serHm?.wins??null},
+        aw:{nm:aw.team.displayName,ab:aw.team.abbreviation,id:aw.team.id,rec:(aw.records?.find(r=>r.type==='total')||aw.records?.[0])?.summary||'',sc:aw.score,serW:_serAw?.wins??null},
+        hm:{nm:hm.team.displayName,ab:hm.team.abbreviation,id:hm.team.id,rec:(hm.records?.find(r=>r.type==='total')||hm.records?.[0])?.summary||'',sc:hm.score,serW:_serHm?.wins??null},
         tm:new Date(ev.date),st:ev.status?.type?.name,stD:ev.status?.type?.shortDetail||'',
         ven:cp.venue?.fullName||'',bc:cp.broadcasts?.[0]?.names?.[0]||'',
         odds:null,inj:{aw:[],hm:[]},eOdds:cp.odds?.[0]||null,ha:c.ha,isTeam:true,
