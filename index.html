@@ -512,7 +512,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
   if(_lwot)lwotArt=_lwot;
   let h='';
   const ts=g.tm.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00B7 '+g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div><div style="margin-top:8px"><button class="analyze-btn" id="aiAnalyzeBtn" onclick="aiAnalyzeGame(${idx})" ${!CLAUDE_KEY?'disabled':''}>⚡ AI ANALYZE</button></div></div>`;
+  h+=`<div class="det-header"><div class="det-teams">${g.aw.nm} ${g.isTeam?'@':'vs'} ${g.hm.nm}</div><div class="det-records">${g.aw.rec?g.aw.nm+' ('+g.aw.rec+')':g.aw.nm} vs ${g.hm.rec?g.hm.nm+' ('+g.hm.rec+')':g.hm.nm}</div><div class="det-meta"><span>${g.spI} ${g.spL}</span><span>${ts}</span>${g.ven?`<span>${g.ven}</span>`:''}${g.bc?`<span>${g.bc}</span>`:''}</div><div style="margin-top:8px"><button class="analyze-btn" id="aiAnalyzeBtn" onclick="aiAnalyzeGame(${idx})" ${!CLAUDE_KEY?'disabled':''}>${aiAnalysisCache.has(g.id)?'⚡ RE-ANALYZE':'⚡ AI ANALYZE'}</button></div></div>`;
 
   // ── AI Pick cross-reference ──
   {const _nm=s=>(s||'').toLowerCase().split(' ').pop();const _an=_nm(g.aw.nm),_hn=_nm(g.hm.nm);
@@ -685,7 +685,8 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
     if(g.inj.hm.length){h+=`<div style="font-size:9px;font-weight:600;color:var(--t3);letter-spacing:1px;margin:12px 0 6px">${g.hm.nm.toUpperCase()}</div>`;g.inj.hm.forEach(i=>{h+=`<div class="inj-item"><span class="inj-status ${i.sc}">${i.sc}</span><span class="inj-name">${i.nm}</span><span class="inj-pos">${i.pos}</span><span class="inj-desc">${i.desc}</span></div>`})}
     h+='</div>'}
   h+=`<div class="note"><strong>NOTE:</strong> EV% derived from no-vig consensus across books. Sharp signal = edge magnitude. No lines = The Odds API has no market for this match yet.</div>`;
-  el.innerHTML=h;el.scrollTop=0}
+  el.innerHTML=h;el.scrollTop=0;
+  if(aiAnalysisCache.has(g.id)){const cd=document.createElement('div');cd.id='aiGameAnalysis';cd.className='sec';cd.style.borderLeft='3px solid var(--amb)';cd.style.background='var(--bg0)';cd.innerHTML=aiAnalysisCache.get(g.id);const firstSec=el.querySelector('.sec,.picks-section');if(firstSec)el.insertBefore(cd,firstSec);else el.appendChild(cd)}}
 
 function xForm(d,tid){if(!d?.events)return[];const sc=v=>typeof v==='object'?v?.value??0:v??0;return d.events.filter(e=>e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>{const c=e.competitions[0],t=c.competitors.find(x=>x.id===tid||x.team?.id==tid),o=c.competitors.find(x=>x!==t);return{dt:new Date(e.date),r:t?.winner?'W':'L',sc:`${sc(t?.score)}-${sc(o?.score)}`,opp:o?.team?.abbreviation||'?',hm:t?.homeAway==='home'}})}
 function avgSc(f,type){if(!f.length)return null;return f.reduce((s,x)=>{const p=x.sc.split('-');return s+(type==='f'?parseInt(p[0])||0:parseInt(p[1])||0)},0)/f.length}
@@ -947,6 +948,7 @@ function toggleSC(){$('scOverlay').classList.toggle('vis')}
 // ══════════════════════════════════════════════════
 let CLAUDE_KEY=localStorage.getItem('et_claude_key')||'',cView='slate',selPickIdx=-1,isGenerating=false,todayPicksData=null,cDateFilter='today';
 let BANKROLL=parseFloat(localStorage.getItem('bankroll'))||0;
+const aiAnalysisCache=new Map();
 
 const DEFAULT_LEARNED_RULES=`1. Max 8 graded picks per slate. Pick #9 goes to leans.
 2. Max 4 MEDIUM-confidence picks. Demote weakest to leans if exceeded.
@@ -1290,6 +1292,7 @@ async function aiAnalyzeGame(idx){
     div.style.borderLeft='3px solid var(--amb)';
     div.style.background='var(--bg0)';
     div.innerHTML=`<div class="sec-title"><div class="ind" style="background:var(--amb)"></div>⚡ AI GAME ANALYSIS <span class="tx4">${new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</span></div><div class="sc-bd"><div class="tx2" style="white-space:pre-wrap">${txt}</div></div>`;
+    aiAnalysisCache.set(g.id,div.innerHTML);
     if(!existing){const panel=$('detailPanel');const firstSec=panel.querySelector('.sec,.picks-section');if(firstSec)panel.insertBefore(div,firstSec);else panel.appendChild(div)}
   }catch(e){if(btn){btn.textContent='⚡ AI ANALYZE';btn.disabled=false}return}
   if(btn){btn.textContent='✓ ANALYZED';setTimeout(()=>{if(btn){btn.textContent='⚡ RE-ANALYZE';btn.disabled=false}},2000)}
