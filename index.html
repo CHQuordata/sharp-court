@@ -402,7 +402,7 @@ let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet';
-const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals,alternate_spreads,alternate_totals',icehockey_nhl:'h2h,spreads,totals,alternate_spreads,alternate_totals',baseball_mlb:'h2h,spreads,totals,alternate_spreads,alternate_totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals,alternate_spreads,alternate_totals',_tennis:'h2h'};
+const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals',icehockey_nhl:'h2h,spreads,totals',baseball_mlb:'h2h,spreads,totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals',_tennis:'h2h'};
 function getSportMarkets(sk){if(SPORT_MARKETS[sk])return SPORT_MARKETS[sk];if(sk.startsWith('tennis_'))return SPORT_MARKETS._tennis;return'h2h'}
 const PROP_MARKETS={basketball_nba:'player_points,player_rebounds,player_assists,player_threes',baseball_mlb:'pitcher_strikeouts,batter_home_runs,batter_hits_recorded'};
 const PROP_BOOKS='fanduel,draftkings,betmgm,pointsbet';
@@ -862,8 +862,17 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
       h+=`</div>`;}
     h+=`</div>`;
   }
-  if(picks.length){h+=`<div class="picks-section">`;
-    picks.forEach((pk,i)=>{const noOdds=!pk.evData&&!pk.lineRange;
+  // Data quality warning
+  {const _hasFrm=gameFormCache.has(g.id),_hasInj=g.inj?.aw?.length||g.inj?.hm?.length,_hasOddsNow=hasUsBookOdds(g);
+   if((g.cat==='nba'||g.cat==='nhl')&&(!_hasFrm||!_hasInj||!_hasOddsNow)){
+     const gaps=[];if(!_hasFrm)gaps.push('fatigue data');if(!_hasInj)gaps.push('injury report');if(!_hasOddsNow)gaps.push('live odds');
+     h+=`<div style="margin:6px 12px;padding:7px 10px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:4px;font-size:10px;color:var(--amb)">⚠️ Limited data: ${gaps.join(', ')} not loaded — AI analysis confidence is reduced. Re-analyze after odds refresh.</div>`;
+   }
+  }
+  // Filter sub-2.5 score picks (LOW confidence) — too weak to show as cards
+  const _renderPicks=picks.filter(pk=>(pk.score??0)>=2.5||pk.tnSigs?.length>0);
+  if(_renderPicks.length){h+=`<div class="picks-section">`;
+    _renderPicks.forEach((pk,i)=>{const noOdds=!pk.evData&&!pk.lineRange;
       const hasTnData=pk.tnSigs?.length>0;
       const cls=noOdds&&!hasTnData?' low':pk.conf==='HIGH'?'':pk.conf==='MEDIUM'?' medium':' low';
       const hasMetrics=!noOdds&&(pk.evData||pk.lineRange||(pk.sharp&&pk.sharp.r>0)||kellyPct(pk.conf,pk.pick,pk.evData)>0);
@@ -874,6 +883,7 @@ async function selGame(idx){selIdx=idx;renderSlate();const g=fG[idx];const el=$(
       const tnTagsH=hasTnData?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 2px">${pk.tnSigs.map(s=>{const aligned=s.edge&&pk.pick.includes(s.edge.nm.split(' ').pop());const clr=aligned?'var(--grn)':s.edge?'var(--t3)':'var(--t4)';const bdr=aligned?'rgba(0,230,118,.25)':'rgba(42,42,62,.5)';return`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;color:${clr};background:var(--bg3);border:1px solid ${bdr};letter-spacing:.3px">${s.k}</span>`}).join('')}</div>`:'';
       h+=`<div class="pick-card${cls}"><div class="pick-label">\u26A1 ${pk.label}${rBadge}</div><div class="pick-main">${pk.pick}</div><div class="pick-conf ${noOdds&&!hasTnData?'low':pk.conf.toLowerCase()}">\u25CF ${noOdds&&!hasTnData?'LEAN':pk.conf}${scoreSub}${confTxt}</div>${tnTagsH}${hasMetrics?renderMetrics(pk):''}<div class="pick-reasoning">${pk.reasoning}</div></div>`;  
     });h+=`</div>`;}
+  else if(_renderPicks.length===0&&picks.length>0){h+=`<div style="margin:6px 12px 8px;font-size:10px;color:var(--t4);padding:7px 10px;border:1px solid var(--bdr);border-radius:3px">No edges strong enough to display (all picks scored below 2.5/10). Await odds to establish real signals.</div>`;}
   else if(!g.isTeam){h+=`<div style="margin:2px 16px 8px;font-size:9px;color:var(--t4);padding:6px 10px;border:1px solid var(--bdr);border-radius:3px">No odds found — ${g.spL} market may not be covered by Odds API. Rankings + form signals still applied above.</div>`;}
 
   // ── LWOT Expert Analysis ──
@@ -1950,8 +1960,12 @@ async function aiAnalyzeGame(idx){
   if(g.odds?.bookmakers?.length){const bk=g.odds.bookmakers[0];const ml=bk.markets.find(m=>m.key==='h2h'),sp=bk.markets.find(m=>m.key==='spreads'),to=bk.markets.find(m=>m.key==='totals');if(ml)ctx+=`ML: ${ml.outcomes.map(o=>o.name+' '+fp(o.price)).join(' / ')}\n`;if(sp)ctx+=`Spread: ${sp.outcomes.map(o=>o.name+' '+fp(o.point)+' ('+fp(o.price)+')').join(' / ')}\n`;if(to)ctx+=`Total: O/U ${to.outcomes.find(o=>o.name==='Over')?.point}\n`}
   const ge=allE.filter(e=>e.g.id===g.id);if(ge.length)ctx+=`Book edges: ${ge.map(e=>e.ml+' '+e.side+' '+e.ep.toFixed(1)+'% @ '+e.bb).join(', ')}\n`;
   if(g.lineMove){if(g.lineMove.spMv)ctx+=`Line moved: spread ${g.lineMove.spMv>0?'+':''}${g.lineMove.spMv} since last scan\n`}
-  const _gp=gamePicksCache.get(g.id)||[];
-  if(_gp.length){ctx+=`\nALGO PICKS (validate or challenge these):\n`;_gp.forEach(pk=>{ctx+=`  [${pk.label}] ${pk.pick} — ${pk.conf}${pk.score!=null?' (score:'+pk.score+')':''}\n  Reasoning: ${(pk.reasons||[]).join(' | ')}\n`})}
+  // Flag data gaps in context
+  {const _missFrm=!_cf&&(g.cat==='nba'||g.cat==='nhl');const _missInj=!g.inj?.aw?.length&&!g.inj?.hm?.length;const _missOdds=!g.odds?.bookmakers?.length;
+   if(_missFrm||_missInj||_missOdds){const gaps=[];if(_missFrm)gaps.push('recent form/fatigue');if(_missInj)gaps.push('injury reports');if(_missOdds)gaps.push('live odds');
+   ctx+=`\n⚠️ MISSING DATA: ${gaps.join(', ')}. Your analysis MUST flag these gaps. Do not manufacture confidence from missing inputs.\n`;}}
+  const _gp=(gamePicksCache.get(g.id)||[]).filter(pk=>(pk.score??0)>=2.5);
+  if(_gp.length){ctx+=`\nALGO PICKS (validate or challenge these — ignore any with score below 2.5):\n`;_gp.forEach(pk=>{ctx+=`  [${pk.label}] ${pk.pick} — ${pk.conf}${pk.score!=null?' (score:'+pk.score+')':''}\n  Reasoning: ${(pk.reasons||[]).join(' | ')}\n`})}
   const rules=localStorage.getItem('et_learned_rules')||'';
   const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
   const bySp=rec.by_sport?.[g.cat];
@@ -1959,8 +1973,8 @@ async function aiAnalyzeGame(idx){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:512,
-        system:`You are a sharp sports betting analyst acting as a second opinion on algo-generated picks. ALL data provided in the user message (records, odds, stats, line moves) is live current-season data pulled directly from ESPN and sportsbooks — treat it as ground truth. NEVER question, caveat, or second-guess the provided records or stats based on your training data; your training cutoff means you do not know this season's standings. If the game is marked as a PLAYOFF GAME, apply playoff-specific reasoning only — seeding is irrelevant, load management does not exist, ignore pace and rest signals that apply in regular season. Your job: validate, challenge, or add nuance to algo picks using only the numbers given. Agree with specific reasons, flag what the algo missed, or flip the pick if the data warrants it. Be concise, cite actual numbers.${rules?'\n\nLEARNED RULES:\n'+rules:''}${bySp?(bySp.w||0)+(bySp.l||0)>0?'\n\nYour record in '+g.cat.toUpperCase()+': '+(bySp.w||0)+'-'+(bySp.l||0):'':''}`,
-        messages:[{role:'user',content:ctx+'\n\nProvide: 1) Verdict on algo pick(s) — agree/challenge/flip and why (2-3 sentences), 2) What the algo likely missed, 3) Final confidence (HIGH/MEDIUM/LOW) with score 1-10.'}]})});
+        system:`You are a sharp sports betting analyst acting as a second opinion on algo-generated picks. ALL data provided in the user message (records, odds, stats, line moves) is live current-season data pulled directly from ESPN and sportsbooks — treat it as ground truth. NEVER question, caveat, or second-guess the provided records or stats based on your training data; your training cutoff means you do not know this season's standings. If the game is marked as a PLAYOFF GAME, apply playoff-specific reasoning only — seeding is irrelevant, load management does not exist, ignore pace and rest signals that apply in regular season. Your job: validate, challenge, or add nuance to algo picks using only the numbers given. Agree with specific reasons, flag what the algo missed, or flip the pick if the data warrants it. Be concise, cite actual numbers. CONFIDENCE RULE: Only assign a confidence score if it is 2.5 or higher — if your honest score for a pick is below 2.5, do not include that pick in your output at all. If MISSING DATA is flagged in the input, explicitly state what data would change your analysis and reduce your overall confidence score accordingly.${rules?'\n\nLEARNED RULES:\n'+rules:''}${bySp?(bySp.w||0)+(bySp.l||0)>0?'\n\nYour record in '+g.cat.toUpperCase()+': '+(bySp.w||0)+'-'+(bySp.l||0):'':''}`,
+        messages:[{role:'user',content:ctx+'\n\nProvide: 1) Verdict on algo pick(s) — agree/challenge/flip and why (2-3 sentences), 2) What the algo likely missed or what data would change this, 3) Final confidence (HIGH/MEDIUM/LOW) with score 1-10. Skip any pick you cannot score 2.5+.'}]})});
     if(!resp.ok)throw new Error('API error');
     const data=await resp.json();
     const txt=data.content[0].text;
