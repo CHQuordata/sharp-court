@@ -1763,15 +1763,20 @@ function selLean(idx){
     ${l.trigger?`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>PROMOTION TRIGGER</div><div style="font-size:11px;color:var(--t2)">${l.trigger}</div></div>`:''}`;
 }
 
-function buildGamesContext(){
+function buildGamesContext(todayOnly=false){
   const now=new Date();
-  let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${allG.length}):\n\n`;
-  allG.forEach(g=>{
+  const todayStr=now.toDateString();
+  // For picks generation: only send today's games — tomorrow has no actionable lines yet
+  const games=todayOnly?allG.filter(g=>g.tm.toDateString()===todayStr):allG;
+  let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${games.length}):\n\n`;
+  games.forEach(g=>{
     const t=g.st==='STATUS_IN_PROGRESS'?`LIVE ${g.stD}`:g.st==='STATUS_FINAL'?`FINAL${g.aw.sc!=null?' '+g.aw.sc+'-'+g.hm.sc:''}`:g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     const playoffTag=g.playoff?` [PLAYOFFS${g.serSum?' — '+g.serSum:''}]`:'';
     const hasUsOdds=hasUsBookOdds(g);
     const noOddsBlock=!hasUsOdds&&(g.cat==='tennis'||g.cat==='mma');
     ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}\n`;
+    // No-odds tennis/MMA: header only, no stats (can't be picked anyway)
+    if(noOddsBlock)return;
     if(g.aw.rec||g.hm.rec)ctx+=`  Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
     if(g.aw.rank||g.hm.rank)ctx+=`  Rankings: ${g.aw.rank?g.aw.nm+' #'+g.aw.rank:'?'} vs ${g.hm.rank?g.hm.nm+' #'+g.hm.rank:'?'}\n`;
     if(g.cat==='tennis'){const surf=getSurface(g.ven);if(g.round||g.tnName)ctx+=`  Tournament: ${g.tnName||''}${g.round?' — '+g.round:''}\n`;if(g.aw.seed||g.hm.seed)ctx+=`  Seeds: ${g.aw.nm}${g.aw.seed?' ['+g.aw.seed+']':''} vs ${g.hm.nm}${g.hm.seed?' ['+g.hm.seed+']':''}\n`;ctx+=`  Surface: ${surf} — ${surf==='clay'?'clay specialist/heavy topspin players have structural edge':surf==='grass'?'serve dominance elevated, LH advantage in deuce court':surf==='indoor'?'fast conditions, serve hold rates elevated':'balanced hard court'}\n`;[g.aw,g.hm].forEach(pl=>{const fm=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!fm.length)return;const w=fm.filter(m=>m.W).length;const last=fm[0];ctx+=`  ${pl.nm} L5: ${w}-${fm.length-w} (last: ${last.W?'W':'L'} vs ${last.opp}${last.round?', '+last.round:''}${last.tn?', '+last.tn:''})\n`});const tc=tennisCache.get(g.id);if(tc){const sk2=surf==='clay'?'clay':surf==='grass'?'grass':'hard';if(tc.total>0)ctx+=`  H2H: ${g.aw.nm.split(' ').pop()} ${tc.awW}-${tc.hmW} (${tc.total} meetings since 2021)\n`;const awSv=tc.awServe?.[sk2],hmSv=tc.hmServe?.[sk2];if(awSv?.m>=3||hmSv?.m>=3)ctx+=`  Serve stats (${surf} 2023-24): ${g.aw.nm.split(' ').pop()} 1stIn=${awSv?.first_pct||'N/A'}% 1stWon=${awSv?.first_won_pct||'N/A'}% BPsave=${awSv?.bp_save_pct||'N/A'}% | ${g.hm.nm.split(' ').pop()} 1stIn=${hmSv?.first_pct||'N/A'}% 1stWon=${hmSv?.first_won_pct||'N/A'}% BPsave=${hmSv?.bp_save_pct||'N/A'}%\n`}const tng=tnGameCache.get(g.id);if(tng){const svK=surf==='clay'?'clay':surf==='grass'?'grass':'hard';const getTNCtx=(d,nm)=>{if(!d)return null;const sfArr=Array.isArray(d.surface)?d.surface:[];const sfR=sfArr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return svK==='clay'?sn.includes('clay'):svK==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};let out=nm+':';if(sfR){const w=parseInt(sfR.wins??sfR.win??sfR.w??0)||0,l=parseInt(sfR.losses??sfR.loss??sfR.l??0)||0;if(w+l>0)out+=` 2025-${surf}=${w}-${l}(${Math.round(w/(w+l)*100)}%)`}const bp1=parseInt(st.breakPointSavedGm||0),bp2=parseInt(st.breakPointFacedGm||0);if(bp2>0)out+=` BPsave=${Math.round(bp1/bp2*100)}%`;const f1=parseInt(st.firstServeGm||0),f1of=parseInt(st.firstServeOfGm||0);if(f1of>0)out+=` 1stIn=${Math.round(f1/f1of*100)}%`;const fw=parseInt(st.winningOnFirstServeGm||0),fwof=parseInt(st.winningOnFirstServeOfGm||0);if(fwof>0)out+=` 1stWon=${Math.round(fw/fwof*100)}%`;return out};const awCtx=getTNCtx(tng.awData,g.aw.nm.split(' ').pop()),hmCtx=getTNCtx(tng.hmData,g.hm.nm.split(' ').pop());if(awCtx||hmCtx)ctx+=`  Live stats (matchstat.com): ${[awCtx,hmCtx].filter(Boolean).join(' | ')}\n`}}
@@ -1963,14 +1968,14 @@ async function generatePicks(){
   isGenerating=true;renderPicksOverview();
   try{
     await prefetchStatsForPicks();
-    const gamesCtx=buildGamesContext();
+    const gamesCtx=buildGamesContext(true); // today only — no tomorrow noise
     const yPicks=getYesterdayPicks();
     const rules=localStorage.getItem('et_learned_rules')||DEFAULT_LEARNED_RULES;
     const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8192,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2048,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
