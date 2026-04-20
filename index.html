@@ -547,7 +547,7 @@ async function refreshAll(forceOdds=false){
         odds:null,inj:{aw:[],hm:[]},eOdds:cp.odds?.[0]||null,ha:c.ha,isTeam:true,
         playoff:_isPlayoff,serSum:seriesStr});
     });
-  })).catch(()=>{});
+  }))).catch(()=>{});
 
   // ── ESPN: Tennis (ATP + WTA) — structure: events > groupings > competitions ──
   await Promise.all(['atp','wta'].map(async lg=>{
