@@ -1636,7 +1636,16 @@ function updateEdges(){const el=$('edgeAlerts');if(!allE.length){el.innerHTML=`<
     const bTag=e.sharp?`<span style="font-size:8px;font-weight:700;color:var(--grn);letter-spacing:.3px;margin-right:4px">⚡SHARP</span>`:e.lowvig?`<span style="font-size:8px;font-weight:600;color:var(--t3);margin-right:4px">◎LOW-VIG</span>`:'';
     return`<div class="edge-alert" onclick="jumpTo('${e.g.id}')"><div class="edge-top"><div class="edge-matchup">${e.g.aw.ab} ${e.g.isTeam?'@':'vs'} ${e.g.hm.ab}</div><div class="edge-pct ${e.tier}">${e.ep.toFixed(1)}%</div></div><div class="edge-detail">${bTag}${e.ml}: ${e.side} \u00B7 ${e.bb} \u00B7 ${fp(e.bp)}</div></div>`
   }).join('')}
-function jumpTo(id){const i=fG.findIndex(g=>g.id===id);if(i>=0)selGame(i)}
+function jumpTo(id){
+  const g=allG.find(x=>x.id===id);if(!g)return;
+  // Switch sport tab and date filter if needed so the game is in fG
+  if(cSport!=='all'&&cSport!==g.cat)setSport(g.cat);
+  const todayStr=new Date().toDateString(),tmrwStr=new Date(Date.now()+864e5).toDateString();
+  const gDate=g.tm.toDateString();
+  if(cDateFilter==='today'&&gDate!==todayStr)setDateFilter('all');
+  else if(cDateFilter==='tomorrow'&&gDate!==tmrwStr)setDateFilter('all');
+  const i=fG.findIndex(x=>x.id===id);if(i>=0)selGame(i);
+}
 
 let _parlaySel=new Set(); // selected indices into _parlayEdges
 let _parlayEdges=[];      // current sharp edges list shown in modal
