@@ -2183,8 +2183,10 @@ async function generatePicks(){
     const text=data.content[0].text;
     const m=text.match(/```json\s*([\s\S]+?)\s*```/)||text.match(/(\{[\s\S]+\})/);
     if(!m)throw new Error('No JSON in response');
-    const cleaned=m[1].replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
-    let result;try{result=JSON.parse(cleaned)}catch(pe){const snip=cleaned.slice(Math.max(0,pe.message.match(/position (\d+)/)?.[1]-50|0),+(pe.message.match(/position (\d+)/)?.[1]||0)+80);throw new Error(`JSON: ${pe.message} — near: ...${snip}...`)}
+    let cleaned=m[1].replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
+    // Fix literal control chars (newline, tab, CR) inside JSON string values — common LLM output artifact
+    cleaned=cleaned.replace(/"((?:[^"\\]|\\.)*)"/g,(_,inner)=>'"'+inner.replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\t/g,'\\t')+'"');
+    let result;try{result=JSON.parse(cleaned)}catch(pe){const pos=+(pe.message.match(/position (\d+)/)?.[1]||0);const snip=cleaned.slice(Math.max(0,pos-60),pos+80);throw new Error(`JSON: ${pe.message} — near: ...${snip}...`)}
     // Enforce: picks on NO US BOOK ODDS tennis/MMA games get demoted to leans
     if(result.picks){
       const _unbettable=new Set(allG.filter(g=>!hasUsBookOdds(g)&&(g.cat==='tennis'||g.cat==='mma')).flatMap(g=>[g.aw.nm.split(' ').pop().toLowerCase(),g.hm.nm.split(' ').pop().toLowerCase()]));
