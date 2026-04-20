@@ -417,18 +417,19 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <div class="stat-grid"><div class="stat-cell"><div class="stat-lbl">GAMES</div><div class="stat-val" id="stG">-</div></div><div class="stat-cell"><div class="stat-lbl">EDGES</div><div class="stat-val g" id="stE">-</div></div><div class="stat-cell"><div class="stat-lbl">SPORTS</div><div class="stat-val a" id="stS">-</div></div><div class="stat-cell"><div class="stat-lbl">INJURIES</div><div class="stat-val r" id="stI">-</div></div></div>
     <div class="panel-hdr" id="trackedHdr" style="display:none"><span class="panel-title">📌 TRACKED</span><span id="trackedCount" style="font-size:9px;color:var(--t4);margin-left:6px"></span></div>
     <div id="trackedGames"></div>
-    <div class="panel-hdr"><span class="panel-title">Top Edges</span></div><div class="panel-body" id="edgeAlerts"><div class="no-data" style="padding:20px">Scan to populate</div></div>
+    <div class="panel-hdr" style="gap:6px"><span class="panel-title" style="flex:1">Top Edges</span><button id="sharpOnlyBtn" onclick="toggleSharpOnly()" class="tb-btn" title="Show only Pinnacle sharp-money edges">⚡ SHARP</button><button onclick="buildSharpParlay()" class="tb-btn" style="color:var(--amb);border-color:rgba(255,171,0,.3)" title="Build a parlay from today's Pinnacle edges">PARLAY →</button></div><div class="panel-body" id="edgeAlerts"><div class="no-data" style="padding:20px">Scan to populate</div></div>
   </div>
 </div>
 <div class="bottombar"><div><span style="color:var(--grn)">&#9679;</span> SPORTSEDGE v2.9</div><div id="lastScan">LAST SCAN: NEVER</div><div class="bottombar-sp"></div><div id="apiCalls" style="color:var(--t3)">ODDS: --</div><div id="oddsCacheAge" style="color:var(--t4)"></div><div><span class="kbd">?</span> HELP</div></div>
 <div class="modal-ov" id="setupModal" style="display:none"><div class="modal"><div class="modal-title">SPORTSEDGE TERMINAL</div><div class="modal-sub">Enter your Odds API key for live odds, EV calculation, and edge detection across 10+ sportsbooks.<br><br>Without a key, ESPN provides schedules, injuries, form, and records for all sports including tennis &amp; UFC.</div><input class="modal-input" id="apiKeyInput" type="password" placeholder="Odds API key..." autocomplete="off"><button class="modal-btn" onclick="connectApi()">CONNECT &amp; SCAN</button><a class="modal-link" href="https://the-odds-api.com/#get-access" target="_blank">Get free key &#8594; the-odds-api.com</a><div style="text-align:center;margin-top:16px;font-size:10px;color:var(--t4);cursor:pointer" onclick="skipApi()">Skip &#8212; ESPN data only</div></div></div>
 <div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-sonnet-4-6</strong> for analysis. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
 <div class="modal-ov" id="tnModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--cyn)">TENNIS API</div><div class="modal-sub">Enter your RapidAPI key for the <strong>Tennis API – ATP WTA ITF</strong> by matchstat.com.<br><br>Provides current-season surface records (2025), career serve stats, and player data. <strong>PRO plan $10/mo</strong> on RapidAPI — your key is stored locally.</div><input class="modal-input" id="tnKeyInput" type="password" placeholder="RapidAPI key..." autocomplete="off"><button class="modal-btn" style="background:var(--cyn);color:var(--bg0)" onclick="connectTN()">CONNECT TENNIS API</button><a class="modal-link" href="https://rapidapi.com/jjrm365-kIFr3Nx_odV/api/tennis-api-atp-wta-itf" target="_blank">Subscribe → RapidAPI ($10/mo)</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('tnModal').style.display='none'">Cancel</div></div></div>
+<div class="modal-ov" id="parlayModal" style="display:none"><div class="modal" style="max-width:500px;padding:24px"><div class="modal-title" style="color:var(--grn)">⚡ SHARP PARLAY BUILDER</div><div class="modal-sub" style="margin-bottom:0">Pinnacle-only legs · today's games · one leg per matchup</div><div id="parlayContent" style="margin-top:16px"></div><button class="modal-btn" style="margin-top:8px" onclick="$('parlayModal').style.display='none'">CLOSE</button></div></div>
 <div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
 <script>
-let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map();
+let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map(),cSharpOnly=false;
 let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
@@ -1619,14 +1620,83 @@ function renderTracked(){
 }
 
 function updateStats(){$('stG').textContent=allG.length;$('stE').textContent=allE.length;$('stS').textContent=new Set(allG.map(g=>g.cat)).size;let inj=0;allG.forEach(g=>{inj+=g.inj.aw.filter(i=>i.sc==='O').length+g.inj.hm.filter(i=>i.sc==='O').length});$('stI').textContent=inj}
+function toggleSharpOnly(){
+  cSharpOnly=!cSharpOnly;
+  const btn=$('sharpOnlyBtn');
+  if(btn){btn.style.color=cSharpOnly?'var(--grn)':'';btn.style.background=cSharpOnly?'var(--grn-bg)':'';btn.style.borderColor=cSharpOnly?'var(--grn-bdr)':'';}
+  updateEdges();
+}
 function updateEdges(){const el=$('edgeAlerts');if(!allE.length){el.innerHTML=`<div class="no-data" style="padding:20px">No edges detected</div>`;return}
-  el.innerHTML=allE.slice(0,15).map(e=>{
+  const disp=cSharpOnly?allE.filter(e=>e.sharp):allE;
+  if(!disp.length){el.innerHTML=`<div style="padding:16px 12px;font-size:10px;color:var(--t4)">No Pinnacle edges detected yet — try scanning again later.</div>`;return}
+  el.innerHTML=disp.slice(0,15).map(e=>{
     const bTag=e.sharp?`<span style="font-size:8px;font-weight:700;color:var(--grn);letter-spacing:.3px;margin-right:4px">⚡SHARP</span>`:e.lowvig?`<span style="font-size:8px;font-weight:600;color:var(--t3);margin-right:4px">◎LOW-VIG</span>`:'';
     return`<div class="edge-alert" onclick="jumpTo('${e.g.id}')"><div class="edge-top"><div class="edge-matchup">${e.g.aw.ab} ${e.g.isTeam?'@':'vs'} ${e.g.hm.ab}</div><div class="edge-pct ${e.tier}">${e.ep.toFixed(1)}%</div></div><div class="edge-detail">${bTag}${e.ml}: ${e.side} \u00B7 ${e.bb} \u00B7 ${fp(e.bp)}</div></div>`
   }).join('')}
 function jumpTo(id){const i=fG.findIndex(g=>g.id===id);if(i>=0)selGame(i)}
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('setupModal').style.display='none';$('claudeModal').style.display='none';$('bankrollModal').style.display='none';$('tnModal').style.display='none';$('scOverlay').classList.remove('vis');return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
+function buildSharpParlay(){
+  const toDecimal=p=>p>0?(p/100)+1:(100/Math.abs(p))+1;
+  const toAmerican=d=>d>=2?Math.round((d-1)*100):Math.round(-100/(d-1));
+  const fmt=p=>p>0?'+'+p:String(p);
+
+  // Today's sharp edges, one per game (best ep first thanks to sort order)
+  const todayStr=new Date().toDateString();
+  const seen=new Set();
+  const legs=allE.filter(e=>{
+    if(!e.sharp)return false;
+    if(e.g.tm.toDateString()!==todayStr)return false;
+    if(seen.has(e.g.id))return false;
+    seen.add(e.g.id);return true;
+  }).slice(0,4);
+
+  const el=$('parlayContent');
+  if(!legs.length){
+    el.innerHTML=`<div style="font-size:11px;color:var(--t4);padding:12px 0">No Pinnacle sharp edges found for today's games. Try scanning again closer to game time — Pinnacle lines sharpen up 2-4 hours before tip.</div>`;
+    $('parlayModal').style.display='flex';return;
+  }
+
+  // Build leg rows HTML
+  const legRowsH=(legArr)=>legArr.map((e,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bdr)">
+      <div style="font-size:11px;font-weight:700;color:var(--t4);width:18px">#${i+1}</div>
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:700;color:var(--t1)">${e.side}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">${e.g.aw.nm} @ ${e.g.hm.nm} · ${e.ml} · ${e.g.spL?.toUpperCase()||e.g.cat.toUpperCase()}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;font-weight:700;color:var(--grn)">${fmt(e.bp)}</div>
+        <div style="font-size:8px;color:var(--t3)">+${e.ep.toFixed(1)}% @ PIN</div>
+      </div>
+    </div>`).join('');
+
+  // Build parlay cards for 2-leg, 3-leg, 4-leg where available
+  let h='';
+  for(let n=2;n<=Math.min(legs.length,4);n++){
+    const subset=legs.slice(0,n);
+    const dec=subset.reduce((acc,e)=>acc*toDecimal(e.bp),1);
+    const am=toAmerican(dec);
+    const winOn100=Math.round((dec-1)*100);
+    const tierClr=n===2?'var(--grn)':n===3?'var(--amb)':'var(--red)';
+    h+=`<div style="margin-bottom:20px;background:var(--bg2);border:1px solid var(--bdr);border-radius:6px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:${tierClr};letter-spacing:1px">${n}-LEG SHARP PARLAY</div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:700;color:${tierClr}">${fmt(am)}</div>
+          <div style="font-size:9px;color:var(--t3)">$100 → $${winOn100+100} &nbsp;·&nbsp; win $${winOn100}</div>
+        </div>
+      </div>
+      ${legRowsH(subset)}
+      <div style="margin-top:10px;font-size:9px;color:var(--t4);line-height:1.6">All legs @ Pinnacle · ${n===2?'Safest option':n===3?'Best risk/reward':'High variance'}${BANKROLL>0?' · Kelly sizing: $'+Math.round(BANKROLL*0.01*(n===2?1:n===3?0.5:0.25))+' recommended':''}</div>
+    </div>`;
+  }
+
+  if(!h)h=`<div style="font-size:11px;color:var(--t4)">Only ${legs.length} leg(s) available — need 2+ for a parlay.</div>`;
+  el.innerHTML=h;
+  $('parlayModal').style.display='flex';
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('setupModal').style.display='none';$('claudeModal').style.display='none';$('bankrollModal').style.display='none';$('parlayModal').style.display='none';$('tnModal').style.display='none';$('scOverlay').classList.remove('vis');return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
   switch(e.key){case'r':case'R':refreshAll(e.shiftKey);break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'a':case'A':showPicksSetup();break;
     case'p':case'P':switchToPicksView();break;
     case'g':case'G':if(cView==='picks')generatePicks();break;
