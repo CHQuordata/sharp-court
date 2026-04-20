@@ -151,6 +151,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .sec-title{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--t4);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 /* ── Mobile back button (hidden on desktop) ── */
 .mob-back-btn{display:none}
+.mob-edges-btn{display:none}
 /* ── Track button on game rows ── */
 .track-btn{background:none;border:none;cursor:pointer;padding:2px 5px;font-size:11px;color:var(--t4);line-height:1;flex-shrink:0;border-radius:3px;transition:color .15s}
 .track-btn:hover{color:var(--amb)}
@@ -228,6 +229,8 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 
   /* Hide separators in row 2 */
   .topbar-div{display:none}
+  /* Show edges button only on mobile */
+  .mob-edges-btn{display:inline-flex}
   /* topbar-sp spacer not needed on mobile */
   .topbar-sp{display:none}
 
@@ -406,6 +409,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <button class="tb-btn" onclick="showTNSetup()" style="color:var(--cyn)">TN API</button>
     <button class="tb-btn" onclick="refreshAll()">SCAN <span class="kbd">R</span></button>
     <button class="tb-btn" onclick="refreshAll(true)" style="color:var(--amb)">ODDS ↻</button>
+    <button class="tb-btn mob-edges-btn" onclick="showEdgesMob()" style="color:var(--grn);border-color:rgba(0,230,118,.3)">⚡ EDGES</button>
     <button class="tb-btn" onclick="toggleSC()">?</button>
     <div class="topbar-div"></div><button class="tb-btn" id="bankrollBtn" onclick="showBankroll()" style="color:var(--amb)">BANKROLL</button>
   </div>
@@ -424,6 +428,19 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 <div class="modal-ov" id="setupModal" style="display:none"><div class="modal"><div class="modal-title">SPORTSEDGE TERMINAL</div><div class="modal-sub">Enter your Odds API key for live odds, EV calculation, and edge detection across 10+ sportsbooks.<br><br>Without a key, ESPN provides schedules, injuries, form, and records for all sports including tennis &amp; UFC.</div><input class="modal-input" id="apiKeyInput" type="password" placeholder="Odds API key..." autocomplete="off"><button class="modal-btn" onclick="connectApi()">CONNECT &amp; SCAN</button><a class="modal-link" href="https://the-odds-api.com/#get-access" target="_blank">Get free key &#8594; the-odds-api.com</a><div style="text-align:center;margin-top:16px;font-size:10px;color:var(--t4);cursor:pointer" onclick="skipApi()">Skip &#8212; ESPN data only</div></div></div>
 <div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-sonnet-4-6</strong> for analysis. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
 <div class="modal-ov" id="tnModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--cyn)">TENNIS API</div><div class="modal-sub">Enter your RapidAPI key for the <strong>Tennis API – ATP WTA ITF</strong> by matchstat.com.<br><br>Provides current-season surface records (2025), career serve stats, and player data. <strong>PRO plan $10/mo</strong> on RapidAPI — your key is stored locally.</div><input class="modal-input" id="tnKeyInput" type="password" placeholder="RapidAPI key..." autocomplete="off"><button class="modal-btn" style="background:var(--cyn);color:var(--bg0)" onclick="connectTN()">CONNECT TENNIS API</button><a class="modal-link" href="https://rapidapi.com/jjrm365-kIFr3Nx_odV/api/tennis-api-atp-wta-itf" target="_blank">Subscribe → RapidAPI ($10/mo)</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('tnModal').style.display='none'">Cancel</div></div></div>
+<div class="modal-ov" id="edgesMobModal" style="display:none;align-items:flex-start;padding-top:0">
+  <div style="width:100%;max-width:100%;height:100svh;background:var(--bg0);display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bdr);flex-shrink:0">
+      <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--grn);letter-spacing:.5px">⚡ TOP EDGES</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="sharpOnlyBtnMob" onclick="toggleSharpOnly()" class="tb-btn" style="font-size:9px">⚡ SHARP</button>
+        <button onclick="buildSharpParlay()" class="tb-btn" style="color:var(--amb);border-color:rgba(255,171,0,.3);font-size:9px">PARLAY →</button>
+        <button onclick="$('edgesMobModal').style.display='none'" style="background:none;border:1px solid var(--bdr);color:var(--t2);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <div id="edgesMobList" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+  </div>
+</div>
 <div class="modal-ov" id="parlayModal" style="display:none"><div class="modal" style="max-width:500px;padding:24px"><div class="modal-title" style="color:var(--grn)">⚡ SHARP PARLAY BUILDER</div><div class="modal-sub" style="margin-bottom:0">Pinnacle-only legs · today's games · one leg per matchup</div><div id="parlayContent" style="margin-top:16px"></div><button class="modal-btn" style="margin-top:8px" onclick="$('parlayModal').style.display='none'">CLOSE</button></div></div>
 <div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
@@ -1633,13 +1650,31 @@ function toggleSharpOnly(){
   if(btn){btn.style.color=cSharpOnly?'var(--grn)':'';btn.style.background=cSharpOnly?'var(--grn-bg)':'';btn.style.borderColor=cSharpOnly?'var(--grn-bdr)':'';}
   updateEdges();
 }
-function updateEdges(){const el=$('edgeAlerts');if(!allE.length){el.innerHTML=`<div class="no-data" style="padding:20px">No edges detected</div>`;return}
+function _edgesHTML(target){
   const disp=cSharpOnly?allE.filter(e=>e.sharp):allE;
-  if(!disp.length){el.innerHTML=`<div style="padding:16px 12px;font-size:10px;color:var(--t4)">No Pinnacle edges detected yet — try scanning again later.</div>`;return}
-  el.innerHTML=disp.slice(0,15).map(e=>{
+  if(!allE.length){target.innerHTML=`<div class="no-data" style="padding:20px">No edges detected</div>`;return}
+  if(!disp.length){target.innerHTML=`<div style="padding:16px 12px;font-size:10px;color:var(--t4)">No Pinnacle edges detected yet — try scanning again later.</div>`;return}
+  const isMob=target.id==='edgesMobList';
+  target.innerHTML=disp.slice(0,isMob?30:15).map(e=>{
     const bTag=e.sharp?`<span style="font-size:8px;font-weight:700;color:var(--grn);letter-spacing:.3px;margin-right:4px">⚡SHARP</span>`:e.lowvig?`<span style="font-size:8px;font-weight:600;color:var(--t3);margin-right:4px">◎LOW-VIG</span>`:'';
-    return`<div class="edge-alert" onclick="jumpTo('${e.g.id}')"><div class="edge-top"><div class="edge-matchup">${e.g.aw.ab} ${e.g.isTeam?'@':'vs'} ${e.g.hm.ab}</div><div class="edge-pct ${e.tier}">${e.ep.toFixed(1)}%</div></div><div class="edge-detail">${bTag}${e.ml}: ${e.side} \u00B7 ${e.bb} \u00B7 ${fp(e.bp)}</div></div>`
-  }).join('')}
+    const click=isMob?`jumpTo('${e.g.id}');$('edgesMobModal').style.display='none'`:`jumpTo('${e.g.id}')`;
+    return`<div class="edge-alert" onclick="${click}"><div class="edge-top"><div class="edge-matchup">${e.g.aw.ab} ${e.g.isTeam?'@':'vs'} ${e.g.hm.ab}</div><div class="edge-pct ${e.tier}">${e.ep.toFixed(1)}%</div></div><div class="edge-detail">${bTag}${e.ml}: ${e.side} \u00B7 ${e.bb} \u00B7 ${fp(e.bp)}</div></div>`
+  }).join('');
+}
+function updateEdges(){
+  _edgesHTML($('edgeAlerts'));
+  // Keep mobile modal in sync if it's currently open
+  const mob=$('edgesMobModal');
+  if(mob&&mob.style.display!=='none')_edgesHTML($('edgesMobList'));
+  // Sync sharp button state in mobile modal
+  const mobBtn=$('sharpOnlyBtnMob');
+  if(mobBtn)mobBtn.style.color=cSharpOnly?'var(--grn)':'';
+}
+function showEdgesMob(){
+  _edgesHTML($('edgesMobList'));
+  const btn=$('sharpOnlyBtnMob');if(btn)btn.style.color=cSharpOnly?'var(--grn)':'';
+  $('edgesMobModal').style.display='flex';
+}
 function jumpTo(id){
   const g=allG.find(x=>x.id===id);if(!g)return;
   // Switch sport tab and date filter if needed so the game is in fG
