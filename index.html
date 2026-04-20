@@ -583,8 +583,12 @@ async function refreshAll(forceOdds=false){
   if(AK){
     await Promise.all(teamSports.map(async([k,c])=>{
       const od=await oddsFetch(c.ok,forceOdds);od.forEach(o=>{
-        const g=allG.find(x=>x.sp===k&&(x.hm.nm.includes(o.home_team.split(' ').pop())||o.home_team.includes(x.hm.ab)));
-        if(g)g.odds=o;
+        // Match by team name AND closest commence_time — fixes back-to-back same matchups (MLB etc)
+        const oTime=new Date(o.commence_time).getTime();
+        const cands=allG.filter(x=>x.sp===k&&(x.hm.nm.includes(o.home_team.split(' ').pop())||o.home_team.includes(x.hm.ab)));
+        if(!cands.length)return;
+        const g=cands.reduce((best,cur)=>Math.abs(cur.tm.getTime()-oTime)<Math.abs(best.tm.getTime()-oTime)?cur:best);
+        g.odds=o;
       });
     }));
     // Tennis odds — cache the sports list for 1hr, individual keys use ODDS_TTL
@@ -707,7 +711,27 @@ function setSport(s){cView='slate';cSport=s;document.querySelectorAll('.sport-ta
   // Restore slate stat labels
   const lbls=['GAMES','EDGES','SPORTS','INJURIES'];document.querySelectorAll('.stat-lbl').forEach((el,i)=>{if(lbls[i])el.textContent=lbls[i]});
   applyFilters()}
-function setDateFilter(f){cDateFilter=f;['today','tomorrow','all'].forEach(k=>{const el=$('dt'+k.charAt(0).toUpperCase()+k.slice(1));if(el)el.classList.toggle('active',k===f)});const titles={today:"Today's Slate",tomorrow:"Tomorrow's Slate",all:"All Games"};$('panelHdrTitle').textContent=titles[f];applyFilters()}
+function setDateFilter(f){cDateFilter=f;['today','tomorrow','all'].forEach(k=>{const el=$('dt'+k.charAt(0).toUpperCase()+k.slice(1));if(el)el.classList.toggle('active',k===f)});const titles={today:"Today's Slate",tomorrow:"Tomorrow's Slate",all:"All Games"};$('panelHdrTitle').textContent=titles[f];applyFilters();
+  // When switching to tomorrow, force-refresh odds so newly-posted lines are picked up
+  if(f==='tomorrow'&&AK){
+    const tmrwDs=new Date();tmrwDs.setDate(tmrwDs.getDate()+1);const ds=tmrwDs.toDateString();
+    const missing=allG.filter(x=>x.tm.toDateString()===ds&&x.isTeam&&!x.odds?.bookmakers?.length);
+    if(missing.length){
+      // Clear cache for team sports so oddsFetch re-fetches
+      Object.values(E).filter(c=>c.isTeam).forEach(c=>{_oddsCache.delete(c.ok)});
+      const teamSports=Object.entries(E).filter(([,c])=>c.isTeam);
+      Promise.all(teamSports.map(async([k,c])=>{
+        const od=await oddsFetch(c.ok,true);od.forEach(o=>{
+          const oTime=new Date(o.commence_time).getTime();
+          const cands=allG.filter(x=>x.sp===k&&(x.hm.nm.includes(o.home_team.split(' ').pop())||o.home_team.includes(x.hm.ab)));
+          if(!cands.length)return;
+          const g=cands.reduce((best,cur)=>Math.abs(cur.tm.getTime()-oTime)<Math.abs(best.tm.getTime()-oTime)?cur:best);
+          g.odds=o;
+        });
+      })).then(()=>{allE=detectEdges(allG.filter(g=>g.odds));applyFilters();updateStats();updateEdges();renderTracked()});
+    }
+  }
+}
 const US_MAJOR_BOOKS=['fanduel','draftkings','betmgm','caesars','pointsbetus','bet365'];
 function hasUsBookOdds(g){return g.odds?.bookmakers?.some(b=>US_MAJOR_BOOKS.some(k=>(b.key||'').includes(k)||(b.title||'').toLowerCase().includes(k)))}
 let cConfFilter='all';
