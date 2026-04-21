@@ -2280,8 +2280,9 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 ## JSON OUTPUT RULES — MUST FOLLOW OR RESPONSE FAILS TO PARSE
 - Return ONLY the JSON block below — no prose, no commentary outside it
 - ALL string values must be single-line — never put a literal newline/tab inside a string value
-- Never use unescaped double-quote characters inside string values (use apostrophe instead, or omit)
-- reasoning, analyst_note, learned_rules_update, note, lean, trigger — all must be single-line strings
+- NEVER write a double-quote character (") inside any string value — use apostrophe (') instead
+- NEVER write odds like +220" or 222+" — write them as +220 or 222+ without the trailing quote
+- reasoning, analyst_note, learned_rules_update, note, lean, trigger — all must be single-line strings with NO double-quote characters
 - filters array: short identifier strings only, no spaces, no punctuation
 
 ## RESPONSE FORMAT — JSON ONLY, no other text:
@@ -2351,7 +2352,11 @@ async function prefetchStatsForPicks(){
 //    Detected via peek-ahead: if the char after " is not a valid JSON continuation
 //    (,  }  ]  :  or end-of-input) it must be an inner quote and gets escaped.
 function _repairJSON(raw){
-  let s=raw.replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
+  // Pre-pass: fix LLM habits that break the state machine
+  // 1. Strip stray " appended to odds/numbers inside strings: 222+" → 222+, -110" → -110
+  let s=raw.replace(/([0-9][+\-]?)\s*"(\s*[,}\]])/g,'$1$2');
+  // 2. Strip +digits (odds written as +220 which is invalid JSON number)
+  s=s.replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
   let out='',inStr=false,esc=false;
   for(let i=0;i<s.length;i++){
     const c=s[i];
@@ -2398,11 +2403,22 @@ async function generatePicks(){
     const m=text.match(/```json\s*([\s\S]+?)\s*```/)||text.match(/(\{[\s\S]+\})/);
     if(!m)throw new Error('No JSON in response');
     const raw=m[1];
-    // Parse strategy: try raw → repaired → filters-stripped → error
+    // Parse strategy: try raw → repaired → filters-stripped → partial extract → error
     function _tryParse(s){try{return JSON.parse(s)}catch(e){return null}}
     function _stripFilters(s){return s.replace(/"filters"\s*:\s*\[[^\]]*\]/g,'"filters":[]')}
-    let result=_tryParse(raw)||_tryParse(_repairJSON(raw))||_tryParse(_stripFilters(_repairJSON(raw)))||_tryParse(_stripFilters(raw));
-    if(!result){const cleaned=_repairJSON(raw);let pe;try{JSON.parse(cleaned)}catch(e){pe=e}const pos=+(pe?.message.match(/position (\d+)/)?.[1]||0);const snip=cleaned.slice(Math.max(0,pos-60),pos+80);throw new Error(`JSON: ${pe?.message} — near: ...${snip}...`)}
+    // Last-resort: extract picks/leans/grading arrays individually via regex when full parse fails
+    function _partialExtract(s){
+      try{
+        const _arr=key=>{const m=s.match(new RegExp('"'+key+'"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*[,}]'));if(!m)return[];try{return JSON.parse(_repairJSON(m[1]))||[]}catch(e){return[]}};
+        const picks=_arr('picks'),leans=_arr('leans'),grading=_arr('grading');
+        const dateM=s.match(/"date"\s*:\s*"([^"]+)"/),rulesM=s.match(/"learned_rules_update"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if(!picks.length&&!leans.length)return null;
+        return{date:dateM?.[1]||new Date().toISOString().split('T')[0],picks,leans,grading,learned_rules_update:rulesM?.[1]||'',analyst_note:'(partial parse — some response data recovered)'};
+      }catch(e){return null}
+    }
+    const repaired=_repairJSON(raw);
+    let result=_tryParse(raw)||_tryParse(repaired)||_tryParse(_stripFilters(repaired))||_tryParse(_stripFilters(raw))||_partialExtract(raw);
+    if(!result){let pe;try{JSON.parse(repaired)}catch(e){pe=e}const pos=+(pe?.message.match(/position (\d+)/)?.[1]||0);const snip=repaired.slice(Math.max(0,pos-60),pos+80);throw new Error(`JSON: ${pe?.message} — near: ...${snip}...`)}
     // Enforce: picks on NO US BOOK ODDS tennis/MMA games get demoted to leans
     if(result.picks){
       const _unbettable=new Set(allG.filter(g=>!hasUsBookOdds(g)&&(g.cat==='tennis'||g.cat==='mma')).flatMap(g=>[g.aw.nm.split(' ').pop().toLowerCase(),g.hm.nm.split(' ').pop().toLowerCase()]));
