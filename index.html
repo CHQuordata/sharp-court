@@ -1551,7 +1551,11 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     else if(awTS||hmTS){const d=awTS||hmTS,pl=awTS?g.aw:g.hm;score+=(awTS?-6:6);tnSigs.push({k:'2025 '+_tnST,aw:awTS?`${d.w}-${d.l} (${d.pct}%)`:'—',hm:hmTS?`${d.w}-${d.l} (${d.pct}%)`:'—',edge:pl,mag:12})}
     // Sackmann surface W-L 2023-24 (secondary, only if TN API missing)
     const awCS=tnH2H?.awSurf?.[_tnSk],hmCS=tnH2H?.hmSurf?.[_tnSk];
-    if(!tnSigs.find(s=>s.k.includes(_tnST))&&awCS?.tot>=5&&hmCS?.tot>=5){const ap=Math.round(awCS.w/awCS.tot*100),hp=Math.round(hmCS.w/hmCS.tot*100);const d=ap-hp;score+=d*0.10;if(Math.abs(d)>=10)tnSigs.push({k:_tnST+' (23-24)',aw:`${awCS.w}-${awCS.l} (${ap}%)`,hm:`${hmCS.w}-${hmCS.l} (${hp}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
+    if(!tnSigs.find(s=>s.k.includes(_tnST))){
+      if(awCS?.tot>=5&&hmCS?.tot>=5){const ap=Math.round(awCS.w/awCS.tot*100),hp=Math.round(hmCS.w/hmCS.tot*100);const d=ap-hp;score+=d*0.10;tnSigs.push({k:_tnST+' (23-24)',aw:`${awCS.w}-${awCS.l} (${ap}%)`,hm:`${hmCS.w}-${hmCS.l} (${hp}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)||5})}
+      else if(awCS?.tot>=5){const ap=Math.round(awCS.w/awCS.tot*100);score-=(ap-50)/50*3;tnSigs.push({k:_tnST+' (23-24)',aw:`${awCS.w}-${awCS.l} (${ap}%)`,hm:'—',edge:ap>=50?g.aw:null,mag:Math.abs(ap-50)||5})}
+      else if(hmCS?.tot>=5){const hp=Math.round(hmCS.w/hmCS.tot*100);score+=(hp-50)/50*3;tnSigs.push({k:_tnST+' (23-24)',aw:'—',hm:`${hmCS.w}-${hmCS.l} (${hp}%)`,edge:hp>=50?g.hm:null,mag:Math.abs(hp-50)||5})}
+    }
     // H2H head-to-head
     if(tnH2H?.total>=2){const d=(tnH2H.hmW-tnH2H.awW)/tnH2H.total;score+=d*4;const ldr=tnH2H.awW>tnH2H.hmW?g.aw:tnH2H.hmW>tnH2H.awW?g.hm:null;const last=tnH2H.recent[0];tnSigs.push({k:'H2H',aw:String(tnH2H.awW),hm:String(tnH2H.hmW),edge:ldr,mag:Math.abs(tnH2H.awW-tnH2H.hmW)*8+(tnH2H.total>=4?5:0),lastMatch:last?`${(last.dt||'').slice(0,4)} ${last.tn||''} ${last.round||''}: ${last.score||''}`.trim():''})}
     // Break-point save % (TN API)
@@ -1581,10 +1585,12 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
         if(sig.k==='H2H'){const tot=parseInt(sig.aw)+parseInt(sig.hm);const lbl=en?`${en} leads H2H ${Math.max(parseInt(sig.aw),parseInt(sig.hm))}-${Math.min(parseInt(sig.aw),parseInt(sig.hm))}`:tot>=2?`H2H split ${sig.aw}-${sig.hm}`:`H2H tied`;reasons.push(`${lbl}${sig.lastMatch?' (last: '+sig.lastMatch+')':''}`)}
         else if(en)reasons.push(`${sig.k}: ${en} ${sig.edge===g.aw?sig.aw:sig.hm} vs opponent ${sig.edge===g.aw?sig.hm:sig.aw} — ${sig.mag.toFixed(0)}pp edge`);
       });
-      // L5 tournament form from ESPN
-      const fmtF=(id,nm)=>{const ms=(tennisForm.get(String(id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!ms.length)return null;const w=ms.filter(m=>m.W).length;return`${nm.split(' ').pop()} L${ms.length}: ${w}-${ms.length-w}`};
+      // L5 tournament form from ESPN — include tournament names
+      const fmtF=(id,nm)=>{const ms=(tennisForm.get(String(id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);if(!ms.length)return null;const w=ms.filter(m=>m.W).length;const recents=ms.slice(0,3).map(m=>`${(m.tn||'').replace(/^(WTA|ATP)\s*/i,'').split(' ').slice(0,2).join(' ')} ${m.W?'W':'L'}`).join(', ');return`${nm.split(' ').pop()} L${ms.length}: ${w}-${ms.length-w} (${recents})`};
       const awF2=fmtF(g.aw.id,g.aw.nm),hmF2=fmtF(g.hm.id,g.hm.nm);
-      if(awF2||hmF2)reasons.push(`Tournament form: ${[awF2,hmF2].filter(Boolean).join(' · ')}`);
+      if(awF2||hmF2)reasons.push(`Recent form: ${[awF2,hmF2].filter(Boolean).join(' · ')}`);
+      // Market pricing context — always explain who the books favor and why
+      if(mlAw?.price&&mlHm?.price){const _ti=p=>p>0?100/(p+100):-p/(-p+100);const sP=side===g.aw?mlAw.price:mlHm.price,oP=side===g.aw?mlHm.price:mlAw.price;const sI=Math.round(_ti(sP)*100),oI=Math.round(_ti(oP)*100);reasons.push(`${side.nm.split(' ').pop()} is the ${sI}% market favorite (${fp(sP)}) — sharp books have ${other.nm.split(' ').pop()} at just ${oI}% implied`)}
     } else {
       reasons.push(`${side.nm} is the straight-up play${g.ha>0&&score>=0?', backed by home-court advantage':''}${mlEdges.length?', with sharp book edge':''}`);
       if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awN=parseFloat(awNba.netPts),hmN=parseFloat(hmNba.netPts);if(!isNaN(awN)&&!isNaN(hmN)&&Math.abs(hmN-awN)>=3){const b=hmN>awN?g.hm:g.aw,w=hmN>awN?g.aw:g.hm,bn=Math.max(awN,hmN),wn=Math.min(awN,hmN);reasons.push(`Net rating: ${b.nm} ${bn>=0?'+':''}${bn.toFixed(1)} vs ${w.nm} ${wn>=0?'+':''}${wn.toFixed(1)} — ${Math.abs(hmN-awN).toFixed(1)}-pt season differential`)}}
