@@ -2076,7 +2076,16 @@ function selPick(idx){
     ${p.result?`<div style="margin-top:8px"><span class="pib pib-${p.result}">RESULT: ${p.result}</span></div>`:''}
   </div>`;
   h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:${cc}"></div>ANALYSIS</div><div style="font-size:11px;color:var(--t2);line-height:1.7">${p.reasoning||'No analysis provided.'}</div></div>`;
-  const g=allG.find(gm=>{const ms=p.matchup.toLowerCase();return gm.aw.nm.toLowerCase().split(' ').some(w=>w.length>3&&ms.includes(w))||gm.hm.nm.toLowerCase().split(' ').some(w=>w.length>3&&ms.includes(w))});
+  const g=allG.find(gm=>{
+    const ms=p.matchup.toLowerCase();
+    // Use nickname (last word) first — avoids city collisions e.g. "Philadelphia" matching both Phillies and 76ers
+    const awLast=gm.aw.nm.toLowerCase().split(' ').pop();
+    const hmLast=gm.hm.nm.toLowerCase().split(' ').pop();
+    if(awLast.length>3&&ms.includes(awLast))return true;
+    if(hmLast.length>3&&ms.includes(hmLast))return true;
+    // Fallback: any word >4 chars (catches edge cases but skips city-only names)
+    return gm.aw.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w))||gm.hm.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w));
+  });
   if(g?.odds?.bookmakers?.length)h+=renderOdds(g);
   const ge=g?allE.filter(e=>e.g.id===g.id):[];
   // ── Pick vs Edge alignment banner ──
