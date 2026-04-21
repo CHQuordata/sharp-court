@@ -2415,7 +2415,7 @@ async function generatePicks(){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4096,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
@@ -2439,8 +2439,12 @@ async function generatePicks(){
           if(start<0)return[];
           let depth=0,end=-1;
           for(let i=start;i<sn.length;i++){if(sn[i]==='[')depth++;else if(sn[i]===']'){depth--;if(!depth){end=i;break;}}}
-          if(end<0)return[];
-          try{return JSON.parse(_repairJSON(sn.slice(start,end+1)))||[]}catch(e){return[]}
+          if(end>=0){try{return JSON.parse(_repairJSON(sn.slice(start,end+1)))||[]}catch(e){return[]}}
+          // Truncated array (hit max_tokens): find last complete {...} object and close the array
+          let lastEnd=start,od=0;
+          for(let i=start;i<sn.length;i++){if(sn[i]==='{')od++;else if(sn[i]==='}'){od--;if(od===0)lastEnd=i+1;}}
+          if(lastEnd<=start)return[];
+          try{return JSON.parse(_repairJSON(sn.slice(start,lastEnd)+']'))||[]}catch(e){return[]}
         };
         const picks=_arr('picks'),leans=_arr('leans'),grading=_arr('grading');
         const dateM=sn.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})/);
