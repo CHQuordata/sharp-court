@@ -842,7 +842,7 @@ function setConfFilter(f){
   ['all','HIGH','MEDIUM','picked'].forEach(k=>{const el=$(k==='all'?'cfAll':k==='HIGH'?'cfHigh':k==='MEDIUM'?'cfMed':'cfPicked');if(el)el.classList.toggle('active',k===f)});
   if(cView==='picks')renderPicksLeaderboard();else applyFilters();
 }
-function applyFilters(){if(cView==='picks')return;let g=cSport==='all'?[...allG]:cSport==='tennis'?allG.filter(g=>g.cat==='tennis'):allG.filter(g=>g.cat===cSport);if(cDateFilter!=='all'){const ref=new Date();if(cDateFilter==='tomorrow')ref.setDate(ref.getDate()+1);const ds=ref.toDateString();g=g.filter(x=>x.tm.toDateString()===ds)}
+function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport==='all'?[...allG]:cSport==='tennis'?allG.filter(g=>g.cat==='tennis'):allG.filter(g=>g.cat===cSport);if(cDateFilter!=='all'){const ref=new Date();if(cDateFilter==='tomorrow')ref.setDate(ref.getDate()+1);const ds=ref.toDateString();g=g.filter(x=>x.tm.toDateString()===ds)}
 // Strip tennis/MMA with no major US book odds — not bettable on FD/DK/BetMGM/Caesars
 if(AK)g=g.filter(gm=>gm.cat!=='tennis'&&gm.cat!=='mma'||hasUsBookOdds(gm));
 // Confidence filter — only applies when AI picks have been generated
