@@ -2037,7 +2037,7 @@ function renderPicksOverview(){
     const gradable=todayPicksData.grading.filter(g=>g.result&&g.result!=='?');
     if(gradable.length){
       h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>YESTERDAY GRADED</div>`;
-      todayPicksData.grading.forEach(gr=>{h+=`<div class="grade-row"><span class="pib pib-${gr.result||'Q'}" style="flex-shrink:0">${gr.result||'?'}</span><span class="grade-pick">${gr.pick}</span><span class="grade-note">${gr.note||''}</span></div>`;
+      todayPicksData.grading.forEach((gr,gi)=>{h+=`<div class="grade-row"><span class="pib pib-${gr.result||'Q'}" style="flex-shrink:0;cursor:pointer" title="Click to correct grade" onclick="correctGrade(${gi})">${gr.result||'?'}</span><span class="grade-pick">${gr.pick}</span><span class="grade-note">${gr.note||''}</span></div>`;
         const clvKey=`${gr.matchup||gr.pick}|${gr.pick}`;const clvData=JSON.parse(localStorage.getItem('et_clv_lines')||'{}')[clvKey];
         const clvGm=gr.sport&&allG.find(gm=>{const mu=(gr.matchup||gr.pick||'').toLowerCase();const an=gm.aw.nm.toLowerCase().split(' ').pop(),hn=gm.hm.nm.toLowerCase().split(' ').pop();return mu.includes(an)||mu.includes(hn)});
         const clvSp=clvGm?.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='spreads')?.outcomes?.find(o=>o.point<0)?.point;
@@ -2227,6 +2227,20 @@ function updateCumulativeRecord(grading,picks){
   const yi=history.findIndex(s=>new Date(s.date).toDateString()===y.toDateString());
   if(yi>=0)history[yi].grading=grading;
   localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
+}
+
+function correctGrade(idx){
+  _loadTodayPicks();
+  if(!todayPicksData?.grading?.[idx])return;
+  const cycle={W:'L',L:'P',P:'?','?':'W'};
+  const cur=todayPicksData.grading[idx].result||'?';
+  todayPicksData.grading[idx].result=cycle[cur]||'W';
+  localStorage.setItem('et_picks_today',JSON.stringify(todayPicksData));
+  // Recompute cumulative record from scratch using corrected grading
+  const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{"overall":{"w":0,"l":0,"p":0},"by_confidence":{},"by_sport":{}}');
+  // Remove old contribution and add new — simplest: full recompute from grading
+  updateCumulativeRecord(todayPicksData.grading,todayPicksData.picks||[]);
+  renderPicksOverview();
 }
 
 function saveTodayToHistory(){
