@@ -1528,6 +1528,15 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     if(hmMarg&&awMarg)score+=(hmMarg-awMarg)*0.3;
     if(Math.abs(restDiff)>=2)score+=restDiff*0.5;
     if(Math.abs(awOut-hmOut)>1)score+=(awOut-hmOut)*0.7;
+    // Market-implied probability baseline — critical for tennis where ESPN form/record is sparse
+    if(mlAw?.price&&mlHm?.price){
+      const _toImp=p=>p>0?100/(p+100):-p/(-p+100);
+      const awImp=_toImp(mlAw.price),hmImp=_toImp(mlHm.price);
+      const mktDiff=hmImp-awImp; // positive = home is market fav
+      // For tennis weight 4x (no records/form), other sports 0.8x (already have strong data signals)
+      const mktWt=g.cat==='tennis'?4:0.8;
+      score+=mktDiff*mktWt;
+    }
   // ── Tennis: pre-score all surface/H2H/serve signals BEFORE side decision ──
   const tnSigs=[];
   if(g.cat==='tennis'){
