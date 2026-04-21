@@ -847,7 +847,7 @@ function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport
 // Strip tennis/MMA with no major US book odds — not bettable on FD/DK/BetMGM/Caesars
 if(AK)g=g.filter(gm=>gm.cat!=='tennis'&&gm.cat!=='mma'||hasUsBookOdds(gm));
 // Confidence filter — only applies when AI picks have been generated
-if(cConfFilter!=='all'&&todayPicksData?.picks){
+if(cConfFilter!=='all'&&todayPicksData?.picks?.length){
   if(cConfFilter==='picked')g=g.filter(gm=>getGameAiConf(gm)!==null);
   else g=g.filter(gm=>getGameAiConf(gm)===cConfFilter);
 }
