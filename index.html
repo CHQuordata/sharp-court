@@ -534,7 +534,7 @@ function mkAthlete(p){
 
 async function init(){
   // Migrate stale rules if version outdated
-  const RULES_V='v3';if(localStorage.getItem('et_rules_version')!==RULES_V){localStorage.removeItem('et_learned_rules');localStorage.setItem('et_rules_version',RULES_V)}
+  const RULES_V='v4';if(localStorage.getItem('et_rules_version')!==RULES_V){localStorage.removeItem('et_learned_rules');localStorage.setItem('et_rules_version',RULES_V)}
   if(AK){$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
   if(CLAUDE_KEY){$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY'}
   if(TN_API_KEY){$('tnDot').classList.add('ok');$('tnSt').textContent='TN READY'}
@@ -2259,7 +2259,7 @@ function buildSystemPrompt(learnedRules,rec){
   const bySp=rec.by_sport?Object.entries(rec.by_sport).filter(([,r])=>(r.w||0)+(r.l||0)>0).map(([s,r])=>`${s}: ${r.w||0}-${r.l||0}`).join(' | '):'';
   return `You are a sharp sports betting analyst embedded in SPORTSEDGE TERMINAL. Your job each day:
 1. Grade yesterday's picks using results visible in the game data
-2. Update your learned rules based on patterns from grading
+2. Update learned rules ONLY if today's grading reveals a new pattern (omit learned_rules_update entirely if no new lesson)
 3. Generate today's best picks from the live data provided
 
 ## YOUR TRACK RECORD
@@ -2267,7 +2267,7 @@ Overall: ${ov.w}-${ov.l}${ov.p?' ('+ov.p+'P)':''} | Hit Rate: ${hr}
 ${byConf?'By Confidence: '+byConf:''}
 ${bySp?'By Sport: '+bySp:''}
 
-## LEARNED RULES (enforce every slate — update when new patterns emerge)
+## LEARNED RULES (max 12 rules — enforce every slate)
 ${learnedRules}
 
 ## SIGNALS — minimum for a graded pick (is_lean:false)
@@ -2308,7 +2308,7 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 {
   "date":"YYYY-MM-DD",
   "grading":[{"pick":"exact pick text","sport":"sport","result":"W|L|P|?","note":"brief reason"}],
-  "learned_rules_update":"Full updated rules list — keep valid existing rules, add new lessons",
+  "learned_rules_update":"ONLY include if adding/changing a rule — output full updated list, max 12 rules, each max 20 words. Omit this field entirely if no changes.",
   "picks":[{"rank":1,"sport":"nba","matchup":"Team A vs Team B","pick":"Team A -4.5 (-110)","confidence":"HIGH","score":8.2,"odds":-110,"reasoning":"Multi-sentence analysis covering key edges","filters":["net_rating","rest_edge"],"is_lean":false}],
   "parlays":[{"type":"2-Leg Conservative","legs":["leg1","leg2"],"note":"why these combine"}],
   "leans":[{"matchup":"...","lean":"side and why","trigger":"what would promote to graded pick"}],
@@ -2480,7 +2480,15 @@ async function generatePicks(){
     localStorage.setItem('et_picks_date',new Date().toDateString());
     // Store line at pick time for CLV tracking
     {const clvLines={};(result.picks||[]).forEach(p=>{const gm=allG.find(gm=>{const mu=(p.matchup||'').toLowerCase();const an=gm.aw.nm.toLowerCase().split(' ').pop(),hn=gm.hm.nm.toLowerCase().split(' ').pop();return mu.includes(an)||mu.includes(hn)});if(!gm?.odds?.bookmakers?.length)return;const bk=gm.odds.bookmakers[0];const sp=bk.markets.find(m=>m.key==='spreads');const ml=bk.markets.find(m=>m.key==='h2h');const to=bk.markets.find(m=>m.key==='totals');clvLines[`${p.matchup}|${p.pick}`]={sp:sp?.outcomes?.find(o=>o.point<0)?.point??null,to:to?.outcomes?.find(o=>o.name==='Over')?.point??null,ml:ml?.outcomes?.map(o=>o.price)||[],ts:Date.now(),gid:gm.id}});localStorage.setItem('et_clv_lines',JSON.stringify(clvLines))}
-    if(result.learned_rules_update)localStorage.setItem('et_learned_rules',result.learned_rules_update);
+    if(result.learned_rules_update){
+      // Cap rules: max 12 lines, each max 150 chars, to prevent token bloat
+      const trimmedRules=result.learned_rules_update.split('\n')
+        .map(r=>r.trim()).filter(Boolean)
+        .slice(0,12)
+        .map(r=>r.length>150?r.slice(0,147)+'…':r)
+        .join('\n');
+      localStorage.setItem('et_learned_rules',trimmedRules);
+    }
     if(result.grading?.length)updateCumulativeRecord(result.grading,result.picks);
     saveTodayToHistory();
   }catch(e){
