@@ -1912,8 +1912,9 @@ const DEFAULT_LEARNED_RULES=`1. PICK LIMITS: Max 8 graded picks per slate. Max 4
 4. NBA FATIGUE: B2B teams cover ~44% ATS and undershoot total by avg 4.5 pts vs rested opponents. 3-in-4 nights is stronger — treat as a primary fade signal on both spread and total.
 5. NBA/NHL PLAYOFFS: Ignore regular-season ATS trends. Focus on series score, home-court/ice patterns in THIS series, desperation factor, and coaching adjustments game-to-game. Spread is secondary to series momentum.
 6. NHL SPECIAL TEAMS: PP% gap ≥5pts is a puck-line edge. PK% ≥82% vs opponent PP% ≥22% wins the special teams battle. OT/shootout losses are variance — do not over-correct after them.
-7. TENNIS EDGES: Surface 2025 W-L% (matchstat.com) outweighs ATP ranking when divergence ≥15%. BP save% ≥65% vs opponent ≤55% is a serve-hold edge — lean that player ML. Only pick when odds are live on FanDuel/DraftKings/BetMGM.
-8. TENNIS LIMITS: No graded picks or leans on any match tagged [NO US BOOK ODDS]. analyst_note is 1-2 sentences max — no system alerts, grading complaints, or data warnings.`;
+7. TENNIS SEASON ACTIVE: ATP/WTA is the PRIMARY pick target. Allocate 3-5 graded pick slots to tennis on DK/BetMGM games before filling NBA/NHL/MLB. Clay season favors heavy topspin baseliners, high-ranked clay specialists, left-handers. Market favorite ≥65% implied + clay surface record is a HIGH confidence play.
+8. TENNIS EDGES: Surface 2025 W-L% outweighs ATP ranking when divergence ≥15%. BP save% ≥65% vs opponent ≤55% is a serve-hold edge. Ranking gap ≥20 places on correct surface = structural edge. Only pick games tagged [DK ✓] or [MGM ✓].
+9. TENNIS LIMITS: No graded picks on [NO US BOOK ODDS] games. analyst_note is 1-2 sentences max.`;
 
 function resetLearnedRules(){localStorage.removeItem('et_learned_rules');renderPicksOverview()}
 function showPicksSetup(){$('claudeModal').style.display='flex';$('claudeKeyInput').focus()}
@@ -2130,7 +2131,10 @@ function buildGamesContext(todayOnly=false){
     const playoffTag=g.playoff?` [PLAYOFFS${g.serSum?' — '+g.serSum:''}]`:'';
     const hasUsOdds=hasUsBookOdds(g);
     const noOddsBlock=!hasUsOdds&&(g.cat==='tennis'||g.cat==='mma');
-    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}\n`;
+    const _hasDK=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('draftkings')||(b.title||'').toLowerCase().includes('draftkings'));
+    const _hasMGM=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('betmgm')||(b.title||'').toLowerCase().includes('betmgm'));
+    const _tnBookTag=(_hasDK||_hasMGM)?` [${_hasDK?'DK ✓':''}${_hasDK&&_hasMGM?' ':''}${_hasMGM?'MGM ✓':''}] ← PRIORITY PICK TARGET`:'';
+    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}${_tnBookTag}\n`;
     // No-odds tennis/MMA: header only, no stats (can't be picked anyway)
     if(noOddsBlock)return;
     if(g.aw.rec||g.hm.rec)ctx+=`  Records: ${g.aw.nm} ${g.aw.rec||'N/A'} | ${g.hm.nm} ${g.hm.rec||'N/A'}\n`;
@@ -2252,7 +2256,7 @@ ${learnedRules}
 
 ## SIGNALS — minimum for a graded pick (is_lean:false)
 All sports: ≥1 clear edge. Any of: favorable odds vs model (EV+), statistical advantage (net rating, ERA gap, GAA gap, PP% edge), rest/fatigue edge, injury edge, line move, sharp signal, park/surface advantage.
-Tennis: surface form, H2H on surface, ranking-form divergence, tournament momentum. ≥1 qualifies.
+Tennis: surface form, H2H on surface, ranking-form divergence, tournament momentum, market pricing vs ranking gap. ≥1 qualifies. PRIORITY SPORT — see Tennis rules below.
 Playoffs (NBA/NHL): Series context is primary — series score, elimination games, desperation, home/away splits in THIS series, coaching adjustments game-to-game. Regular season ATS trends are secondary to series momentum. MLB regular season signals apply normally.
 
 ## CRITICAL RULES
@@ -2261,10 +2265,17 @@ Playoffs (NBA/NHL): Series context is primary — series score, elimination game
 - Never 2+ graded picks on same game.
 - NEVER make a graded pick on any game tagged [NO US BOOK ODDS — DO NOT PICK]. These are tennis/MMA matches not carried by US books — leans only, trigger "line appears on US book".
 - Games tagged [ODDS LOADING — USE STATS] are NBA/NHL/MLB with odds not yet fetched — pick freely using stats, form, and situational context.
-- Include tennis only when NOT tagged [NO US BOOK ODDS — DO NOT PICK].
 - Every pick and lean MUST have "sport" set to the exact category (nba/nhl/mlb/nfl/tennis/mma) and "matchup" must contain BOTH team/player last names exactly as shown in the slate so picks map to the correct game.
 - List every inactive sport explicitly with reason.
 - Grade all yesterday picks. Use "?" only if truly no result found.
+
+## TENNIS PRIORITY (ATP/WTA SEASON ACTIVE)
+ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and BetMGM are the PRIMARY focus of this slate. Follow this allocation:
+1. FIRST allocate graded pick slots to tennis matches tagged [DK ✓] or [MGM ✓] that have qualifying edges.
+2. Fill remaining slots with NBA/NHL/MLB picks.
+3. Target 3-5 tennis picks per slate when ≥3 qualifying matches exist on DK or BetMGM.
+4. Tennis edges to prioritize: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
+5. Only pick tennis games carrying the [DK ✓] or [MGM ✓] tag — all others are leans.
 
 ## JSON OUTPUT RULES — MUST FOLLOW OR RESPONSE FAILS TO PARSE
 - Return ONLY the JSON block below — no prose, no commentary outside it
