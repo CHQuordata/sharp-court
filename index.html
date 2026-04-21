@@ -1539,7 +1539,7 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     const awBpL=_getTNBP(awTnApi),hmBpL=_getTNBP(hmTnApi);
     // 2025 surface record from TN API (highest quality)
     if(awTS&&hmTS){const d=awTS.pct-hmTS.pct;score+=d*0.15;if(Math.abs(d)>=8)tnSigs.push({k:'2025 '+_tnST,aw:`${awTS.w}-${awTS.l} (${awTS.pct}%)`,hm:`${hmTS.w}-${hmTS.l} (${hmTS.pct}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
-    else if(awTS||hmTS){const d=awTS||hmTS,pl=awTS?g.aw:g.hm;score+=(awTS?6:-6);tnSigs.push({k:'2025 '+_tnST,aw:awTS?`${d.w}-${d.l} (${d.pct}%)`:'—',hm:hmTS?`${d.w}-${d.l} (${d.pct}%)`:'—',edge:pl,mag:12})}
+    else if(awTS||hmTS){const d=awTS||hmTS,pl=awTS?g.aw:g.hm;score+=(awTS?-6:6);tnSigs.push({k:'2025 '+_tnST,aw:awTS?`${d.w}-${d.l} (${d.pct}%)`:'—',hm:hmTS?`${d.w}-${d.l} (${d.pct}%)`:'—',edge:pl,mag:12})}
     // Sackmann surface W-L 2023-24 (secondary, only if TN API missing)
     const awCS=tnH2H?.awSurf?.[_tnSk],hmCS=tnH2H?.hmSurf?.[_tnSk];
     if(!tnSigs.find(s=>s.k.includes(_tnST))&&awCS?.tot>=5&&hmCS?.tot>=5){const ap=Math.round(awCS.w/awCS.tot*100),hp=Math.round(hmCS.w/hmCS.tot*100);const d=ap-hp;score+=d*0.10;if(Math.abs(d)>=10)tnSigs.push({k:_tnST+' (23-24)',aw:`${awCS.w}-${awCS.l} (${ap}%)`,hm:`${hmCS.w}-${hmCS.l} (${hp}%)`,edge:d>0?g.aw:g.hm,mag:Math.abs(d)})}
@@ -1553,6 +1553,12 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
     else if(!awRank&&hmRank)tnSigs.push({k:'RANK',aw:'NR',hm:'#'+hmRank,edge:g.hm,mag:15});
     // Seeds
     if(g.aw.seed&&g.hm.seed){const sd=g.hm.seed-g.aw.seed;score+=sd*0.3}
+    // L5 tournament form (ESPN) — numeric contribution to score
+    {const awFMs=(tennisForm.get(String(g.aw.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);
+    const hmFMs=(tennisForm.get(String(g.hm.id))||[]).slice().sort((a,b)=>b.dt-a.dt).slice(0,5);
+    if(awFMs.length>=3&&hmFMs.length>=3){const awFP=awFMs.filter(m=>m.W).length/awFMs.length,hmFP=hmFMs.filter(m=>m.W).length/hmFMs.length;const fd=awFP-hmFP;if(Math.abs(fd)>=0.2){score+=(hmFP-awFP)*4;tnSigs.push({k:'L5 FORM',aw:`${awFMs.filter(m=>m.W).length}-${awFMs.filter(m=>!m.W).length}`,hm:`${hmFMs.filter(m=>m.W).length}-${hmFMs.filter(m=>!m.W).length}`,edge:awFP>hmFP?g.aw:g.hm,mag:Math.abs(fd)*20})}}
+    else if(awFMs.length>=3&&!hmFMs.length){const awFP=awFMs.filter(m=>m.W).length/awFMs.length;if(awFP>=0.6){score-=3;tnSigs.push({k:'L5 FORM',aw:`${awFMs.filter(m=>m.W).length}-${awFMs.filter(m=>!m.W).length}`,hm:'—',edge:g.aw,mag:Math.round(awFP*15)})}}
+    else if(hmFMs.length>=3&&!awFMs.length){const hmFP=hmFMs.filter(m=>m.W).length/hmFMs.length;if(hmFP>=0.6){score+=3;tnSigs.push({k:'L5 FORM',aw:'—',hm:`${hmFMs.filter(m=>m.W).length}-${hmFMs.filter(m=>!m.W).length}`,edge:g.hm,mag:Math.round(hmFP*15)})}}}
   }
   const side=score>=0?g.hm:g.aw,other=score>=0?g.aw:g.hm,mlO=score>=0?mlHm:mlAw;
   const mag=Math.abs(score);
