@@ -534,7 +534,7 @@ function mkAthlete(p){
 
 async function init(){
   // Migrate stale rules if version outdated
-  const RULES_V='v4';if(localStorage.getItem('et_rules_version')!==RULES_V){localStorage.removeItem('et_learned_rules');localStorage.setItem('et_rules_version',RULES_V)}
+  const RULES_V='v5';if(localStorage.getItem('et_rules_version')!==RULES_V){localStorage.removeItem('et_learned_rules');localStorage.setItem('et_rules_version',RULES_V)}
   if(AK){$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
   if(CLAUDE_KEY){$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY'}
   if(TN_API_KEY){$('tnDot').classList.add('ok');$('tnSt').textContent='TN READY'}
@@ -1908,15 +1908,11 @@ let BANKROLL=parseFloat(localStorage.getItem('bankroll'))||0;
 const aiAnalysisCache=new Map();
 const gamePicksCache=new Map();
 
-const DEFAULT_LEARNED_RULES=`1. PICK LIMITS: Max 8 graded picks per slate. Max 4 MEDIUM confidence. One pick per game. Surplus goes to leans.
-2. RECORDS AS CONTEXT: Season records, H2H, and opponent quality are supporting signals only — never the primary edge. Rosters turn over. Contextualize all W-L before weighting.
-3. MLB: No totals until SP has 30+ IP (early ERA is noise — use K/9, xFIP, park factor). SP ERA edge alone is insufficient — require an offensive or bullpen angle on top.
-4. NBA FATIGUE: B2B teams cover ~44% ATS and undershoot total by avg 4.5 pts vs rested opponents. 3-in-4 nights is stronger — treat as a primary fade signal on both spread and total.
-5. NBA/NHL PLAYOFFS: Ignore regular-season ATS trends. Focus on series score, home-court/ice patterns in THIS series, desperation factor, and coaching adjustments game-to-game. Spread is secondary to series momentum.
-6. NHL SPECIAL TEAMS: PP% gap ≥5pts is a puck-line edge. PK% ≥82% vs opponent PP% ≥22% wins the special teams battle. OT/shootout losses are variance — do not over-correct after them.
-7. TENNIS SEASON ACTIVE: ATP/WTA is the PRIMARY pick target. Allocate 3-5 graded pick slots to tennis on DK/BetMGM games before filling NBA/NHL/MLB. Clay season favors heavy topspin baseliners, high-ranked clay specialists, left-handers. Market favorite ≥65% implied + clay surface record is a HIGH confidence play.
-8. TENNIS EDGES: Surface 2025 W-L% outweighs ATP ranking when divergence ≥15%. BP save% ≥65% vs opponent ≤55% is a serve-hold edge. Ranking gap ≥20 places on correct surface = structural edge. Only pick games tagged [DK ✓] or [MGM ✓].
-9. TENNIS LIMITS: No graded picks on [NO US BOOK ODDS] games. analyst_note is 1-2 sentences max.`;
+const DEFAULT_LEARNED_RULES=`1. NBA FATIGUE: B2B teams cover 44% ATS and undershoot total by 4.5 pts vs rested. 3-in-4 nights = primary fade on spread and total.
+2. NBA/NHL PLAYOFFS: Series score + home patterns + desperation trump regular-season ATS. Spread is secondary to series momentum.
+3. NHL PUCK LINE: PP% gap >=5pts = puck line edge. PK% >=82% vs opp PP% >=22% wins special teams battle. Fade OT/shootout variance.
+4. MLB SP: No totals until SP has 30+ IP. SP ERA alone insufficient — require offensive or bullpen angle on top.
+5. TENNIS CLAY: Market fav >=65% implied + clay surface record = HIGH confidence. Ranking gap >=20 on correct surface = structural edge. BP save% >=65% vs opp <=55% = serve-hold edge.`;
 
 function resetLearnedRules(){localStorage.removeItem('et_learned_rules');renderPicksOverview()}
 function showPicksSetup(){$('claudeModal').style.display='flex';$('claudeKeyInput').focus()}
