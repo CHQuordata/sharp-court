@@ -1359,7 +1359,7 @@ function renderProps(data,cat){if(!data?.bookmakers?.length)return'';const all={
   const rows=Object.entries(players).slice(0,12).map(([nm,stats])=>`<tr><td style="color:var(--cyn);font-weight:500;white-space:nowrap">${nm}</td>${Object.entries(stats).map(([k,v])=>`<td>${v}</td>`).join('')}</tr>`);
   if(!rows.length)return'';const hdrs=Object.keys(Object.values(players)[0]||{});
   return`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>PLAYER PROPS</div><table class="dtable"><thead><tr><th>PLAYER</th>${hdrs.map(h=>`<th>${h.toUpperCase().replace(/_/g,' ')}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;}
-function extractNBAStats(d){if(!d)return null;const all=[];const cats=d.results?.stats?.categories||d.results?.splits?.categories||d.splits?.categories||[];(Array.isArray(cats)?cats:[]).forEach(c=>(c.stats||[]).forEach(s=>all.push(s)));const dv=n=>{const s=all.find(x=>x.name===n);return s?.displayValue||null};const nv=n=>{const s=all.find(x=>x.name===n);return s?.value??null};const ppg=dv('avgPoints'),oppPpg=dv('avgPointsAllowed');const netPts=(ppg&&oppPpg)?((parseFloat(ppg)-parseFloat(oppPpg)).toFixed(1)):null;return{ppg,fgPct:dv('fieldGoalPct'),tpPct:dv('threePointPct'),ftPct:dv('freeThrowPct'),scEff:dv('scoringEfficiency'),shEff:dv('shootingEfficiency'),ast:dv('avgAssists'),reb:dv('avgRebounds'),blk:dv('avgBlocks'),stl:dv('avgSteals'),oppPpg,netPts,toPg:dv('avgTurnovers')}}
+function extractNBAStats(d){if(!d)return null;const all=[];const cats=d.results?.stats?.categories||d.results?.splits?.categories||d.splits?.categories||[];(Array.isArray(cats)?cats:[]).forEach(c=>(c.stats||[]).forEach(s=>all.push(s)));const dv=n=>{const s=all.find(x=>x.name===n);return s?.displayValue||null};const nv=n=>{const s=all.find(x=>x.name===n);return s?.value??null};const ppg=dv('avgPoints'),oppPpg=dv('avgPointsAllowed');const netPts=(ppg&&oppPpg)?((parseFloat(ppg)-parseFloat(oppPpg)).toFixed(1)):null;const paceVal=nv('pace');const pace=paceVal!=null?parseFloat(paceVal.toFixed(1)):(dv('pace')?parseFloat(dv('pace')):null);return{ppg,fgPct:dv('fieldGoalPct'),tpPct:dv('threePointPct'),ftPct:dv('freeThrowPct'),scEff:dv('scoringEfficiency'),shEff:dv('shootingEfficiency'),ast:dv('avgAssists'),reb:dv('avgRebounds'),blk:dv('avgBlocks'),stl:dv('avgSteals'),oppPpg,netPts,toPg:dv('avgTurnovers'),pace}}
 function isB2B(form,gameTm){return form.length>0&&Math.round((gameTm-form[0].dt)/864e5)<=1}
 function is3in4(form,gameTm){if(form.length<2)return false;const d1=Math.round((gameTm-form[0].dt)/864e5),d2=Math.round((gameTm-form[1].dt)/864e5);return d1<=2&&d2<=3}
 
@@ -1415,6 +1415,11 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
   const awMarg=awFor!==null?awFor-awAg:0, hmMarg=hmFor!==null?hmFor-hmAg:0;
   const awR=af.length?Math.round((g.tm-af[0].dt)/864e5):null,hmR=hf.length?Math.round((g.tm-hf[0].dt)/864e5):null;
   const restDiff=(awR!==null&&hmR!==null)?hmR-awR:0;
+  // L10 net point differential from form scores — sharper signal than season net rating
+  const calcL10Net=f=>{if(!f||f.length<5)return null;const ms=f.slice(0,10).map(m=>{const p=m.sc.split('-').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p[0]-p[1]:null}).filter(x=>x!==null);return ms.length>=5?parseFloat((ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1)):null};
+  const awL10Net=calcL10Net(af),hmL10Net=calcL10Net(hf);
+  // Road trip depth — consecutive away games for the away team
+  const awRoadTrip=(()=>{if(!af||!af.length)return 0;let n=0;for(const m of af){if(!m.hm)n++;else break;}return n})();
   const _iw=i=>i.sc==='O'?1:i.sc==='D'?0.6:i.sc==='Q'?0.3:i.sc==='P'?0.1:0;
   const awOut=g.inj.aw.reduce((s,i)=>s+_iw(i),0),hmOut=g.inj.hm.reduce((s,i)=>s+_iw(i),0);
   const awStr=streak(af),hmStr=streak(hf);
@@ -1466,7 +1471,11 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
       reasons.push(`${b2.nm} is missing ${Math.max(awOut,hmOut)} players (OUT), thinning their rotation against a healthier ${h2.nm}`)}
     if(g.ha>0)reasons.push(`Home-court worth ~${g.ha}pts in ${spName} for ${g.hm.nm}`);
     if(spEdges.length)reasons.push(`Sharp signal: ${spEdges[0].ep.toFixed(1)}% spread edge at ${spEdges[0].bb}`);
-    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){score+=nd*0.3;const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);reasons.push(`Net rating: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)} — ${Math.abs(nd).toFixed(1)}-pt differential favors ${b2.ab} to cover`)}}}
+    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){score+=nd*0.3;const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);reasons.push(`Season net: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)} — ${Math.abs(nd).toFixed(1)}-pt gap (context; see L10 below)`)}}}
+    // L10 net divergence — what sharp books actually price, not season average
+    if(g.cat==='nba'&&awL10Net!==null&&hmL10Net!==null){const l10d=hmL10Net-awL10Net;if(Math.abs(l10d)>=4){score+=l10d*0.35;const bL=l10d>0?g.hm:g.aw,wL=l10d>0?g.aw:g.hm,bN=l10d>0?hmL10Net:awL10Net,wN=l10d>0?awL10Net:hmL10Net;reasons.push(`L10 net: ${bL.nm} ${bN>=0?'+':''}${bN} vs ${wL.nm} ${wN>=0?'+':''}${wN} pts/gm — recent form divergence (sharps track this, not season avg)`)}}
+    // Road trip depth — 3+ consecutive away games depresses ATS cover rate
+    if(g.cat==='nba'&&awRoadTrip>=3){score-=1.5;reasons.push(`${g.aw.nm} on game ${awRoadTrip+1} of road trip — extended road trips depress ATS cover rate, home edge amplified`)}
     if(g.cat==='nhl'&&(awNhl||hmNhl)){const awNet=awNhl?.net?parseFloat(awNhl.net):null,hmNet=hmNhl?.net?parseFloat(hmNhl.net):null;if(awNet!==null&&hmNet!==null&&!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=0.4){score+=nd*2.5;const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm;reasons.push(`Goal differential edge: ${b2.nm} ${(nd>0?hmNet:awNet)>=0?'+':''}${(nd>0?hmNet:awNet)} net G/gm vs ${w2.nm} ${(nd>0?awNet:hmNet)>=0?'+':''}${(nd>0?awNet:hmNet)} — meaningful season-long edge`)}}const awPP=awNhl?.ppPct?parseFloat(awNhl.ppPct):null,hmPP=hmNhl?.ppPct?parseFloat(hmNhl.ppPct):null;if(awPP!=null&&hmPP!=null&&!isNaN(awPP)&&!isNaN(hmPP)){const ppDiff=hmPP-awPP;if(Math.abs(ppDiff)>=5){score+=ppDiff*0.15;const bPP=ppDiff>0?g.hm:g.aw,bPct=Math.max(awPP,hmPP).toFixed(1),wPct=Math.min(awPP,hmPP).toFixed(1);reasons.push(`Special teams edge: ${bPP.nm} PP ${bPct}% vs opponent ${wPct}% — ${Math.abs(ppDiff).toFixed(1)}pp gap is a reliable ATS signal in hockey`)}}}
     if(g.cat==='nba'&&(awF3||hmF3)&&!(awF3&&hmF3)){score+=(awF3?-1:1)*3.5;reasons.push(`${awF3?g.aw.nm:g.hm.nm} playing 3rd game in 4 nights — covers only ~38% ATS on 3-in-4; ${awF3?g.hm.nm:g.aw.nm} has significant fatigue edge`)}
     if((awB2B||hmB2B)&&!(awB2B&&hmB2B)){score+=(awB2B?-1:1)*2.5;reasons.push(`${awB2B?g.aw.nm:g.hm.nm} on a back-to-back — B2B teams cover only ~44% ATS${g.cat==='nhl'?' in the NHL':''}`)}
@@ -1515,8 +1524,12 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
         if(toOver&&Math.abs(proj-toOver.point)>5){const dir=proj>toOver.point?'OVER':'UNDER';ts2+=(proj>toOver.point?1.5:-1.5);reasons.push(`Projected ${proj.toFixed(1)} pts${defAdj?' (defense-adjusted)':''} vs posted ${toOver.point} — ${Math.abs(proj-toOver.point).toFixed(1)} pts ${dir==='OVER'?'over':'under'} line, lean ${dir}`);}
         else if(toOver)reasons.push(`Projected ${proj.toFixed(1)} pts${defAdj?' (defense-adjusted)':''} vs posted ${toOver.point} — within margin, thin edge`);
         // Net rating combined signal
-        if(awNet!==null&&hmNet!==null){const combNet=(awNet+hmNet)/2;if(Math.abs(combNet)>=3){const dir2=combNet>0?'OVER':'UNDER';ts2+=(combNet>0?0.8:-0.8);reasons.push(`Avg net rating ${combNet>=0?'+':''}${combNet.toFixed(1)} — both teams ${combNet>0?'scoring above their defensive allow rate':'allowing more than they score'}, lean ${dir2}`)}}
+        if(awNet!==null&&hmNet!==null){const combNet=(awNet+hmNet)/2;if(Math.abs(combNet)>=3){const dir2=combNet>0?'OVER':'UNDER';ts2+=(combNet>0?0.5:-0.5);reasons.push(`Season net avg ${combNet>=0?'+':''}${combNet.toFixed(1)} — context only`)}}
       }
+      // Pace mismatch — #1 structural total signal for sharp NBA bettors
+      if(awNba?.pace&&hmNba?.pace){const awPc=parseFloat(awNba.pace),hmPc=parseFloat(hmNba.pace);if(!isNaN(awPc)&&!isNaN(hmPc)){const gap=Math.abs(awPc-hmPc),avg=(awPc+hmPc)/2;if(gap>=4){const slowT=awPc<hmPc?g.aw:g.hm;ts2-=1.2;reasons.push(`Pace mismatch: ${g.aw.ab} ${awPc.toFixed(1)} vs ${g.hm.ab} ${hmPc.toFixed(1)} poss/48 — ${slowT.nm} controls tempo, structural UNDER`)}else if(avg>=100.5){ts2+=0.8;reasons.push(`Both teams fast-paced (avg ${avg.toFixed(1)} poss/48) — high possession count, OVER lean`)}}}
+      // L10 combined net for totals — recent scoring trend
+      if(awL10Net!==null&&hmL10Net!==null){const cL10=(awL10Net+hmL10Net)/2;if(Math.abs(cL10)>=3){const dir3=cL10>0?'OVER':'UNDER';ts2+=(cL10>0?0.8:-0.8);reasons.push(`L10 combined net ${cL10>=0?'+':''}${cL10.toFixed(1)} pts/gm — recent scoring trend lean ${dir3}`)}}
       // 3-in-4 fatigue
       const f3B2B=awF3||hmF3;if(f3B2B&&!(awF3&&hmF3)){ts2-=2;reasons.push(`${awF3?g.aw.nm:g.hm.nm} playing 3rd game in 4 nights — severe fatigue factor, strong UNDER lean`)}
       else if((awB2B||hmB2B)&&!(awB2B&&hmB2B)){ts2-=1.5;if(!reasons.find(r=>r.includes('back-to-back')))reasons.push(`${awB2B?g.aw.nm:g.hm.nm} on back-to-back — reduced output expected, UNDER lean`)}}
@@ -2338,8 +2351,9 @@ Playoffs (NBA/NHL): Series context is primary — series score, elimination game
 
 ## NBA STAT POLICY
 - Season-average PPG, FG%, 3P%, TO/G are already fully priced into the spread — never use them as a standalone pick reason. "Team A averages 116 PPG vs Team B 108 PPG" is circular; the spread already reflects this.
-- Real NBA edges: net rating gap in last 10 games (recent form divergence), pace mismatch vs opponent, B2B/3-in-4 fatigue, rest advantage, sharp line move, or EV+ pricing gap.
-- Use season stats as context to validate a pick you already have a reason for — not as the reason itself.
+- SCORED signals in priority order: (1) L10 net rating divergence ≥4pts — what sharp books actually price, overrides season net; (2) Pace mismatch ≥4 poss/48 — structural UNDER when slow team controls tempo, OVER when both >100.5; (3) B2B / 3-in-4 fatigue; (4) Rest advantage ≥2 days; (5) Road trip depth ≥3 consecutive away games — ATS cover rate drops materially.
+- Season net rating is context only — if L10 net and season net conflict, L10 wins. Never cite season net as the primary reason.
+- Use season stats only to validate a pick you already have a reason for — not as the reason itself.
 
 ## NHL STAT POLICY
 - SH% (shooting percentage) is HIGH-VARIANCE noise — do NOT use it as an offensive edge signal. It regresses to league average (~9%) over time and tells you nothing about the next game.
