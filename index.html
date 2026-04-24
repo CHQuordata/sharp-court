@@ -1315,7 +1315,7 @@ async function selGame(idx){
   }catch(e){el.innerHTML=`<div class="detail-empty" style="color:var(--red)">Error loading matchup. Try clicking again.</div>`;}
 }
 
-function xForm(d,tid){if(!d?.events)return[];const sc=v=>typeof v==='object'?v?.value??0:v??0;return d.events.filter(e=>e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10).map(e=>{const c=e.competitions[0],t=c.competitors.find(x=>x.id===tid||x.team?.id==tid),o=c.competitors.find(x=>x!==t);return{dt:new Date(e.date),r:t?.winner?'W':'L',sc:`${sc(t?.score)}-${sc(o?.score)}`,opp:o?.team?.abbreviation||'?',hm:t?.homeAway==='home'}})}
+function xForm(d,tid){if(!d?.events)return[];const sc=v=>typeof v==='object'?v?.value??0:v??0;return d.events.filter(e=>e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,15).map(e=>{const c=e.competitions[0],t=c.competitors.find(x=>x.id===tid||x.team?.id==tid),o=c.competitors.find(x=>x!==t);return{dt:new Date(e.date),r:t?.winner?'W':'L',sc:`${sc(t?.score)}-${sc(o?.score)}`,opp:o?.team?.abbreviation||'?',hm:t?.homeAway==='home',playoff:e.season?.type==3}})}
 function avgSc(f,type){if(!f.length)return null;return f.reduce((s,x)=>{const p=x.sc.split('-');return s+(type==='f'?parseInt(p[0])||0:parseInt(p[1])||0)},0)/f.length}
 function formBar(nm,f){if(!f.length)return'';const w=f.filter(x=>x.r==='W').length,sk=streak(f),sc=sk[0]==='W'?'hot':sk[0]==='L'?'cold':'neutral';
   const l5=f.slice(0,5),l5w=l5.filter(x=>x.r==='W').length,l5clr=l5w>=4?'var(--grn)':l5w<=1?'var(--red)':'var(--t3)';
@@ -1479,8 +1479,10 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
 if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)}${(awL10Net!==null&&hmL10Net!==null)?' (context — L10 is primary)':' — season edge'}`)}}}
     // L10 net divergence — what sharp books actually price, not season average
     if(g.cat==='nba'&&awL10Net!==null&&hmL10Net!==null){const l10d=hmL10Net-awL10Net;if(Math.abs(l10d)>=4){score+=l10d*0.35;const bL=l10d>0?g.hm:g.aw,wL=l10d>0?g.aw:g.hm,bN=l10d>0?hmL10Net:awL10Net,wN=l10d>0?awL10Net:hmL10Net;reasons.push(`L10 net: ${bL.nm} ${bN>=0?'+':''}${bN} vs ${wL.nm} ${wN>=0?'+':''}${wN} pts/gm — recent form divergence (sharps track this, not season avg)`)}}
-    // Road trip depth — 3+ consecutive away games depresses ATS cover rate
-    if(g.cat==='nba'&&awRoadTrip>=3){score-=1.5;reasons.push(`${g.aw.nm} on game ${awRoadTrip+1} of road trip — extended road trips depress ATS cover rate, home edge amplified`)}
+    // Road trip depth — regular season only; playoff road trips carry different psychology
+    if(g.cat==='nba'&&!g.playoff&&awRoadTrip>=3){score-=1.5;reasons.push(`${g.aw.nm} on game ${awRoadTrip+1} of road trip — extended road trips depress ATS cover rate, home edge amplified`)}
+    // Playoff series signals — reversion to mean + home/away series record
+    if(g.playoff&&g.cat==='nba'&&af.length){const serAf=af.filter(m=>m.playoff&&m.opp===g.hm.ab).sort((a,b)=>a.dt-b.dt);if(serAf.length>=1){const lastM=serAf[serAf.length-1];const[la,lb]=lastM.sc.split('-').map(Number);const lastMargin=la-lb;if(Math.abs(lastMargin)>=15){const revDir=lastMargin>0?-1:1;score+=revDir*1.5;const blownOut=lastMargin<0?g.aw.nm:g.hm.nm,bigWinner=lastMargin>0?g.aw.nm:g.hm.nm;reasons.push(`Reversion: ${bigWinner} won last series game by ${Math.abs(lastMargin)} — sharp books fade blowout winners in next game (${blownOut} desperation play)`)}if(serAf.length>=2){const margins=serAf.map(m=>{const[a,b]=m.sc.split('-').map(Number);return a-b});const avgM=margins.reduce((a,b)=>a+b,0)/margins.length;if(Math.abs(avgM)>=8){const dominator=avgM>0?g.aw.nm:g.hm.nm;score+=avgM>0?-0.8:0.8;reasons.push(`Series dominance: ${dominator} avg margin ${Math.abs(avgM).toFixed(1)} pts — series levelling tendency, trailing team raises intensity`)}}const hmSeriesHomeW=af.filter(m=>m.playoff&&m.opp===g.hm.ab&&!m.hm&&m.r==='L').length;const hmSeriesHomePlayed=af.filter(m=>m.playoff&&m.opp===g.hm.ab&&!m.hm).length;if(hmSeriesHomePlayed>=2){const hmHmPct=hmSeriesHomeW/hmSeriesHomePlayed;if(hmHmPct===1){score+=1.5;reasons.push(`${g.hm.nm} undefeated at home this series (${hmSeriesHomeW}-0) — series home court pattern is a primary playoff ATS signal`)}else if(hmHmPct===0&&hmSeriesHomePlayed>=2){score-=1.5;reasons.push(`${g.hm.nm} winless at home this series (0-${hmSeriesHomePlayed}) — home court advantage broken, road team holds psychological edge`)}}}}
     if(g.cat==='nhl'&&(awNhl||hmNhl)){const awNet=awNhl?.net?parseFloat(awNhl.net):null,hmNet=hmNhl?.net?parseFloat(hmNhl.net):null;if(awNet!==null&&hmNet!==null&&!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=0.4){score+=nd*2.5;const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm;reasons.push(`Goal differential edge: ${b2.nm} ${(nd>0?hmNet:awNet)>=0?'+':''}${(nd>0?hmNet:awNet)} net G/gm vs ${w2.nm} ${(nd>0?awNet:hmNet)>=0?'+':''}${(nd>0?awNet:hmNet)} — meaningful season-long edge`)}}const awPP=awNhl?.ppPct?parseFloat(awNhl.ppPct):null,hmPP=hmNhl?.ppPct?parseFloat(hmNhl.ppPct):null;if(awPP!=null&&hmPP!=null&&!isNaN(awPP)&&!isNaN(hmPP)){const ppDiff=hmPP-awPP;if(Math.abs(ppDiff)>=5){score+=ppDiff*0.15;const bPP=ppDiff>0?g.hm:g.aw,bPct=Math.max(awPP,hmPP).toFixed(1),wPct=Math.min(awPP,hmPP).toFixed(1);reasons.push(`Special teams edge: ${bPP.nm} PP ${bPct}% vs opponent ${wPct}% — ${Math.abs(ppDiff).toFixed(1)}pp gap is a reliable ATS signal in hockey`)}}// PK% standalone — independent from PP%; sharps treat these as separate edges
       const awPK2=awNhl?.pkPct?parseFloat(awNhl.pkPct):null,hmPK2=hmNhl?.pkPct?parseFloat(hmNhl.pkPct):null;if(awPK2!=null&&hmPK2!=null&&!isNaN(awPK2)&&!isNaN(hmPK2)){const pkDiff=hmPK2-awPK2;if(Math.abs(pkDiff)>=5){score+=pkDiff*0.12;const bPK=pkDiff>0?g.hm:g.aw,bPct2=Math.max(awPK2,hmPK2).toFixed(1),wPct2=Math.min(awPK2,hmPK2).toFixed(1);reasons.push(`PK% edge: ${bPK.nm} ${bPct2}% vs opponent ${wPct2}% penalty kill — ${Math.abs(pkDiff).toFixed(1)}pp gap limits opponent power play damage`)}}}
     if(g.cat==='nba'&&(awF3||hmF3)&&!(awF3&&hmF3)){score+=(awF3?-1:1)*3.5;reasons.push(`${awF3?g.aw.nm:g.hm.nm} playing 3rd game in 4 nights — covers only ~38% ATS on 3-in-4; ${awF3?g.hm.nm:g.aw.nm} has significant fatigue edge`)}
@@ -2210,7 +2212,8 @@ function buildGamesContext(todayOnly=false){
   let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${games.length}):\n\n`;
   games.forEach(g=>{
     const t=g.st==='STATUS_IN_PROGRESS'?`LIVE ${g.stD}`:g.st==='STATUS_FINAL'?`FINAL${g.aw.sc!=null?' '+g.aw.sc+'-'+g.hm.sc:''}`:g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-    const playoffTag=g.playoff?` [PLAYOFFS${g.serSum?' — '+g.serSum:''}]`:'';
+    const _plGn=(g.playoff&&g.aw.serW!=null&&g.hm.serW!=null)?g.aw.serW+g.hm.serW+1:null;
+    const playoffTag=g.playoff?` [PLAYOFFS Game ${_plGn||'?'} — ${g.aw.nm} ${g.aw.serW??0}-${g.hm.serW??0} ${g.hm.nm}]`:'';
     const hasUsOdds=hasUsBookOdds(g);
     const noOddsBlock=!hasUsOdds&&(g.cat==='tennis'||g.cat==='mma');
     const _hasDK=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('draftkings')||(b.title||'').toLowerCase().includes('draftkings'));
@@ -2263,9 +2266,11 @@ function buildGamesContext(todayOnly=false){
         const awL10=_cl10(af),hmL10=_cl10(hf);
         if(awL10!==null||hmL10!==null)ctx+=`  L10 net: ${g.aw.nm} ${awL10!==null?(awL10>=0?'+':'')+awL10:'N/A'} | ${g.hm.nm} ${hmL10!==null?(hmL10>=0?'+':'')+hmL10:'N/A'} pts/gm — primary sharp signal\n`;
         const awRt=(()=>{if(!af||!af.length)return 0;let n=0;for(const m of af){if(!m.hm)n++;else break;}return n})();
-        if(awRt>=3)ctx+=`  ⚠️ ROAD TRIP: ${g.aw.nm} on game ${awRt+1} of road trip — ATS cover rate depressed\n`;
+        if(!g.playoff&&awRt>=3)ctx+=`  ⚠️ ROAD TRIP: ${g.aw.nm} on game ${awRt+1} of road trip — ATS cover rate depressed\n`;
         const fat=[];if(awF3)fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmF3)fat.push(`${g.hm.nm} 3-IN-4 NIGHTS`);else if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
-        if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')} — significant impact on totals and spread\n`;}}
+        if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')} — significant impact on totals and spread\n`;
+        // Playoff series history — game-by-game for reversion analysis
+        if(g.playoff){const serAf=af.filter(m=>m.playoff&&m.opp===g.hm.ab).sort((a,b)=>a.dt-b.dt);const serHf=hf.filter(m=>m.playoff&&m.opp===g.aw.ab).sort((a,b)=>a.dt-b.dt);const serRef=serAf.length>=serHf.length?serAf:serHf;const fromAw=serRef===serAf;if(serRef.length){ctx+=`  Series history (${fromAw?g.aw.nm:g.hm.nm} POV):\n`;serRef.forEach((m,i)=>{const[own,opp]=m.sc.split('-').map(Number);const margin=own-opp;ctx+=`    G${i+1}: ${m.r} ${m.sc} ${m.hm?'(home)':'(away)'} margin ${margin>=0?'+':''}${margin}\n`});const margins=serRef.map(m=>{const[a,b]=m.sc.split('-').map(Number);return a-b});const avgMargin=margins.reduce((a,b)=>a+b,0)/margins.length;const lastMargin=margins[margins.length-1];const hmHomeW=serRef.filter(m=>!m.hm&&m.r==='L').length,hmHomeL=serRef.filter(m=>!m.hm&&m.r==='W').length,hmHomePlayed=serRef.filter(m=>!m.hm).length;if(hmHomePlayed>0)ctx+=`  ${g.hm.nm} at home this series: ${hmHomeW}-${hmHomeL}\n`;ctx+=`  Avg margin: ${fromAw?g.aw.nm:g.hm.nm} ${avgMargin>=0?'+':''}${avgMargin.toFixed(1)} | Last game: ${Math.abs(lastMargin)>=15?'⚠️ BLOWOUT (+'+Math.abs(lastMargin)+') — strong reversion candidate':lastMargin>=0?'W +'+lastMargin:'L '+lastMargin}\n`}}}
     if(cached?.cat==='nhl'){const{awSt,hmSt}=cached;
       if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} GF/G ${awSt?.gpg||'?'} GAA ${awSt?.gaa||'?'} PP% ${awSt?.ppPct||'?'} PK% ${awSt?.pkPct||'?'} SH% ${awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${hmSt?.gpg||'?'} GAA ${hmSt?.gaa||'?'} PP% ${hmSt?.ppPct||'?'} PK% ${hmSt?.pkPct||'?'} SH% ${hmSt?.shootPct||'?'}\n`;
       if(cachedForm){const{af,hf}=cachedForm;const awB2b=isB2B(af,g.tm),hmB2b=isB2B(hf,g.tm);
@@ -2360,7 +2365,22 @@ ${learnedRules}
 ## SIGNALS — minimum for a graded pick (is_lean:false)
 All sports: ≥1 clear edge. Any of: favorable odds vs model (EV+), statistical advantage (net rating, ERA gap, GAA gap, PP% edge), rest/fatigue edge, line move, sharp signal, park/surface advantage.
 Tennis: surface form, H2H on surface, ranking-form divergence, tournament momentum, market pricing vs ranking gap. ≥1 qualifies. PRIORITY SPORT — see Tennis rules below.
-Playoffs (NBA/NHL): Series context is primary — series score, elimination games, desperation, home/away splits in THIS series, coaching adjustments game-to-game. Regular season ATS trends are secondary to series momentum. MLB regular season signals apply normally.
+Playoffs (NBA/NHL): Series context OVERRIDES regular season signals. Study the series history block in the slate — it shows game-by-game margins and home/away record for this specific matchup.
+
+PLAYOFF SIGNAL HIERARCHY (in order):
+1. REVERSION TO MEAN — If last game margin ≥15pts, STRONGLY fade the blowout winner next game. Blowout losers respond with desperation and coaching adjustments. This is the highest-confidence playoff ATS signal.
+2. SERIES HOME RECORD — If home team is undefeated at home this series, amplify home pick. If home team has lost at home in this series, the road team has broken the psychological barrier — road team value increases significantly.
+3. SERIES DOMINANCE — If one team is avg +8 or more across the series, expect the trailing team to raise intensity. Series rarely end in straight blowouts at the ATS level.
+4. ELIMINATION PRESSURE — Facing elimination teams cover at a higher rate. A team down 3-1 protecting its season is not the same as a team in a close series.
+5. DESPERATION vs COMPLACENCY — Up 3-0 or 3-1 teams can be complacent. Down teams are locked in. Fade complacency, back desperation.
+
+WHAT TO IGNORE IN PLAYOFFS:
+- Road trip depth (irrelevant — you play where the series takes you)
+- Season-average pace (playoff pace compresses vs regular season)
+- L10 net rating from regular season (stale — use series margin data instead)
+- Seeding and regular season record (already priced; irrelevant to series outcome)
+
+Game number context: Early series (G1-G2) = feel-out, less reliable. Mid-series (G3-G5) = adjustments made, most informative. Late series (G6-G7) = elimination pressure dominates all other signals.
 
 ## TENNIS STAT POLICY
 - H2H records shown are ALL-SURFACE since 2021. If today's surface differs from where prior meetings were played, all-surface H2H is a WEAK signal — treat it as context only, not an edge.
