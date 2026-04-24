@@ -452,7 +452,7 @@ let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet';
-const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals',icehockey_nhl:'h2h,spreads,totals',baseball_mlb:'h2h,spreads,totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals',_tennis:'h2h'};
+const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals',icehockey_nhl:'h2h,spreads,totals',baseball_mlb:'h2h,spreads,totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals',_tennis:'h2h,spreads,totals'};
 // ── Book tiers: SHARP = line-setting sharp-money books; LOWVIG = structurally cheap, not directional
 const SHARP_BOOKS=['Pinnacle','Circa Sports','BetOnline.ag','Bookmaker','BookiePro'];
 const LOWVIG_BOOKS=['LowVig.ag','PropSwap','Unibet'];
@@ -1739,11 +1739,31 @@ if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2
     else if(mlO&&mlO.price>0)reasons.push(`Plus-money at ${fp(mlO.price)} adds significant value to an already favorable setup`);
     else if(mlO&&mlO.price>-150)reasons.push(`Reasonable juice at ${fp(mlO.price)} makes ML viable standalone or as parlay leg`);
     if(reasons.length<=1&&mag<1&&mlO)reasons.push(`Form and fatigue data not yet loaded — analysis based on season record and line pricing only. Re-analyze after odds refresh for full confidence`);
-    const pickStr=`${side.nm} ML${mlPrice}`;
-    if(reasons.length)picks.push({label:g.cat==='tennis'?'TENNIS ANALYSIS':'MONEYLINE ANALYSIS',pick:pickStr,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,5).join('. ')+'.',
-      evData:calcEV(g,'h2h',side.nm.split(' ').pop()),lineRange:null,sharp:getSharp(mlEdges),
-      tnSigs:g.cat==='tennis'?[...tnSigs].sort((a,b)=>b.mag-a.mag):null,
-      gradeData:{type:'ml',isHm:side===g.hm}});
+    const _tnPickBanned=g.cat==='tennis'&&TN_BAN_LIST.some(b=>[g.aw.nm,g.hm.nm].some(n=>n.toLowerCase().includes(b)));
+    if(!_tnPickBanned&&reasons.length){
+      let _fPick=`${side.nm} ML${mlPrice}`,_fLabel=g.cat==='tennis'?'TENNIS ANALYSIS':'MONEYLINE ANALYSIS',_fEv=calcEV(g,'h2h',side.nm.split(' ').pop());
+      if(g.cat==='tennis'&&mlO&&mlO.price<-250){
+        const _bk=g.odds?.bookmakers?.[0];
+        const _spMkt=_bk?.markets?.find(m=>m.key==='spreads');
+        const _toMkt=_bk?.markets?.find(m=>m.key==='totals');
+        const _sLast=side.nm.split(' ').pop().toLowerCase();
+        const _spOut=_spMkt?.outcomes?.find(o=>o.name.toLowerCase().includes(_sLast)||_sLast.includes(o.name.toLowerCase().split(' ').pop()));
+        if(_spOut&&Math.abs(_spOut.price)<=200){
+          _fPick=`${_spOut.name} ${_spOut.point>0?'+':''}${_spOut.point} games (${fp(_spOut.price)})`;
+          _fLabel='TENNIS SPREAD';_fEv=calcEV(g,'spreads',_spOut.name);
+          reasons.unshift(`ML at ${fp(mlO.price)} is bad value — game spread ${_spOut.point>0?'+':''}${_spOut.point} (${fp(_spOut.price)}) carries same edge with far better juice`);
+        } else {
+          const _unO=_toMkt?.outcomes?.find(o=>o.name==='Under');
+          if(_unO){_fPick=`UNDER ${_unO.point} total games (${fp(_unO.price)})`;_fLabel='TENNIS TOTAL';_fEv=calcEV(g,'totals','Under');
+            reasons.unshift(`ML at ${fp(mlO.price)} is overpriced — UNDER ${_unO.point} total games (${fp(_unO.price)}) gives same dominant-favorite edge at far better value`);
+          } else reasons.unshift(`ML at ${fp(mlO.price)} is steep — check your book for game spread or total games as better vehicles`);
+        }
+      }
+      picks.push({label:_fLabel,pick:_fPick,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,5).join('. ')+'.',
+        evData:_fEv,lineRange:null,sharp:getSharp(mlEdges),
+        tnSigs:g.cat==='tennis'?[...tnSigs].sort((a,b)=>b.mag-a.mag):null,
+        gradeData:{type:'ml',isHm:side===g.hm}});
+    }
   }
   return picks;
 }
