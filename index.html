@@ -722,8 +722,11 @@ async function refreshAll(forceOdds=false){
 
   // ── ESPN Injuries (team sports only, fetched in parallel) ──
   await Promise.all(teamSports.map(async([k,c])=>{const inj=await espnFetch(c.s,c.l,'injuries');if(!inj)return;
-    (inj.injuries||[]).forEach(ti=>{const tn=ti.team?.displayName;if(!tn)return;
-      allG.filter(g=>g.sp===k).forEach(g=>{const side=g.aw.nm===tn?'aw':g.hm.nm===tn?'hm':null;if(!side)return;
+    (inj.injuries||inj.items||[]).forEach(ti=>{
+      const tn=ti.team?.displayName||ti.team?.shortDisplayName;if(!tn)return;
+      allG.filter(g=>g.sp===k).forEach(g=>{
+        const _nm=(n,t)=>n===t||n?.includes(t)||t?.includes(n);
+        const side=_nm(g.aw.nm,tn)?'aw':_nm(g.hm.nm,tn)?'hm':null;if(!side)return;
         (ti.injuries||[]).forEach(i=>{g.inj[side].push({nm:i.athlete?.displayName||'?',pos:i.athlete?.position?.abbreviation||'',st:i.status||'',sc:(i.status||'')[0]?.toUpperCase()||'',desc:i.details?.detail||i.details?.type||''})})})});
   })).catch(()=>{});
   // Deduplicate — ESPN returns MMA/tennis fights across multiple event objects
@@ -2247,6 +2250,7 @@ function buildGamesContext(todayOnly=false){
     const awI=g.inj.aw.filter(i=>['O','D','Q'].includes(i.sc)),hmI=g.inj.hm.filter(i=>['O','D','Q'].includes(i.sc));
     if(awI.length)ctx+=`  ${g.aw.nm} INJ: ${awI.map(i=>i.nm+' ('+i.sc+')').join(', ')}\n`;
     if(hmI.length)ctx+=`  ${g.hm.nm} INJ: ${hmI.map(i=>i.nm+' ('+i.sc+')').join(', ')}\n`;
+    if(g.isTeam&&!awI.length&&!hmI.length)ctx+=`  INJ: No report available — do not speculate about injuries from external knowledge\n`;
     // Cached team stats
     const cached=gameStatsCache.get(g.id);
     const cachedForm=gameFormCache.get(g.id);
