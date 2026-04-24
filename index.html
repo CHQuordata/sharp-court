@@ -1475,7 +1475,8 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
       reasons.push(`${b2.nm} is missing ${Math.max(awOut,hmOut)} players (OUT), thinning their rotation against a healthier ${h2.nm}`)}
     if(g.ha>0)reasons.push(`Home-court worth ~${g.ha}pts in ${spName} for ${g.hm.nm}`);
     if(spEdges.length)reasons.push(`Sharp signal: ${spEdges[0].ep.toFixed(1)}% spread edge at ${spEdges[0].bb}`);
-    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){score+=nd*0.3;const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);reasons.push(`Season net: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)} — ${Math.abs(nd).toFixed(1)}-pt gap (context; see L10 below)`)}}}
+    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);// Only score when L10 unavailable — L10 is the primary signal per policy
+if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)}${(awL10Net!==null&&hmL10Net!==null)?' (context — L10 is primary)':' — season edge'}`)}}}
     // L10 net divergence — what sharp books actually price, not season average
     if(g.cat==='nba'&&awL10Net!==null&&hmL10Net!==null){const l10d=hmL10Net-awL10Net;if(Math.abs(l10d)>=4){score+=l10d*0.35;const bL=l10d>0?g.hm:g.aw,wL=l10d>0?g.aw:g.hm,bN=l10d>0?hmL10Net:awL10Net,wN=l10d>0?awL10Net:hmL10Net;reasons.push(`L10 net: ${bL.nm} ${bN>=0?'+':''}${bN} vs ${wL.nm} ${wN>=0?'+':''}${wN} pts/gm — recent form divergence (sharps track this, not season avg)`)}}
     // Road trip depth — 3+ consecutive away games depresses ATS cover rate
@@ -1622,6 +1623,7 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
       const mktWt=g.cat==='tennis'?4:0.8;
       score+=mktDiff*mktWt;
     }
+    if(g.cat==='nba'){if((awF3||hmF3)&&!(awF3&&hmF3)){score+=(awF3?-1:1)*2;reasons.push(`${awF3?g.aw.nm:g.hm.nm} 3-in-4 fatigue — win rate depressed, ML value shifts`)}else if((awB2B||hmB2B)&&!(awB2B&&hmB2B)){score+=(awB2B?-1:1)*1;reasons.push(`${awB2B?g.aw.nm:g.hm.nm} back-to-back — win probability impact`)}}
   // ── Tennis: pre-score all surface/H2H/serve signals BEFORE side decision ──
   const tnSigs=[];
   if(g.cat==='tennis'){
@@ -2255,8 +2257,13 @@ function buildGamesContext(todayOnly=false){
     const cached=gameStatsCache.get(g.id);
     const cachedForm=gameFormCache.get(g.id);
     if(cached?.cat==='nba'){const{awSt,hmSt}=cached;
-      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} PPG ${awSt?.ppg||'?'} FG% ${awSt?.fgPct||'?'} 3P% ${awSt?.tpPct||'?'} TO/G ${awSt?.toPg||'?'} | ${g.hm.nm} PPG ${hmSt?.ppg||'?'} FG% ${hmSt?.fgPct||'?'} 3P% ${hmSt?.tpPct||'?'} TO/G ${hmSt?.toPg||'?'}\n`;
+      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} PPG ${awSt?.ppg||'?'} oppPPG ${awSt?.oppPpg||'?'} Net ${awSt?.netPts!=null?(parseFloat(awSt.netPts)>=0?'+':'')+awSt.netPts:'?'} Pace ${awSt?.pace||'?'} FG% ${awSt?.fgPct||'?'} 3P% ${awSt?.tpPct||'?'} TO/G ${awSt?.toPg||'?'} | ${g.hm.nm} PPG ${hmSt?.ppg||'?'} oppPPG ${hmSt?.oppPpg||'?'} Net ${hmSt?.netPts!=null?(parseFloat(hmSt.netPts)>=0?'+':'')+hmSt.netPts:'?'} Pace ${hmSt?.pace||'?'} FG% ${hmSt?.fgPct||'?'} 3P% ${hmSt?.tpPct||'?'} TO/G ${hmSt?.toPg||'?'}\n`;
       if(cachedForm){const{af,hf}=cachedForm;const awB2b=isB2B(af,g.tm),hmB2b=isB2B(hf,g.tm),awF3=is3in4(af,g.tm),hmF3=is3in4(hf,g.tm);
+        const _cl10=f=>{if(!f||f.length<5)return null;const ms=f.slice(0,10).map(m=>{const p=m.sc.split('-').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p[0]-p[1]:null}).filter(x=>x!==null);return ms.length>=5?parseFloat((ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1)):null};
+        const awL10=_cl10(af),hmL10=_cl10(hf);
+        if(awL10!==null||hmL10!==null)ctx+=`  L10 net: ${g.aw.nm} ${awL10!==null?(awL10>=0?'+':'')+awL10:'N/A'} | ${g.hm.nm} ${hmL10!==null?(hmL10>=0?'+':'')+hmL10:'N/A'} pts/gm — primary sharp signal\n`;
+        const awRt=(()=>{if(!af||!af.length)return 0;let n=0;for(const m of af){if(!m.hm)n++;else break;}return n})();
+        if(awRt>=3)ctx+=`  ⚠️ ROAD TRIP: ${g.aw.nm} on game ${awRt+1} of road trip — ATS cover rate depressed\n`;
         const fat=[];if(awF3)fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmF3)fat.push(`${g.hm.nm} 3-IN-4 NIGHTS`);else if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
         if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')} — significant impact on totals and spread\n`;}}
     if(cached?.cat==='nhl'){const{awSt,hmSt}=cached;
@@ -2657,9 +2664,10 @@ async function aiAnalyzeGame(gid){
   }
   // Team stats + fatigue
   const _cs=gameStatsCache.get(g.id);const _cf=gameFormCache.get(g.id);
-  if(_cs?.cat==='nba'&&(_cs.awSt||_cs.hmSt)){ctx+=`Team stats: ${g.aw.nm} PPG ${_cs.awSt?.ppg||'?'} FG% ${_cs.awSt?.fgPct||'?'} TO/G ${_cs.awSt?.toPg||'?'} | ${g.hm.nm} PPG ${_cs.hmSt?.ppg||'?'} FG% ${_cs.hmSt?.fgPct||'?'} TO/G ${_cs.hmSt?.toPg||'?'}\n`}
+  if(_cs?.cat==='nba'&&(_cs.awSt||_cs.hmSt)){const aS=_cs.awSt,hS=_cs.hmSt;ctx+=`Team stats: ${g.aw.nm} PPG ${aS?.ppg||'?'} oppPPG ${aS?.oppPpg||'?'} Net ${aS?.netPts!=null?(parseFloat(aS.netPts)>=0?'+':'')+aS.netPts:'?'} Pace ${aS?.pace||'?'} FG% ${aS?.fgPct||'?'} 3P% ${aS?.tpPct||'?'} TO/G ${aS?.toPg||'?'} | ${g.hm.nm} PPG ${hS?.ppg||'?'} oppPPG ${hS?.oppPpg||'?'} Net ${hS?.netPts!=null?(parseFloat(hS.netPts)>=0?'+':'')+hS.netPts:'?'} Pace ${hS?.pace||'?'} FG% ${hS?.fgPct||'?'} 3P% ${hS?.tpPct||'?'} TO/G ${hS?.toPg||'?'}\n`}
   if(_cs?.cat==='nhl'&&(_cs.awSt||_cs.hmSt)){ctx+=`Team stats: ${g.aw.nm} GF/G ${_cs.awSt?.gpg||'?'} PP% ${_cs.awSt?.ppPct||'?'} PK% ${_cs.awSt?.pkPct||'?'} SH% ${_cs.awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${_cs.hmSt?.gpg||'?'} PP% ${_cs.hmSt?.ppPct||'?'} PK% ${_cs.hmSt?.pkPct||'?'} SH% ${_cs.hmSt?.shootPct||'?'}\n`}
   if(_cf&&(g.cat==='nba'||g.cat==='nhl')){const{af,hf}=_cf;const fat=[];
+    if(g.cat==='nba'){const _cl10=f=>{if(!f||f.length<5)return null;const ms=f.slice(0,10).map(m=>{const p=m.sc.split('-').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p[0]-p[1]:null}).filter(x=>x!==null);return ms.length>=5?parseFloat((ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1)):null};const awL10=_cl10(af),hmL10=_cl10(hf);if(awL10!==null||hmL10!==null)ctx+=`L10 net: ${g.aw.nm} ${awL10!==null?(awL10>=0?'+':'')+awL10:'N/A'} | ${g.hm.nm} ${hmL10!==null?(hmL10>=0?'+':'')+hmL10:'N/A'} pts/gm — primary sharp signal\n`;const awRt=(()=>{if(!af?.length)return 0;let n=0;for(const m of af){if(!m.hm)n++;else break;}return n})();if(awRt>=3)ctx+=`⚠️ ROAD TRIP: ${g.aw.nm} on game ${awRt+1} of road trip — ATS cover rate depressed\n`;}
     if(is3in4(af,g.tm))fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(isB2B(af,g.tm))fat.push(`${g.aw.nm} BACK-TO-BACK`);
     if(is3in4(hf,g.tm))fat.push(`${g.hm.nm} 3-IN-4 NIGHTS`);else if(isB2B(hf,g.tm))fat.push(`${g.hm.nm} BACK-TO-BACK`);
     if(fat.length)ctx+=`⚠️ FATIGUE: ${fat.join(' | ')}\n`;}
