@@ -2438,7 +2438,7 @@ function buildUserMsg(gamesCtx,yesterdayPicks){
 }
 
 async function prefetchStatsForPicks(){
-  const games=allG.filter(g=>g.st!=='STATUS_FINAL'&&g.isTeam);
+  const games=allG.filter(g=>g.st!=='STATUS_FINAL');
   const _fetch=async g=>{
     try{
       if((g.cat==='nba'||g.cat==='nhl')&&g.aw.id&&g.hm.id&&!gameFormCache.has(g.id)){
@@ -2461,12 +2461,22 @@ async function prefetchStatsForPicks(){
         const sm=await fetchGameSummary('mlb',g.id);
         if(sm){const p=extractPitchers(sm);if(p)cSet(gamePitcherCache,g.id,p)}
       }
+      if(g.cat==='tennis'){
+        if(!tennisCache.has(g.id)){
+          const h2h=await fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm);
+          if(h2h)cSet(tennisCache,g.id,h2h);
+        }
+        if(TN_API_KEY&&!tnGameCache.has(g.id)){
+          const pair=await fetchTNPlayerPair(g.sp,g.aw.nm,g.hm.nm);
+          if(pair)cSet(tnGameCache,g.id,{awData:pair.awData,hmData:pair.hmData});
+        }
+      }
     }catch(e){}
   };
-  // Hard 10s cap — if any fetch hangs, we don't block the entire generate flow
+  // Hard 15s cap — tennis fetches add latency (H2H CSV + RapidAPI pair lookups)
   await Promise.race([
     Promise.allSettled(games.map(_fetch)),
-    new Promise(r=>setTimeout(r,10000))
+    new Promise(r=>setTimeout(r,15000))
   ]);
 }
 
