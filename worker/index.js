@@ -124,7 +124,13 @@ function computeSignalPerformance(history) {
     if (new Date(slate.date).getTime() < cutoff) return;
     (slate.picks || []).forEach(pick => {
       if (!pick.result || pick.result === '?') return;
-      (pick.filters || []).forEach(tag => {
+      // Merge Phase 2 filter tags + Phase 1 signal names — deduplicated via Set
+      const tags = new Set([
+        ...(pick.filters || []).map(t => t.toLowerCase().replace(/\s+/g, '_')),
+        ...(pick.phase1_signals || [])
+      ]);
+      tags.forEach(tag => {
+        if (!tag) return;
         if (!perf[tag]) perf[tag] = { w: 0, l: 0, p: 0 };
         if (pick.result === 'W') perf[tag].w++;
         else if (pick.result === 'L') perf[tag].l++;
