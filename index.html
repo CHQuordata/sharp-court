@@ -2305,7 +2305,7 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
     // EV edges + line movement
     const gE=allE.filter(e=>e.g.id===g.id);
     if(gE.length)ctx+=`  SHARP EDGE: ${gE.slice(0,2).map(e=>`${e.ml} ${e.side} +${e.ep.toFixed(1)}% EV @ ${e.bb}`).join(' | ')}\n`;
-    if(g.lineMove){const lm=g.lineMove;if(lm.spOpen!=null)ctx+=`  LINE MOVEMENT: spread opened ${lm.openSp>0?'+':''}${lm.openSp}, now ${lm.openSp+lm.spOpen>0?'+':''}${(lm.openSp+lm.spOpen).toFixed(1)} (${lm.spOpen>0?'+':''}${lm.spOpen} total move from open)\n`;else if(lm.spMv)ctx+=`  LINE MOVED: spread ${lm.spMv>0?'+':''}${lm.spMv} pts since last scan\n`;}
+    if(g.lineMove){const lm=g.lineMove;const _lmPts=[];if(lm.spOpen!=null)_lmPts.push(`spread ${lm.openSp>0?'+':''}${lm.openSp} open → ${(lm.openSp+lm.spOpen)>0?'+':''}${(lm.openSp+lm.spOpen).toFixed(1)} now (${lm.spOpen>0?'+':''}${lm.spOpen} vs open)`);else if(lm.spMv)_lmPts.push(`spread ${lm.spMv>0?'+':''}${lm.spMv} pts since last scan`);if(lm.toOpen!=null)_lmPts.push(`total ${lm.openTo} open → ${(lm.openTo+lm.toOpen).toFixed(1)} now (${lm.toOpen>0?'+':''}${lm.toOpen} vs open)`);else if(lm.toMv)_lmPts.push(`total ${lm.toMv>0?'+':''}${lm.toMv} pts since last scan`);if(_lmPts.length)ctx+=`  LINE MOVEMENT: ${_lmPts.join(' | ')}\n`;}
     if(g.bettingPct){const bp=g.bettingPct;if(bp.awBets!=null)ctx+=`  PUBLIC BETS (${bp.mkt}): ${g.aw.nm} ${bp.awBets}% / ${g.hm.nm} ${bp.hmBets}%${bp.awMoney!=null?` | MONEY: ${g.aw.nm} ${bp.awMoney}% / ${g.hm.nm} ${bp.hmMoney}%`:''} — if bet% and money% diverge sharply, money side = sharp action\n`;}
     // All injuries (O/D/Q)
     const awI=g.inj.aw.filter(i=>['O','D','Q'].includes(i.sc)),hmI=g.inj.hm.filter(i=>['O','D','Q'].includes(i.sc));
@@ -2697,6 +2697,7 @@ SKATER SIGNALS:
 6. PK% GAP — gap ≥5pp: 1 vote for higher PK% team (independent of PP%).
 7. B2B FATIGUE — team on back-to-back: 1 vote AGAINST that team on puck line + 1 vote UNDER.
 8. HOME ICE — baseline 1 vote home team unless goalie/fatigue signals override.
+9. LINE MOVEMENT — spread moved ≥1.5 from opening: 1 vote in direction of move. Total moved ≥1.0 from opening: OVER or UNDER vote in direction of move.
 
 ## PUCK LINE NOTE
 Puck line is -1.5/+1.5. Only recommend -1.5 when goalie gap AND net goals gap both favor same team (2+ votes from those signals alone). Otherwise recommend ML or +1.5 for dog.
@@ -2749,6 +2750,7 @@ PARK + WEATHER SIGNALS:
 TEAM SIGNALS:
 10. BULLPEN — team with depleted bullpen (back-to-back high-leverage games): 1 vote OVER, 1 vote against that team.
 11. HOME FIELD — 1 vote home team on ML/run line unless pitching signals override.
+12. LINE MOVEMENT — spread moved ≥1.5 from opening: 1 vote in direction of move. Total moved ≥1.0 from opening: OVER or UNDER vote in direction of move.
 
 ## RUN LINE NOTE
 Run line is -1.5/+1.5. Only recommend -1.5 when SP gap is dominant (2+ votes on pitching alone for that team). Otherwise recommend ML or +1.5 for dog.
@@ -2792,6 +2794,7 @@ PLAYOFF SIGNALS (use these when game is tagged [PLAYOFFS]):
 4. DESPERATION vs COMPLACENCY — team up 3-0 or 3-1: 1 vote AGAINST that team (complacency risk). Down team: 1 vote FOR.
 5. REST DIFFERENTIAL — gap ≥2 days: 1 vote for more rested team.
 6. SERIES DOMINANCE — one team avg +8 margin across series: 1 vote for the trailing team (intensity response).
+7. LINE MOVEMENT — if noted: 1 vote in direction of sharp move.
 
 REGULAR SEASON SIGNALS (use when NOT tagged [PLAYOFFS]):
 1. L10 NET RATING — divergence ≥4pts: 1 vote for higher-rated team. ≥8pts: 2 votes.
@@ -2847,6 +2850,7 @@ Priority order (score all that have data):
 7. BPsave% — gap ≥10pp → favors higher
 8. H2H on surface — ONLY count if 3+ meetings on TODAY's exact surface, OR 4-0/5-0 overall pattern. If prior meetings were on a different surface → NEUTRAL + note surface reset applied.
 9. Market implied% — ≥65% implied → 1 vote for that player
+10. LINE MOVEMENT — spread moved ≥1.5 from opening: 1 vote for the player the line moved toward. Total movement on tennis → NEUTRAL.
 
 ## VEHICLE FROM VOTE COUNT
 4+ votes, 0 opp → -1.5 sets | 3 votes, ≤1 opp → -1.5 games | 2-1 split → ML only | tied or no edge → PASS
