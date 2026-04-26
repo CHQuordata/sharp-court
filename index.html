@@ -451,6 +451,7 @@ let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],f
 let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
+const WORKER_URL=localStorage.getItem('et_worker_url')||'';
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet,bet365';
 const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals',icehockey_nhl:'h2h,spreads,totals',baseball_mlb:'h2h,spreads,totals,h2h_1st_5_innings,totals_1st_5_innings',american_football_nfl:'h2h,spreads,totals',_tennis:'h2h,spreads,totals'};
 // ── Book tiers: SHARP = line-setting sharp-money books; LOWVIG = structurally cheap, not directional
@@ -2515,13 +2516,24 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 }`;
 }
 
-function buildUserMsg(gamesCtx,yesterdayPicks){
+function buildUserMsg(gamesCtx,yesterdayPicks,completedGames){
   let msg=gamesCtx;
   if(yesterdayPicks.length){
     msg+=`\nYESTERDAY'S UNGRADED PICKS (grade using results in game data above):\n`;
     yesterdayPicks.forEach(p=>{msg+=`- ${(p.sport||'').toUpperCase()}: ${p.matchup||''} | ${p.pick||''} | ${p.confidence||''}\n`});
     msg+='\n';
   }else msg+='\n(No prior picks to grade — first slate or already graded)\n\n';
+  // Completed games: free training data for pattern recognition
+  if(completedGames?.length){
+    const recent=completedGames.slice(0,50);
+    msg+=`\n## COMPLETED RESULTS (last 3 days — use for pattern recognition only, do not re-grade)\n`;
+    recent.forEach(g=>{
+      const hs=g.scores?.find(s=>s.name===g.home_team)?.score??'?';
+      const as=g.scores?.find(s=>s.name===g.away_team)?.score??'?';
+      msg+=`${g.away_team} @ ${g.home_team}: ${as}-${hs} FINAL [${(g.sport||'').replace('basketball_','').replace('icehockey_','').replace('baseball_','').replace('tennis_','')}]\n`;
+    });
+    msg+='\n';
+  }
   msg+='Analyze the slate and generate today\'s picks. Enforce all learned rules strictly.';
   return msg;
 }
@@ -2610,11 +2622,113 @@ function _repairJSON(raw){
   return out;
 }
 
+// ── KV sync ───────────────────────────────────────────────────────────────────
+async function syncFromKV(){
+  if(!WORKER_URL)return;
+  try{
+    const keys=['et_learned_rules','et_cumulative','et_picks_history','et_completed_games'];
+    const results=await Promise.allSettled(keys.map(k=>fetch(`${WORKER_URL}/kv/${k}`,{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null)));
+    results.forEach((r,i)=>{if(r.status==='fulfilled'&&r.value?.value!=null)localStorage.setItem(keys[i],r.value.value)});
+  }catch(_){}
+}
+async function syncToKV(){
+  if(!WORKER_URL)return;
+  try{
+    const keys=['et_learned_rules','et_cumulative','et_picks_history'];
+    await Promise.allSettled(keys.map(k=>{const v=localStorage.getItem(k);if(!v)return Promise.resolve();return fetch(`${WORKER_URL}/kv/${k}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:v}),signal:AbortSignal.timeout(4000)})}));
+  }catch(_){}
+}
+
+// ── Completed scores ──────────────────────────────────────────────────────────
+async function fetchCompletedScores(){
+  if(!AK)return[];
+  // Pull from KV cache first (populated by nightly cron) — fresh if under 4h
+  if(WORKER_URL){
+    try{
+      const r=await fetch(`${WORKER_URL}/kv/et_completed_games`,{signal:AbortSignal.timeout(3000)});
+      if(r.ok){const d=await r.json();if(d.value){const parsed=JSON.parse(d.value);if(parsed?.ts&&Date.now()-parsed.ts<4*60*60*1000)return parsed.games||[]}}
+    }catch(_){}
+  }
+  // Fallback: fetch live from Odds API
+  const sports=['basketball_nba','icehockey_nhl','baseball_mlb'];
+  if(_tennisKeys?.length)sports.push(..._tennisKeys.slice(0,6));
+  const results=[];
+  await Promise.allSettled(sports.map(async sport=>{
+    try{
+      const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?daysFrom=3&apiKey=${AK}`,{signal:AbortSignal.timeout(5000)});
+      if(!r.ok)return;
+      const data=await r.json();
+      data.filter(g=>g.completed).forEach(g=>results.push({sport,...g}));
+    }catch(_){}
+  }));
+  return results;
+}
+
+// ── Auto-grading from scores ──────────────────────────────────────────────────
+function gradePickFromScore(pick,games){
+  const pt=pick.pick||'',matchup=(pick.matchup||'').toLowerCase();
+  const tokens=matchup.split(/[\s@,|vs.]+/).filter(t=>t.length>=3);
+  const game=games.find(g=>{const ht=g.home_team.toLowerCase(),at=g.away_team.toLowerCase();return tokens.some(t=>ht.includes(t)||at.includes(t))});
+  if(!game?.scores?.length)return null;
+  const homeS=parseFloat(game.scores.find(s=>s.name===game.home_team)?.score??'NaN');
+  const awayS=parseFloat(game.scores.find(s=>s.name===game.away_team)?.score??'NaN');
+  if(isNaN(homeS)||isNaN(awayS))return null;
+  const ptL=pt.toLowerCase();
+  // Total
+  if(ptL.includes('over')||ptL.includes('under')){
+    const n=parseFloat((pt.match(/(\d+\.?\d*)/)||[])[1]||'NaN');
+    if(isNaN(n))return null;
+    const c=homeS+awayS;
+    if(Math.abs(c-n)<0.01)return'P';
+    return(ptL.includes('over')?c>n:c<n)?'W':'L';
+  }
+  // Spread: "Team -3.5 (-110)"
+  const spM=pt.match(/^(.+?)\s+([+-]\d+\.?\d*)\s*\(/);
+  if(spM){
+    const toks=spM[1].trim().toLowerCase().split(/\s+/).filter(t=>t.length>=3),spread=parseFloat(spM[2]);
+    const isHome=toks.some(t=>game.home_team.toLowerCase().includes(t));
+    const isAway=!isHome&&toks.some(t=>game.away_team.toLowerCase().includes(t));
+    if(!isHome&&!isAway)return null;
+    const margin=(isHome?homeS-awayS:awayS-homeS)+spread;
+    if(Math.abs(margin)<0.01)return'P';
+    return margin>0?'W':'L';
+  }
+  // ML: "Team ML (-150)" or "Team (-220)"
+  const mlM=pt.match(/^(.+?)\s+(?:ML\s*)?[(+-]?(\d{3,})/i);
+  if(mlM){
+    const toks=mlM[1].trim().toLowerCase().split(/\s+/).filter(t=>t.length>=3);
+    const isHome=toks.some(t=>game.home_team.toLowerCase().includes(t));
+    const isAway=!isHome&&toks.some(t=>game.away_team.toLowerCase().includes(t));
+    if(!isHome&&!isAway)return null;
+    const pS=isHome?homeS:awayS,oS=isHome?awayS:homeS;
+    if(pS===oS)return'P';
+    return pS>oS?'W':'L';
+  }
+  return null;
+}
+function autoGradeFromScores(completedGames){
+  if(!completedGames?.length)return;
+  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
+  let changed=false;
+  history.forEach(slate=>{
+    (slate.picks||[]).forEach(pick=>{
+      if(pick.result&&pick.result!=='?')return;
+      const r=gradePickFromScore(pick,completedGames);
+      if(r){pick.result=r;changed=true;}
+    });
+  });
+  if(changed)localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
+}
+
 async function generatePicks(){
   if(!CLAUDE_KEY){showPicksSetup();return}
   if(isGenerating)return;
   isGenerating=true;renderPicksOverview();
   try{
+    // Sync from KV + fetch completed scores in parallel before doing anything else
+    const [,scoresResult]=await Promise.allSettled([syncFromKV(),fetchCompletedScores()]);
+    const completed=scoresResult.status==='fulfilled'?scoresResult.value:[];
+    if(completed.length)autoGradeFromScores(completed);
     await prefetchStatsForPicks();
     const gamesCtx=buildGamesContext(true); // today only — no tomorrow noise
     const yPicks=getYesterdayPicks();
@@ -2623,7 +2737,7 @@ async function generatePicks(){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
@@ -2699,6 +2813,7 @@ async function generatePicks(){
     }
     if(result.grading?.length)updateCumulativeRecord(result.grading,result.picks);
     saveTodayToHistory();
+    syncToKV(); // fire-and-forget: push updated rules + record + history to KV
   }catch(e){
     $('detailPanel').innerHTML=`<div class="pick-gen-state"><div style="font-size:28px">⚠️</div><div style="font-size:11px;color:var(--red);margin-top:8px">GENERATION FAILED</div><div style="font-size:10px;color:var(--t4);margin-top:6px;max-width:280px;line-height:1.6">${e.message}</div><button class="gen-btn" style="margin-top:16px" onclick="generatePicks()">RETRY</button></div>`;
     isGenerating=false;return;

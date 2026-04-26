@@ -3,5 +3,18 @@ main = "index.js"
 compatibility_date = "2024-09-23"
 
 [vars]
-# Secrets are set via: wrangler secret put PINNACLE_USER
-# and: wrangler secret put PINNACLE_PWD
+# Secrets — set via wrangler CLI:
+#   wrangler secret put PINNACLE_USER
+#   wrangler secret put PINNACLE_PWD
+#   wrangler secret put ODDS_API_KEY    ← new: needed for nightly score cron
+
+# KV namespace — create with:
+#   wrangler kv:namespace create "LEARNING_STORE"
+# Then paste the returned id below.
+[[kv_namespaces]]
+binding = "LEARNING_STORE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Nightly cron: 7 AM UTC = 3 AM ET
+[triggers]
+crons = ["0 7 * * *"]
