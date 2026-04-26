@@ -6,7 +6,8 @@ compatibility_date = "2024-09-23"
 # Secrets — set via wrangler CLI:
 #   wrangler secret put PINNACLE_USER
 #   wrangler secret put PINNACLE_PWD
-#   wrangler secret put ODDS_API_KEY    ← new: needed for nightly score cron
+#   wrangler secret put ODDS_API_KEY    ← needed for nightly score cron
+#   wrangler secret put CLAUDE_API_KEY  ← needed for nightly learning agent
 
 # KV namespace — create with:
 #   wrangler kv:namespace create "LEARNING_STORE"

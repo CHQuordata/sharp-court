@@ -106,6 +106,158 @@ async function runNightlyCron(env) {
   if (changed) {
     await env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30)));
   }
+
+  // 4. Learning agent — runs whenever new picks were graded
+  if (changed) {
+    await runLearningAgent(env, history);
+  }
+}
+
+// ── Learning agent ────────────────────────────────────────────────────────────
+
+// Signal performance is computed deterministically from graded pick history.
+// No Claude needed — just count W/L/P per signal tag across the last 30 days.
+function computeSignalPerformance(history) {
+  const perf = {};
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  history.forEach(slate => {
+    if (new Date(slate.date).getTime() < cutoff) return;
+    (slate.picks || []).forEach(pick => {
+      if (!pick.result || pick.result === '?') return;
+      (pick.filters || []).forEach(tag => {
+        if (!perf[tag]) perf[tag] = { w: 0, l: 0, p: 0 };
+        if (pick.result === 'W') perf[tag].w++;
+        else if (pick.result === 'L') perf[tag].l++;
+        else if (pick.result === 'P') perf[tag].p++;
+      });
+    });
+  });
+  return perf;
+}
+
+async function runLearningAgent(env, history) {
+  // Always recompute signal performance — deterministic, cheap, always accurate
+  const perf = computeSignalPerformance(history);
+  await env.LEARNING_STORE.put(
+    'et_signal_performance',
+    JSON.stringify(perf),
+    { expirationTtl: 60 * 60 * 24 * 365 }
+  );
+
+  // Claude call for narrative rule extraction — requires CLAUDE_API_KEY secret
+  if (!env.CLAUDE_API_KEY) return;
+
+  // Collect picks from the last 7 days with confirmed results
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentBySport = { tennis: [], nba: [], mlb: [], nhl: [] };
+  history.forEach(slate => {
+    if (new Date(slate.date).getTime() < cutoff) return;
+    (slate.picks || []).forEach(pick => {
+      if (!pick.result || pick.result === '?') return;
+      const sport = (pick.sport || '').toLowerCase();
+      if (recentBySport[sport]) recentBySport[sport].push(pick);
+    });
+  });
+
+  const totalRecent = Object.values(recentBySport).reduce((s, a) => s + a.length, 0);
+  if (totalRecent < 5) return; // not enough data for meaningful lessons
+
+  // Read existing sport-specific rules
+  const sports = ['tennis', 'nba', 'mlb', 'nhl'];
+  const existingRules = await Promise.all(
+    sports.map(s => env.LEARNING_STORE.get(`et_learned_rules_${s}`))
+  );
+  const rulesMap = Object.fromEntries(sports.map((s, i) => [s, existingRules[i] || '']));
+
+  // Build picks block grouped by sport
+  let picksBlock = '';
+  for (const [sport, picks] of Object.entries(recentBySport)) {
+    if (!picks.length) continue;
+    picksBlock += `\n${sport.toUpperCase()} (${picks.length} picks, last 7d):\n`;
+    picks.forEach(p => {
+      const tags = (p.filters || []).join(', ') || 'no signal tags';
+      const conf = p.confidence || '?';
+      picksBlock += `  ${p.result} | ${conf} | ${p.matchup || ''} | ${p.pick || ''} | signals: ${tags}\n`;
+    });
+  }
+
+  // Build signal performance summary for context
+  const perfSummary = Object.entries(perf)
+    .filter(([, v]) => v.w + v.l > 0)
+    .sort(([, a], [, b]) => (b.w + b.l) - (a.w + a.l))
+    .slice(0, 20)
+    .map(([tag, v]) => {
+      const total = v.w + v.l + v.p;
+      const wr = total > 0 ? Math.round(v.w / (v.w + v.l) * 100) : 0;
+      return `  ${tag}: ${v.w}-${v.l}${v.p ? '-' + v.p : ''} (${wr}% WR, ${total} picks)`;
+    })
+    .join('\n');
+
+  const existingRulesBlock = Object.entries(rulesMap)
+    .filter(([, r]) => r)
+    .map(([s, r]) => `${s.toUpperCase()} RULES:\n${r}`)
+    .join('\n\n');
+
+  const userMsg =
+`GRADED PICKS — last 7 days:
+${picksBlock}
+
+SIGNAL PERFORMANCE — last 30 days (all graded picks):
+${perfSummary || '(insufficient data yet)'}
+
+EXISTING LEARNED RULES:
+${existingRulesBlock || '(none yet)'}
+
+Instructions:
+- Analyze the pick results above by sport.
+- For each sport that has graded picks: identify what's working and what isn't.
+- Preserve rules that are still supported by data. Revise rules contradicted by 3+ data points. Add new rules only when a clear pattern has sample ≥3.
+- Max 12 rules per sport, each max 20 words. Be specific — name the exact signal, condition, and outcome.
+- If no meaningful new lessons exist for a sport, return its existing rules unchanged.
+- Output raw JSON only. No markdown fences.
+
+Output format (all 4 sport fields required even if unchanged):
+{"tennis_rules":"rule1\\nrule2\\n...","nba_rules":"...","mlb_rules":"...","nhl_rules":"..."}`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        system: 'You are a sports betting signal analyst. Extract learned rules from graded pick results. Output raw JSON only — start with { immediately, no markdown.',
+        messages: [{ role: 'user', content: userMsg }]
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const text = data.content?.[0]?.text || '';
+    const raw = (text.match(/(\{[\s\S]+\})/) || [])[1] || text.trim();
+    if (!raw.startsWith('{')) return;
+
+    const result = JSON.parse(raw);
+
+    const ruleKeyMap = {
+      tennis_rules: 'et_learned_rules_tennis',
+      nba_rules:    'et_learned_rules_nba',
+      mlb_rules:    'et_learned_rules_mlb',
+      nhl_rules:    'et_learned_rules_nhl'
+    };
+
+    await Promise.allSettled(
+      Object.entries(ruleKeyMap).map(([field, kvKey]) => {
+        if (!result[field]) return Promise.resolve();
+        return env.LEARNING_STORE.put(kvKey, result[field], { expirationTtl: 60 * 60 * 24 * 365 });
+      })
+    );
+  } catch (_) {}
 }
 
 // ── Score fetching ────────────────────────────────────────────────────────────

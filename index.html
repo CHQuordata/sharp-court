@@ -2974,7 +2974,7 @@ async function runTennisAnalysis(tennisCtx){
 async function syncFromKV(){
   if(!WORKER_URL)return;
   try{
-    const keys=['et_learned_rules','et_cumulative','et_picks_history','et_completed_games','et_learned_rules_tennis','et_learned_rules_nba','et_learned_rules_mlb','et_learned_rules_nhl'];
+    const keys=['et_learned_rules','et_cumulative','et_picks_history','et_completed_games','et_learned_rules_tennis','et_learned_rules_nba','et_learned_rules_mlb','et_learned_rules_nhl','et_signal_performance'];
     const results=await Promise.allSettled(keys.map(k=>fetch(`${WORKER_URL}/kv/${k}`,{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null)));
     results.forEach((r,i)=>{if(r.status==='fulfilled'&&r.value?.value!=null)localStorage.setItem(keys[i],r.value.value)});
   }catch(_){}
@@ -3084,7 +3084,14 @@ async function generatePicks(){
     const _hasNBA=allG.some(g=>g.cat==='nba'&&g.tm.toDateString()===_todayStr);
     const _hasMLB=allG.some(g=>g.cat==='mlb'&&g.tm.toDateString()===_todayStr);
     const _hasNHL=allG.some(g=>g.cat==='nhl'&&g.tm.toDateString()===_todayStr);
-    const _mkRules=(k,sport)=>{const r=localStorage.getItem(k);return r?`LEARNED RULES (${sport} — apply these first, highest priority):\n${r}\n\n`:''};
+    const _mkRules=(k,sport)=>{
+      let out='';
+      // Inject signal performance track record so Phase 1 can self-calibrate signal weights
+      const _perfRaw=localStorage.getItem('et_signal_performance');
+      if(_perfRaw){try{const _perf=JSON.parse(_perfRaw);const _lines=Object.entries(_perf).filter(([,v])=>v.w+v.l>=3).sort(([,a],[,b])=>(b.w+b.l)-(a.w+a.l)).slice(0,15).map(([tag,v])=>{const tot=v.w+v.l+v.p;const wr=tot>0?Math.round(v.w/(v.w+v.l)*100):0;return `  ${tag}: ${v.w}-${v.l}${v.p?'-'+v.p:''} (${wr}% WR, ${tot} picks)`});if(_lines.length)out+=`SIGNAL TRACK RECORD (last 30 days — calibrate weights accordingly):\n${_lines.join('\n')}\n\n`}catch(_){}}
+      const r=localStorage.getItem(k);if(r)out+=`LEARNED RULES (${sport} — apply these first, highest priority):\n${r}\n\n`;
+      return out;
+    };
     const [tennisResult,nbaResult,mlbResult,nhlResult]=await Promise.allSettled([
       _hasTennis?runTennisAnalysis(_mkRules('et_learned_rules_tennis','tennis')+buildGamesContext(true,g=>g.cat==='tennis')):Promise.resolve(null),
       _hasNBA?runNBAAnalysis(_mkRules('et_learned_rules_nba','NBA')+buildGamesContext(true,g=>g.cat==='nba')):Promise.resolve(null),
