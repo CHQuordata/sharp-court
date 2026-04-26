@@ -2342,9 +2342,14 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
 
 function getYesterdayPicks(){
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  const y=new Date();y.setDate(y.getDate()-1);
-  const ySlate=history.find(s=>new Date(s.date).toDateString()===y.toDateString());
-  return ySlate?.picks?.filter(p=>!p.is_lean&&!p.result)||[];
+  // Return already-graded picks from last 3 days — cron handles grading, not Phase 2
+  const cutoff=Date.now()-3*24*60*60*1000;
+  const graded=[];
+  history.forEach(slate=>{
+    if(new Date(slate.date).getTime()<cutoff)return;
+    (slate.picks||[]).filter(p=>!p.is_lean&&['W','L','P'].includes(p.result)).forEach(p=>graded.push(p));
+  });
+  return graded;
 }
 
 function updateCumulativeRecord(grading,picks){
@@ -2407,8 +2412,8 @@ function buildSystemPrompt(learnedRules,rec){
   const byConf=rec.by_confidence?Object.entries(rec.by_confidence).filter(([,r])=>(r.w||0)+(r.l||0)>0).map(([c,r])=>`${c}: ${r.w||0}-${r.l||0}`).join(' | '):'';
   const bySp=rec.by_sport?Object.entries(rec.by_sport).filter(([,r])=>(r.w||0)+(r.l||0)>0).map(([s,r])=>`${s}: ${r.w||0}-${r.l||0}`).join(' | '):'';
   return `You are a sharp sports betting analyst embedded in SPORTSEDGE TERMINAL. Your job each day:
-1. Grade yesterday's picks using results visible in the game data
-2. Update learned rules ONLY if today's grading reveals a new pattern (omit learned_rules_update entirely if no new lesson)
+1. Review recent graded results provided — picks are already graded W/L/P by the system. Do NOT re-grade using score data.
+2. Update learned rules ONLY if the graded results reveal a new pattern (omit learned_rules_update entirely if no new lesson)
 3. Generate today's best picks from the live data provided
 
 ## YOUR TRACK RECORD
@@ -2522,10 +2527,10 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaAnalysis,mlbAnalysis,nhlAnalysis){
   let msg=gamesCtx;
   if(yesterdayPicks.length){
-    msg+=`\nYESTERDAY'S UNGRADED PICKS (grade using results in game data above):\n`;
-    yesterdayPicks.forEach(p=>{msg+=`- ${(p.sport||'').toUpperCase()}: ${p.matchup||''} | ${p.pick||''} | ${p.confidence||''}\n`});
+    msg+=`\nRECENT GRADED RESULTS (last 3 days — already graded, use for learned_rules_update only, do NOT re-grade):\n`;
+    yesterdayPicks.forEach(p=>{msg+=`- ${(p.sport||'').toUpperCase()}: ${p.matchup||''} | ${p.pick||''} | ${p.confidence||''} | ${p.result}\n`});
     msg+='\n';
-  }else msg+='\n(No prior picks to grade — first slate or already graded)\n\n';
+  }else msg+='\n(No graded results in last 3 days yet)\n\n';
   // Completed games: free training data for pattern recognition
   if(completedGames?.length){
     const recent=completedGames.slice(0,50);
