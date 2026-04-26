@@ -2484,8 +2484,8 @@ Injury data is background context ONLY. Follow these rules strictly:
 - List every inactive sport explicitly with reason.
 - Grade all yesterday picks. Use "?" only if truly no result found.
 
-## TENNIS PRE-ANALYSIS
-When the user message contains a "TENNIS PRE-ANALYSIS" section, those tennis picks have already been derived from signal vote tallies by a dedicated analyst. Incorporate them exactly as provided — do not re-examine the raw data, do not override the conclusion, do not change the vehicle. Your job is to slot them into the picks array and use them for parlay construction.
+## PRE-ANALYSIS (TENNIS + NBA)
+When the user message contains "TENNIS PRE-ANALYSIS" or "NBA PRE-ANALYSIS" sections, those picks have already been derived from signal vote tallies by dedicated analysts. Incorporate them exactly as provided — do not re-examine raw data, do not override conclusions, do not change vehicles or sides. Your job is to slot them into the picks array and use them for parlay construction. If a pre-analysis pick conflicts with what you might otherwise choose, the pre-analysis wins.
 
 ## TENNIS PRIORITY (ATP/WTA SEASON ACTIVE)
 ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and BetMGM are the PRIMARY focus of this slate. Follow this allocation:
@@ -2519,7 +2519,7 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 }`;
 }
 
-function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis){
+function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaAnalysis){
   let msg=gamesCtx;
   if(yesterdayPicks.length){
     msg+=`\nYESTERDAY'S UNGRADED PICKS (grade using results in game data above):\n`;
@@ -2536,6 +2536,20 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis){
       msg+=`${g.away_team} @ ${g.home_team}: ${as}-${hs} FINAL [${(g.sport||'').replace('basketball_','').replace('icehockey_','').replace('baseball_','').replace('tennis_','')}]\n`;
     });
     msg+='\n';
+  }
+  // Inject pre-locked NBA conclusions from Phase 1
+  if(nbaAnalysis?.nba_analysis?.length){
+    const actionableNBA=nbaAnalysis.nba_analysis.filter(na=>na.spread_winner!=='PASS'||na.total_side!=='PASS');
+    if(actionableNBA.length){
+      msg+=`\n## NBA PRE-ANALYSIS — LOCKED CONCLUSIONS (do not re-derive, incorporate exactly)\n`;
+      actionableNBA.forEach(na=>{
+        const sp=na.spread_winner!=='PASS'?`SPREAD=${na.spread_pick} | ${na.spread_confidence}`:'SPREAD=PASS';
+        const to=na.total_side!=='PASS'?`TOTAL=${na.total_pick} | ${na.total_confidence}`:'TOTAL=PASS';
+        const svStr=Object.entries(na.spread_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        msg+=`${na.matchup}: ${sp} | ${to} | Votes(${svStr}) | ${na.reasoning}\n`;
+      });
+      msg+='\n';
+    }
   }
   // Inject pre-locked tennis conclusions from Phase 1
   if(tennisAnalysis?.tennis_analysis?.length){
@@ -2635,6 +2649,60 @@ function _repairJSON(raw){
     out+=c;
   }
   return out;
+}
+
+// ── Phase 1: NBA signal analysis ─────────────────────────────────────────────
+function buildNBAAnalysisPrompt(){
+  return `You are an NBA betting signal analyst. Score signals per game, tally votes, derive spread/total conclusions mechanically from vote counts. Do NOT generate picks freely — direction must follow from the tally.
+
+## SIGNAL SCORING — assign favors: TeamA | TeamB | NEUTRAL | UNDER | OVER (for totals)
+Score every signal that has data. Skip signals with no data — do not invent.
+
+PLAYOFF SIGNALS (use these when game is tagged [PLAYOFFS]):
+1. REVERSION — if last game margin ≥15pts: favors the LOSER of that game (1 strong vote). Favors UNDER (blowouts followed by tighter games).
+2. SERIES HOME RECORD — home team undefeated at home this series: amplify home team (1 vote). Home team lost at home: road team psychological edge (1 vote road).
+3. ELIMINATION PRESSURE — team facing elimination: 1 vote for that team (desperation covers at higher rate).
+4. DESPERATION vs COMPLACENCY — team up 3-0 or 3-1: 1 vote AGAINST that team (complacency risk). Down team: 1 vote FOR.
+5. REST DIFFERENTIAL — gap ≥2 days: 1 vote for more rested team.
+6. SERIES DOMINANCE — one team avg +8 margin across series: 1 vote for the trailing team (intensity response).
+
+REGULAR SEASON SIGNALS (use when NOT tagged [PLAYOFFS]):
+1. L10 NET RATING — divergence ≥4pts: 1 vote for higher-rated team. ≥8pts: 2 votes.
+2. B2B / FATIGUE — team on B2B or 3-in-4: 1 vote AGAINST that team on spread AND total.
+3. REST ADVANTAGE — gap ≥2 days: 1 vote for rested team.
+4. PACE MISMATCH — slow team (≤98 pace) vs fast team (≥102): 1 vote UNDER.
+5. HOME COURT — baseline 1 vote home unless fatigue/form overrides.
+6. LINE MOVEMENT — if noted: 1 vote in direction of sharp move.
+
+## VEHICLE FROM VOTE COUNT (spread)
+3+ votes same side, 0-1 opp → pick that side | 2-1 split → lean only, lower confidence | tied → PASS
+
+## TOTAL SIGNAL
+If 2+ UNDER votes or 2+ OVER votes → pick that total side. Otherwise NEUTRAL on total.
+
+## CONFIDENCE
+HIGH: 3+ votes, 0-1 opp, clear data | MEDIUM: 2-1 split with strong signal | LOW: weak data | PASS: tied
+
+## JSON OUTPUT — raw JSON only, start with { immediately, no markdown fences
+{"nba_analysis":[{"matchup":"Team A vs Team B","is_playoff":true,"signals":[{"name":"signal name","detail":"specific data","favors":"TeamA or TeamB or NEUTRAL or UNDER or OVER"}],"spread_votes":{"TeamA":0,"TeamB":0,"NEUTRAL":0},"total_votes":{"UNDER":0,"OVER":0,"NEUTRAL":0},"spread_winner":"TeamA or TeamB or PASS","total_side":"UNDER or OVER or PASS","spread_confidence":"HIGH or MEDIUM or LOW or PASS","total_confidence":"HIGH or MEDIUM or LOW or PASS","spread_pick":"Team A -3.5 or PASS","total_pick":"Under 221.5 or PASS","reasoning":"2-3 sentences on key signals"}]}`;
+}
+
+async function runNBAAnalysis(nbaCtx){
+  if(!CLAUDE_KEY||!nbaCtx)return null;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:buildNBAAnalysisPrompt(),messages:[{role:'user',content:nbaCtx+'\n\nScore every available signal for each NBA game. Tally votes. Derive spread and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+    });
+    if(!resp.ok)return null;
+    const data=await resp.json();
+    const text=data.content[0].text;
+    const fenceM=text.match(/```json\s*([\s\S]+?)\s*```/);
+    const raw=fenceM?fenceM[1]:(text.match(/(\{[\s\S]+\})/)||[])[1]||text;
+    if(!raw||!raw.trim().startsWith('{'))return null;
+    return JSON.parse(_repairJSON(raw));
+  }catch(e){return null;}
 }
 
 // ── Phase 1: Tennis signal analysis ──────────────────────────────────────────
@@ -2789,10 +2857,16 @@ async function generatePicks(){
     const completed=scoresResult.status==='fulfilled'?scoresResult.value:[];
     if(completed.length)autoGradeFromScores(completed);
     await prefetchStatsForPicks();
-    // Phase 1 — Tennis signal analysis (runs before main picks call)
+    // Phase 1 — Tennis + NBA signal analysis in parallel
     const _todayStr=new Date().toDateString();
     const _hasTennis=allG.some(g=>g.cat==='tennis'&&g.tm.toDateString()===_todayStr&&hasUsBookOdds(g));
-    const tennisAnalysis=_hasTennis?await runTennisAnalysis(buildGamesContext(true,g=>g.cat==='tennis')):null;
+    const _hasNBA=allG.some(g=>g.cat==='nba'&&g.tm.toDateString()===_todayStr);
+    const [tennisResult,nbaResult]=await Promise.allSettled([
+      _hasTennis?runTennisAnalysis(buildGamesContext(true,g=>g.cat==='tennis')):Promise.resolve(null),
+      _hasNBA?runNBAAnalysis(buildGamesContext(true,g=>g.cat==='nba')):Promise.resolve(null)
+    ]);
+    const tennisAnalysis=tennisResult.status==='fulfilled'?tennisResult.value:null;
+    const nbaAnalysis=nbaResult.status==='fulfilled'?nbaResult.value:null;
     // Phase 2 — Main picks call
     const gamesCtx=buildGamesContext(true); // full slate — tennis included for parlay context
     const yPicks=getYesterdayPicks();
@@ -2801,7 +2875,7 @@ async function generatePicks(){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis,nbaAnalysis)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
