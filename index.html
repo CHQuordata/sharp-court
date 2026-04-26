@@ -2519,7 +2519,7 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 }`;
 }
 
-function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaAnalysis){
+function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaAnalysis,mlbAnalysis){
   let msg=gamesCtx;
   if(yesterdayPicks.length){
     msg+=`\nYESTERDAY'S UNGRADED PICKS (grade using results in game data above):\n`;
@@ -2536,6 +2536,20 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaA
       msg+=`${g.away_team} @ ${g.home_team}: ${as}-${hs} FINAL [${(g.sport||'').replace('basketball_','').replace('icehockey_','').replace('baseball_','').replace('tennis_','')}]\n`;
     });
     msg+='\n';
+  }
+  // Inject pre-locked MLB conclusions from Phase 1
+  if(mlbAnalysis?.mlb_analysis?.length){
+    const actionableMLB=mlbAnalysis.mlb_analysis.filter(ma=>ma.ml_winner!=='PASS'||ma.total_side!=='PASS');
+    if(actionableMLB.length){
+      msg+=`\n## MLB PRE-ANALYSIS — LOCKED CONCLUSIONS (do not re-derive, incorporate exactly)\n`;
+      actionableMLB.forEach(ma=>{
+        const ml=ma.ml_winner!=='PASS'?`ML=${ma.ml_pick} | ${ma.ml_confidence}`:'ML=PASS';
+        const to=ma.total_side!=='PASS'?`TOTAL=${ma.total_pick} | ${ma.total_confidence}`:'TOTAL=PASS';
+        const svStr=Object.entries(ma.ml_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        msg+=`${ma.matchup} [${ma.away_sp||'?'} vs ${ma.home_sp||'?'}]: ${ml} | ${to} | Votes(${svStr}) | ${ma.reasoning}\n`;
+      });
+      msg+='\n';
+    }
   }
   // Inject pre-locked NBA conclusions from Phase 1
   if(nbaAnalysis?.nba_analysis?.length){
@@ -2649,6 +2663,58 @@ function _repairJSON(raw){
     out+=c;
   }
   return out;
+}
+
+// ── Phase 1: MLB signal analysis ─────────────────────────────────────────────
+function buildMLBAnalysisPrompt(){
+  return `You are an MLB betting signal analyst. Score signals per game, tally votes, derive run line and total conclusions mechanically. Do NOT generate picks freely — direction must follow from vote tallies.
+
+## SIGNAL SCORING — assign favors: TeamA | TeamB | NEUTRAL | UNDER | OVER
+Score every signal that has data. Never invent data not present.
+
+PITCHING SIGNALS (highest weight — score first):
+1. SP ERA GAP — gap ≥1.0 ERA: 2 votes for lower-ERA team. Gap 0.5-0.99: 1 vote. <0.5: NEUTRAL.
+2. WHIP CONTRADICTION — ERA <4.0 but WHIP ≥1.35: ERA is lying, 1 vote OVER + 1 vote AGAINST that pitcher's team on run line.
+3. TRUE ACE — ERA ≤3.50 AND WHIP <1.15: 1 vote UNDER + amplify that team on run line.
+4. BB/9 >4.0 — control issues: 1 vote OVER, 1 vote against that team.
+5. COMBINED ERA — sum both SPs ERA: ≤7.0 → UNDER lean (1 vote). ≥9.0 → OVER lean (1 vote).
+
+PARK + WEATHER SIGNALS:
+6. PARK FACTOR — hitter-friendly park (Coors, Great American, etc.): 1 vote OVER. Pitcher-friendly (Oracle, Petco, etc.): 1 vote UNDER.
+7. WIND OUT — wind blowing out ≥10mph: 1 vote OVER.
+8. WIND IN — wind blowing in ≥10mph: 1 vote UNDER.
+9. TEMPERATURE — below 50°F: 1 vote UNDER (cold suppresses offense).
+
+TEAM SIGNALS:
+10. BULLPEN — team with depleted bullpen (back-to-back high-leverage games): 1 vote OVER, 1 vote against that team.
+11. HOME FIELD — 1 vote home team on ML/run line unless pitching signals override.
+
+## RUN LINE NOTE
+Run line is -1.5/+1.5. Only recommend -1.5 when SP gap is dominant (2+ votes on pitching alone for that team). Otherwise recommend ML or +1.5 for dog.
+
+## CONFIDENCE
+HIGH: 3+ votes same direction, 0-1 opposite | MEDIUM: 2-1 split with strong SP signal | LOW: weak data | PASS: tied or no edge
+
+## JSON OUTPUT — raw JSON only, start with { immediately
+{"mlb_analysis":[{"matchup":"Team A vs Team B","away_sp":"SP name ERA WHIP","home_sp":"SP name ERA WHIP","signals":[{"name":"signal name","detail":"specific stat","favors":"TeamA or TeamB or NEUTRAL or UNDER or OVER"}],"ml_votes":{"TeamA":0,"TeamB":0,"NEUTRAL":0},"total_votes":{"UNDER":0,"OVER":0,"NEUTRAL":0},"ml_winner":"TeamA or TeamB or PASS","total_side":"UNDER or OVER or PASS","ml_confidence":"HIGH or MEDIUM or LOW or PASS","total_confidence":"HIGH or MEDIUM or LOW or PASS","ml_pick":"Team A ML or PASS","total_pick":"Under 8.5 or PASS","reasoning":"2-3 sentences on SP matchup and key signals"}]}`;
+}
+
+async function runMLBAnalysis(mlbCtx){
+  if(!CLAUDE_KEY||!mlbCtx)return null;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:buildMLBAnalysisPrompt(),messages:[{role:'user',content:mlbCtx+'\n\nScore every available signal for each MLB game. Tally votes. Derive ML and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+    });
+    if(!resp.ok)return null;
+    const data=await resp.json();
+    const text=data.content[0].text;
+    const fenceM=text.match(/```json\s*([\s\S]+?)\s*```/);
+    const raw=fenceM?fenceM[1]:(text.match(/(\{[\s\S]+\})/)||[])[1]||text;
+    if(!raw||!raw.trim().startsWith('{'))return null;
+    return JSON.parse(_repairJSON(raw));
+  }catch(e){return null;}
 }
 
 // ── Phase 1: NBA signal analysis ─────────────────────────────────────────────
@@ -2861,12 +2927,15 @@ async function generatePicks(){
     const _todayStr=new Date().toDateString();
     const _hasTennis=allG.some(g=>g.cat==='tennis'&&g.tm.toDateString()===_todayStr&&hasUsBookOdds(g));
     const _hasNBA=allG.some(g=>g.cat==='nba'&&g.tm.toDateString()===_todayStr);
-    const [tennisResult,nbaResult]=await Promise.allSettled([
+    const _hasMLB=allG.some(g=>g.cat==='mlb'&&g.tm.toDateString()===_todayStr);
+    const [tennisResult,nbaResult,mlbResult]=await Promise.allSettled([
       _hasTennis?runTennisAnalysis(buildGamesContext(true,g=>g.cat==='tennis')):Promise.resolve(null),
-      _hasNBA?runNBAAnalysis(buildGamesContext(true,g=>g.cat==='nba')):Promise.resolve(null)
+      _hasNBA?runNBAAnalysis(buildGamesContext(true,g=>g.cat==='nba')):Promise.resolve(null),
+      _hasMLB?runMLBAnalysis(buildGamesContext(true,g=>g.cat==='mlb')):Promise.resolve(null)
     ]);
     const tennisAnalysis=tennisResult.status==='fulfilled'?tennisResult.value:null;
     const nbaAnalysis=nbaResult.status==='fulfilled'?nbaResult.value:null;
+    const mlbAnalysis=mlbResult.status==='fulfilled'?mlbResult.value:null;
     // Phase 2 — Main picks call
     const gamesCtx=buildGamesContext(true); // full slate — tennis included for parlay context
     const yPicks=getYesterdayPicks();
@@ -2875,7 +2944,7 @@ async function generatePicks(){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis,nbaAnalysis)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis,nbaAnalysis,mlbAnalysis)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
