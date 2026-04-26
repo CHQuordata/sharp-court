@@ -466,7 +466,7 @@ let _tennisKeys=null,_tennisKeysTs=0;
 let TN_API_KEY=localStorage.getItem('tn_api_key')||'';
 const tnPlayerCache=new Map(),tnGameCache=new Map(),_tnFixCache=new Map();
 const TN_BAN_LIST=['nakashima','tsitsipas','bublik','haddad maia','rublev'];
-const gameStatsCache=new Map(),gamePitcherCache=new Map(),tennisCache=new Map(),gameFormCache=new Map();
+const gameStatsCache=new Map(),gamePitcherCache=new Map(),tennisCache=new Map(),gameFormCache=new Map(),gameWeatherCache=new Map();
 const tennisRankings=new Map(); // ESPN athlete id (string) → WTA/ATP rank number
 async function fetchTennisRankings(){
   try{
@@ -2334,7 +2334,7 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
         const fat=[];if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
         if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')}\n`;}}
     const pitchers=gamePitcherCache.get(g.id);
-    if(pitchers){const ap=pitchers.away,hp=pitchers.home;if(ap||hp)ctx+=`  SP: ${ap?g.aw.nm+' — '+ap.name+' '+ap.era+' ERA '+ap.k9+' K/9':'TBD'} | ${hp?g.hm.nm+' — '+hp.name+' '+hp.era+' ERA '+hp.k9+' K/9':'TBD'}\n`}
+    if(pitchers){const ap=pitchers.away,hp=pitchers.home;if(ap||hp){ctx+=`  SP: ${ap?g.aw.nm+' — '+ap.name+' '+ap.era+' ERA '+ap.whip+' WHIP '+ap.bb9+' BB/9 '+ap.hr9+' HR/9':'TBD'} | ${hp?g.hm.nm+' — '+hp.name+' '+hp.era+' ERA '+hp.whip+' WHIP '+hp.bb9+' BB/9 '+hp.hr9+' HR/9':'TBD'}\n`;const _pf=getMLBParkFactor(g.ven);if(_pf!==1.0)ctx+=`  Park factor (${g.ven||'stadium'}): ${_pf>1?'hitter-friendly +':'-'}${Math.abs((_pf-1)*100).toFixed(0)}%\n`;const _wx=gameWeatherCache.get(g.id);if(_wx){ctx+=`  Weather: ${_wx.temp}°F wind ${_wx.wind}mph ${_wx.windDir} ${_wx.desc}\n`;if(_wx.wind>=10)ctx+=`  ⚠️ WIND ${_wx.wind}mph ${_wx.windDir}\n`;if(_wx.temp<50)ctx+=`  ⚠️ COLD ${_wx.temp}°F\n`}}}
     ctx+='\n';
   });
   return ctx;
@@ -2451,9 +2451,9 @@ Game number context: Early series (G1-G2) = feel-out, less reliable. Mid-series 
 - RetWon% (return points won) is the single most predictive tennis stat. When available it anchors confidence more than any other signal. ≥42% = dominant returner; gap ≥5pp between players = clear edge.
 
 ## MLB STAT POLICY
-- ERA alone is NOT a pick signal without WHIP validation. Always cross-check: ERA <4.0 with WHIP ≥1.35 = ERA is lying (high contact, regression risk, lean OVER). ERA ≤3.50 with WHIP <1.15 = true ace, UNDER lean amplified.
-- SCORED signals in priority order: (1) SP ERA gap ≥1.0 — primary ML/spread driver, SCORED; (2) WHIP vs ERA contradiction — SCORED; (3) HR/9 × park factor — SCORED; (4) Park factor — SCORED; (5) BB/9 >4.0 — SCORED; (6) K/9 ONLY when combined ERA ≤8.5 — context only otherwise; (7) Wind direction OUT = OVER, IN = UNDER — SCORED; (8) Temperature extremes — SCORED.
-- K/9 is context only unless combined ERA ≤8.5 confirms both pitchers are actually suppressing runs. Never cite K/9 alone as UNDER reason.
+- ERA alone is NOT a pick signal without WHIP validation. ERA <4.0 with WHIP ≥1.35 = ERA is lying. ERA ≤3.50 with WHIP <1.15 = true ace.
+- MLB signals are scored by Phase 1 pre-analysis. Accept MLB PRE-ANALYSIS conclusions as locked — do not re-score, do not override. For PASS games, respect the pass and do not force a pick.
+- If no Phase 1 pre-analysis exists for an MLB game: use SP ERA gap ≥1.0 (primary), WHIP contradiction, BB/9 >4.0, park factor and wind/temp from context, combined ERA ≤7.0 = UNDER / ≥9.0 = OVER.
 - W-L record of SP is meaningless — reflects run support, not pitcher quality. Never use it.
 
 ## NBA STAT POLICY
@@ -2561,7 +2561,8 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaA
         const ml=ma.ml_winner!=='PASS'?`ML=${ma.ml_pick} | ${ma.ml_confidence}`:'ML=PASS';
         const to=ma.total_side!=='PASS'?`TOTAL=${ma.total_pick} | ${ma.total_confidence}`:'TOTAL=PASS';
         const svStr=Object.entries(ma.ml_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
-        msg+=`${ma.matchup} [${ma.away_sp||'?'} vs ${ma.home_sp||'?'}]: ${ml} | ${to} | Votes(${svStr}) | ${ma.reasoning}\n`;
+        const tvStr=Object.entries(ma.total_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        msg+=`${ma.matchup} [${ma.away_sp||'?'} vs ${ma.home_sp||'?'}]: ${ml} | ${to} | MLVotes(${svStr}) | TotalVotes(${tvStr}) | ${ma.reasoning}\n`;
       });
       msg+='\n';
     }
@@ -2621,6 +2622,10 @@ async function prefetchStatsForPicks(){
       if(g.cat==='mlb'&&!gamePitcherCache.has(g.id)){
         const sm=await fetchGameSummary('mlb',g.id);
         if(sm){const p=extractPitchers(sm);if(p)cSet(gamePitcherCache,g.id,p)}
+      }
+      if(g.cat==='mlb'&&isOutdoor(g.ven,g.cat)&&!gameWeatherCache.has(g.id)){
+        const wx=await fetchWeather(cityFromTeam(g.hm.nm));
+        if(wx)cSet(gameWeatherCache,g.id,wx);
       }
       if(g.cat==='tennis'){
         if(!tennisCache.has(g.id)){
