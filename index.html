@@ -2329,7 +2329,7 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
         // Playoff series history — game-by-game for reversion analysis
         if(g.playoff){const serAf=af.filter(m=>m.playoff&&m.opp===g.hm.ab).sort((a,b)=>a.dt-b.dt);const serHf=hf.filter(m=>m.playoff&&m.opp===g.aw.ab).sort((a,b)=>a.dt-b.dt);const serRef=serAf.length>=serHf.length?serAf:serHf;const fromAw=serRef===serAf;if(serRef.length){ctx+=`  Series history (${fromAw?g.aw.nm:g.hm.nm} POV):\n`;serRef.forEach((m,i)=>{const[own,opp]=m.sc.split('-').map(Number);const margin=own-opp;ctx+=`    G${i+1}: ${m.r} ${m.sc} ${m.hm?'(home)':'(away)'} margin ${margin>=0?'+':''}${margin}\n`});const margins=serRef.map(m=>{const[a,b]=m.sc.split('-').map(Number);return a-b});const avgMargin=margins.reduce((a,b)=>a+b,0)/margins.length;const lastMargin=margins[margins.length-1];const hmHomeW=serRef.filter(m=>!m.hm&&m.r==='L').length,hmHomeL=serRef.filter(m=>!m.hm&&m.r==='W').length,hmHomePlayed=serRef.filter(m=>!m.hm).length;if(hmHomePlayed>0)ctx+=`  ${g.hm.nm} at home this series: ${hmHomeW}-${hmHomeL}\n`;ctx+=`  Avg margin: ${fromAw?g.aw.nm:g.hm.nm} ${avgMargin>=0?'+':''}${avgMargin.toFixed(1)} | Last game: ${Math.abs(lastMargin)>=15?'⚠️ BLOWOUT (+'+Math.abs(lastMargin)+') — strong reversion candidate':lastMargin>=0?'W +'+lastMargin:'L '+lastMargin}\n`}}}}
     if(cached?.cat==='nhl'){const{awSt,hmSt}=cached;
-      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} GF/G ${awSt?.gpg||'?'} GAA ${awSt?.gaa||'?'} PP% ${awSt?.ppPct||'?'} PK% ${awSt?.pkPct||'?'} SH% ${awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${hmSt?.gpg||'?'} GAA ${hmSt?.gaa||'?'} PP% ${hmSt?.ppPct||'?'} PK% ${hmSt?.pkPct||'?'} SH% ${hmSt?.shootPct||'?'}\n`;
+      if(awSt||hmSt)ctx+=`  Team stats: ${g.aw.nm} GF/G ${awSt?.gpg||'?'} GAA ${awSt?.gaa||'?'} PP% ${awSt?.ppPct||'?'} PK% ${awSt?.pkPct||'?'} | ${g.hm.nm} GF/G ${hmSt?.gpg||'?'} GAA ${hmSt?.gaa||'?'} PP% ${hmSt?.ppPct||'?'} PK% ${hmSt?.pkPct||'?'}\n`;
       if(cachedForm){const{af,hf}=cachedForm;const awB2b=isB2B(af,g.tm),hmB2b=isB2B(hf,g.tm);
         const fat=[];if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
         if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')}\n`;}}
@@ -2462,9 +2462,9 @@ Game number context: Early series (G1-G2) = feel-out, less reliable. Mid-series 
 - If no Phase 1 pre-analysis exists for an NBA game: use L10 net divergence ≥4pts, pace mismatch ≥4 poss/48 (UNDER), B2B/fatigue, rest advantage ≥2d, road trip ≥3 away games.
 
 ## NHL STAT POLICY
-- SH% (shooting percentage) is HIGH-VARIANCE noise — do NOT use it as an offensive edge signal. It regresses to league average (~9%) over time and tells you nothing about the next game.
-- SCORED signals in priority order: (1) Goalie save% gap ≥0.010 — single sharpest spread signal, scored at 50× weight; (2) Goal differential (net G/gm) gap ≥0.4; (3) PP% gap ≥5pp at 0.15×; (4) PK% gap ≥5pp at 0.12× (independent from PP%); (5) B2B fatigue; (6) Totals: combined save% ≥.920 = UNDER lean, ≤.900 = OVER lean.
-- SH% in the data is context only — never cite it as a reason to pick a side.
+- SH% (shooting percentage) is HIGH-VARIANCE noise — NOT present in context. Do not infer or mention it.
+- NHL signals are scored by Phase 1 pre-analysis. Accept NHL PRE-ANALYSIS conclusions as locked — do not re-score, do not override. For PASS games, respect the pass and do not force a pick.
+- If no Phase 1 pre-analysis exists for an NHL game: use goalie save% gap ≥0.010 (primary), net G/gm gap ≥0.4, PP%/PK% gap ≥5pp, B2B fatigue, combined SV% ≥.920 = UNDER / ≤.900 = OVER.
 
 ## INJURY POLICY — READ CAREFULLY
 Injury data is background context ONLY. Follow these rules strictly:
@@ -2546,7 +2546,8 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaA
         const ml=na.ml_winner!=='PASS'?`ML=${na.ml_pick} | ${na.ml_confidence}`:'ML=PASS';
         const to=na.total_side!=='PASS'?`TOTAL=${na.total_pick} | ${na.total_confidence}`:'TOTAL=PASS';
         const svStr=Object.entries(na.ml_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
-        msg+=`${na.matchup} [${na.away_goalie||'?'} vs ${na.home_goalie||'?'}]: ${ml} | ${to} | Votes(${svStr}) | ${na.reasoning}\n`;
+        const tvStr=Object.entries(na.total_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        msg+=`${na.matchup} [${na.away_goalie||'?'} vs ${na.home_goalie||'?'}]: ${ml} | ${to} | MLVotes(${svStr}) | TotalVotes(${tvStr}) | ${na.reasoning}\n`;
       });
       msg+='\n';
     }
@@ -2688,9 +2689,11 @@ function buildNHLAnalysisPrompt(){
 ## SIGNAL SCORING — assign favors: TeamA | TeamB | NEUTRAL | UNDER | OVER
 Score every signal with data. Never invent data not present.
 
-GOALTENDING (highest weight):
-1. GOALIE SAVE% GAP — gap ≥0.015: 2 votes for higher save% team. Gap 0.010-0.014: 1 vote. <0.010: NEUTRAL.
-2. COMBINED SAVE% — both goalies combined ≥.920: 1 vote UNDER. Combined ≤.900: 1 vote OVER.
+DATA NOTE: Goalie save% is not available in context data. Score all 3 goalie signals as NEUTRAL unless the context explicitly states a save% figure. Never invent or estimate save% values.
+
+GOALTENDING (highest weight when data present):
+1. GOALIE SAVE% GAP — gap ≥0.015: 2 votes for higher save% team. Gap 0.010-0.014: 1 vote. <0.010: NEUTRAL. If no SV% in context → NEUTRAL.
+2. COMBINED SAVE% — both goalies combined ≥.920: 1 vote UNDER. Combined ≤.900: 1 vote OVER. If no SV% in context → NEUTRAL.
 3. STARTING GOALIE CONFIRMED — if unconfirmed, note as NEUTRAL on goalie signal.
 
 SKATER SIGNALS:
