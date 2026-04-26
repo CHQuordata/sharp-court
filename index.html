@@ -2258,11 +2258,11 @@ function selLean(idx){
     ${l.trigger?`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--amb)"></div>PROMOTION TRIGGER</div><div style="font-size:11px;color:var(--t2)">${l.trigger}</div></div>`:''}`;
 }
 
-function buildGamesContext(todayOnly=false){
+function buildGamesContext(todayOnly=false,gameFilter=null){
   const now=new Date();
   const todayStr=now.toDateString();
-  // For picks generation: only send today's games — tomorrow has no actionable lines yet
-  const games=todayOnly?allG.filter(g=>g.tm.toDateString()===todayStr):allG;
+  const _base=todayOnly?allG.filter(g=>g.tm.toDateString()===todayStr):allG;
+  const games=gameFilter?_base.filter(gameFilter):_base;
   let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${games.length}):\n\n`;
   games.forEach(g=>{
     const t=g.st==='STATUS_IN_PROGRESS'?`LIVE ${g.stD}`:g.st==='STATUS_FINAL'?`FINAL${g.aw.sc!=null?' '+g.aw.sc+'-'+g.hm.sc:''}`:g.tm.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'});
@@ -2484,6 +2484,9 @@ Injury data is background context ONLY. Follow these rules strictly:
 - List every inactive sport explicitly with reason.
 - Grade all yesterday picks. Use "?" only if truly no result found.
 
+## TENNIS PRE-ANALYSIS
+When the user message contains a "TENNIS PRE-ANALYSIS" section, those tennis picks have already been derived from signal vote tallies by a dedicated analyst. Incorporate them exactly as provided — do not re-examine the raw data, do not override the conclusion, do not change the vehicle. Your job is to slot them into the picks array and use them for parlay construction.
+
 ## TENNIS PRIORITY (ATP/WTA SEASON ACTIVE)
 ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and BetMGM are the PRIMARY focus of this slate. Follow this allocation:
 1. FIRST allocate graded pick slots to tennis matches tagged [DK ✓] or [MGM ✓] that have qualifying edges.
@@ -2516,7 +2519,7 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 }`;
 }
 
-function buildUserMsg(gamesCtx,yesterdayPicks,completedGames){
+function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis){
   let msg=gamesCtx;
   if(yesterdayPicks.length){
     msg+=`\nYESTERDAY'S UNGRADED PICKS (grade using results in game data above):\n`;
@@ -2533,6 +2536,18 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames){
       msg+=`${g.away_team} @ ${g.home_team}: ${as}-${hs} FINAL [${(g.sport||'').replace('basketball_','').replace('icehockey_','').replace('baseball_','').replace('tennis_','')}]\n`;
     });
     msg+='\n';
+  }
+  // Inject pre-locked tennis conclusions from Phase 1
+  if(tennisAnalysis?.tennis_analysis?.length){
+    const actionable=tennisAnalysis.tennis_analysis.filter(ta=>ta.winner!=='PASS'&&ta.vehicle!=='PASS'&&ta.has_us_odds);
+    if(actionable.length){
+      msg+=`\n## TENNIS PRE-ANALYSIS — LOCKED CONCLUSIONS (do not re-derive, incorporate exactly)\n`;
+      actionable.forEach(ta=>{
+        const voteStr=Object.entries(ta.votes).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        msg+=`${ta.matchup} [${ta.surface}]: ${ta.pick_string} | ${ta.confidence} | Votes(${voteStr}) | ${ta.reasoning}\n`;
+      });
+      msg+='\n';
+    }
   }
   msg+='Analyze the slate and generate today\'s picks. Enforce all learned rules strictly.';
   return msg;
@@ -2620,6 +2635,50 @@ function _repairJSON(raw){
     out+=c;
   }
   return out;
+}
+
+// ── Phase 1: Tennis signal analysis ──────────────────────────────────────────
+function buildTennisAnalysisPrompt(){
+  return `You are a tennis signal analyst. Score signals per match, tally votes, derive conclusions mechanically from vote counts. Do NOT generate picks freely — the pick direction must follow from the tally.
+
+## SIGNAL SCORING — for each signal with data, assign favors: PlayerA | PlayerB | NEUTRAL
+Priority order (score all that have data):
+1. RetWon% — gap ≥5pp → favors higher. <5pp or missing → NEUTRAL
+2. BPconv% — gap ≥10pp → favors higher. Otherwise NEUTRAL
+3. 2ndWon% — either player <50% → favors opponent
+4. 1stIn% — gap ≥8pp → favors higher
+5. Surface win% current season — gap ≥15pp with ≥5 matches → favors higher
+6. Rest days — gap ≥2 days → favors more rested
+7. BPsave% — gap ≥10pp → favors higher
+8. H2H on surface — ONLY count if 3+ meetings on TODAY's exact surface, OR 4-0/5-0 overall pattern. If prior meetings were on a different surface → NEUTRAL + note surface reset applied.
+9. Market implied% — ≥65% implied → 1 vote for that player
+
+## VEHICLE FROM VOTE COUNT
+4+ votes, 0 opp → -1.5 sets | 3 votes, ≤1 opp → -1.5 games | 2-1 split → ML only | tied or no edge → PASS
+
+## CONFIDENCE
+HIGH: 4+ votes, 0-1 opp, strong data | MEDIUM: 3 votes, 1-2 opp | LOW: 2-1 weak data | PASS: tied
+
+## JSON OUTPUT — raw JSON only, start with { immediately, no markdown fences, no text before or after
+{"tennis_analysis":[{"matchup":"A vs B","surface":"clay","signals":[{"name":"signal name","detail":"specific stat or observation","favors":"A or B or NEUTRAL"}],"votes":{"A":0,"B":0,"NEUTRAL":0},"winner":"A or PASS","vehicle":"-1.5 sets or -1.5 games or ML or PASS","confidence":"HIGH or MEDIUM or LOW or PASS","reasoning":"2-3 sentences on key signals driving conclusion","pick_string":"A -1.5 sets or PASS","has_us_odds":true}]}`;
+}
+
+async function runTennisAnalysis(tennisCtx){
+  if(!CLAUDE_KEY||!tennisCtx)return null;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system:buildTennisAnalysisPrompt(),messages:[{role:'user',content:tennisCtx+'\n\nScore every available signal for each match. Tally votes. Derive conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+    });
+    if(!resp.ok)return null;
+    const data=await resp.json();
+    const text=data.content[0].text;
+    const fenceM=text.match(/```json\s*([\s\S]+?)\s*```/);
+    const raw=fenceM?fenceM[1]:(text.match(/(\{[\s\S]+\})/)||[])[1]||text;
+    if(!raw||!raw.trim().startsWith('{'))return null;
+    return JSON.parse(_repairJSON(raw));
+  }catch(e){return null;}
 }
 
 // ── KV sync ───────────────────────────────────────────────────────────────────
@@ -2730,14 +2789,19 @@ async function generatePicks(){
     const completed=scoresResult.status==='fulfilled'?scoresResult.value:[];
     if(completed.length)autoGradeFromScores(completed);
     await prefetchStatsForPicks();
-    const gamesCtx=buildGamesContext(true); // today only — no tomorrow noise
+    // Phase 1 — Tennis signal analysis (runs before main picks call)
+    const _todayStr=new Date().toDateString();
+    const _hasTennis=allG.some(g=>g.cat==='tennis'&&g.tm.toDateString()===_todayStr&&hasUsBookOdds(g));
+    const tennisAnalysis=_hasTennis?await runTennisAnalysis(buildGamesContext(true,g=>g.cat==='tennis')):null;
+    // Phase 2 — Main picks call
+    const gamesCtx=buildGamesContext(true); // full slate — tennis included for parlay context
     const yPicks=getYesterdayPicks();
     const rules=localStorage.getItem('et_learned_rules')||DEFAULT_LEARNED_RULES;
     const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
