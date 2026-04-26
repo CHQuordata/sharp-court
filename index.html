@@ -164,6 +164,8 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 .t-pre{color:var(--t3);font-size:9px}
 /* ── Topbar rows: transparent on desktop, used only for mobile layout ── */
 .topbar-row1,.topbar-row2{display:contents}
+.api-merged-btn{display:inline-flex;align-items:center;gap:5px}
+.api-merged-btn .api-dot{flex-shrink:0;display:inline-block}
 
 /* ══════════════════════════════════════════
    MOBILE — ≤768px
@@ -389,7 +391,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 <body>
 <div class="topbar">
   <div class="topbar-row1">
-    <div class="logo">SPORTSEDGE<span>TERMINAL v2.8</span></div><div class="topbar-div"></div>
+    <div class="logo">SPORTSEDGE<span>TERMINAL v2.9</span></div><div class="topbar-div"></div>
     <div class="sport-tabs" id="sportTabs">
       <button class="sport-tab active" data-sport="all" onclick="setSport('all')">ALL</button>
       <button class="sport-tab" data-sport="tennis" onclick="setSport('tennis')">TENNIS</button>
@@ -401,23 +403,18 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <div class="topbar-sp"></div>
   </div>
   <div class="topbar-row2">
-    <div class="api-st"><div class="api-dot" id="apiDot"></div><span id="apiSt">NO KEY</span></div>
-    <button class="tb-btn" onclick="showSetup()">API KEY <span class="kbd">K</span></button>
+    <button class="tb-btn api-merged-btn" onclick="showSetup()"><div class="api-dot" id="apiDot"></div><span id="apiSt">ODDS</span><span class="kbd">K</span></button>
+    <button class="tb-btn api-merged-btn" onclick="showPicksSetup()"><div class="api-dot" id="aiDot"></div><span id="aiSt">AI KEY</span><span class="kbd">A</span></button>
+    <button class="tb-btn api-merged-btn" onclick="showTNSetup()" style="color:var(--cyn)"><div class="api-dot" id="tnDot"></div><span id="tnSt">TN API</span></button>
     <div class="topbar-div"></div>
-    <div class="api-st"><div class="api-dot" id="aiDot"></div><span id="aiSt">NO AI</span></div>
-    <button class="tb-btn" onclick="showPicksSetup()">AI KEY <span class="kbd">A</span></button>
-    <div class="topbar-div"></div>
-    <div class="api-st"><div class="api-dot" id="tnDot"></div><span id="tnSt">NO TN</span></div>
-    <button class="tb-btn" onclick="showTNSetup()" style="color:var(--cyn)">TN API</button>
     <button class="tb-btn" onclick="refreshAll()">SCAN <span class="kbd">R</span></button>
     <button class="tb-btn" onclick="refreshAll(true)" style="color:var(--amb)">ODDS ↻</button>
     <button class="tb-btn mob-edges-btn" onclick="showEdgesMob()" style="color:var(--grn);border-color:rgba(0,230,118,.3)">⚡ EDGES</button>
-    <button class="tb-btn" onclick="toggleSC()">?</button>
     <div class="topbar-div"></div><button class="tb-btn" id="bankrollBtn" onclick="showBankroll()" style="color:var(--amb)">BANKROLL</button>
   </div>
 </div>
 <div class="main">
-  <div class="panel slatePanel"><div class="panel-hdr"><span class="panel-title" id="panelHdrTitle">Today's Slate</span><div style="display:flex;align-items:center;gap:6px"><div class="date-toggle"><button class="dt-btn active" id="dtToday" onclick="setDateFilter('today')">TODAY</button><button class="dt-btn" id="dtTomorrow" onclick="setDateFilter('tomorrow')">TMW</button><button class="dt-btn" id="dtAll" onclick="setDateFilter('all')">ALL</button></div><span class="badge a" id="slateCount">LOADING</span></div></div><div style="padding:5px 12px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:4px" id="confFilterRow"><span style="font-size:9px;color:var(--t4);letter-spacing:.5px;margin-right:2px">AI:</span><button class="dt-btn active" id="cfAll" onclick="setConfFilter('all')">ALL</button><button class="dt-btn" id="cfHigh" onclick="setConfFilter('HIGH')" style="color:var(--grn)">HIGH</button><button class="dt-btn" id="cfMed" onclick="setConfFilter('MEDIUM')" style="color:var(--amb)">MED</button><button class="dt-btn" id="cfPicked" onclick="setConfFilter('picked')" style="color:var(--cyn)">PICKED</button></div><div class="panel-body" id="slateList"></div></div>
+  <div class="panel slatePanel"><div class="panel-hdr"><span class="panel-title" id="panelHdrTitle">Today's Slate</span><div style="display:flex;align-items:center;gap:6px"><div class="date-toggle"><button class="dt-btn active" id="dtToday" onclick="setDateFilter('today')">TODAY</button><button class="dt-btn" id="dtTomorrow" onclick="setDateFilter('tomorrow')">TMW</button><button class="dt-btn" id="dtAll" onclick="setDateFilter('all')">ALL</button></div><span class="badge a" id="slateCount">LOADING</span></div></div><div style="padding:5px 12px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:4px" id="confFilterRow"><button class="dt-btn active" id="cfAll" onclick="setConfFilter('all')">ALL</button><button class="dt-btn" id="cfHigh" onclick="setConfFilter('HIGH')" style="color:var(--grn)">HIGH</button><button class="dt-btn" id="cfMed" onclick="setConfFilter('MEDIUM')" style="color:var(--amb)">MED</button><button class="dt-btn" id="cfPicked" onclick="setConfFilter('picked')" style="color:var(--cyn)">PICKED</button></div><div class="panel-body" id="slateList"></div></div>
   <div class="panel detailPanel-wrap" style="background:var(--bg0)"><button class="mob-back-btn" onclick="mobBack()">&#8592; BACK TO SLATE</button><div class="panel-body" id="detailPanel" style="background:var(--bg1)"><div class="detail-empty"><div class="detail-empty-icon">&#9672;</div><div class="detail-empty-text">SELECT A MATCHUP TO RESEARCH</div><div style="font-size:10px;color:var(--t4);margin-top:8px">Use <span class="kbd">&#8593;</span><span class="kbd">&#8595;</span> to navigate</div></div></div></div>
   <div class="panel dashPanel"><div class="panel-hdr"><span class="panel-title">Dashboard</span></div>
     <div class="stat-grid"><div class="stat-cell"><div class="stat-lbl">GAMES</div><div class="stat-val" id="stG">-</div></div><div class="stat-cell"><div class="stat-lbl">EDGES</div><div class="stat-val g" id="stE">-</div></div><div class="stat-cell"><div class="stat-lbl">SPORTS</div><div class="stat-val a" id="stS">-</div></div><div class="stat-cell"><div class="stat-lbl">INJURIES</div><div class="stat-val r" id="stI">-</div></div></div>
@@ -426,7 +423,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <div class="panel-hdr" style="gap:6px"><span class="panel-title" style="flex:1">Top Edges</span><button id="sharpOnlyBtn" onclick="toggleSharpOnly()" class="tb-btn" title="Show only Pinnacle sharp-money edges">⚡ SHARP</button><button onclick="buildSharpParlay()" class="tb-btn" style="color:var(--amb);border-color:rgba(255,171,0,.3)" title="Build a parlay from today's Pinnacle edges">PARLAY →</button></div><div class="panel-body" id="edgeAlerts"><div class="no-data" style="padding:20px">Scan to populate</div></div>
   </div>
 </div>
-<div class="bottombar"><div><span style="color:var(--grn)">&#9679;</span> SPORTSEDGE v2.9</div><div id="lastScan">LAST SCAN: NEVER</div><div class="bottombar-sp"></div><div id="apiCalls" style="color:var(--t3)">ODDS: --</div><div id="oddsCacheAge" style="color:var(--t4)"></div><div><span class="kbd">?</span> HELP</div></div>
+<div class="bottombar"><div id="lastScan">LAST SCAN: NEVER</div><div class="bottombar-sp"></div><div id="apiCalls" style="color:var(--t3)">ODDS: --</div><div id="oddsCacheAge" style="color:var(--t4)"></div><div><span class="kbd">?</span> HELP</div></div>
 <div class="modal-ov" id="setupModal" style="display:none"><div class="modal"><div class="modal-title">SPORTSEDGE TERMINAL</div><div class="modal-sub">Enter your Odds API key for live odds, EV calculation, and edge detection across 10+ sportsbooks.<br><br>Without a key, ESPN provides schedules, injuries, form, and records for all sports including tennis &amp; UFC.</div><input class="modal-input" id="apiKeyInput" type="password" placeholder="Odds API key..." autocomplete="off"><button class="modal-btn" onclick="connectApi()">CONNECT &amp; SCAN</button><a class="modal-link" href="https://the-odds-api.com/#get-access" target="_blank">Get free key &#8594; the-odds-api.com</a><div style="text-align:center;margin-top:16px;font-size:10px;color:var(--t4);cursor:pointer" onclick="skipApi()">Skip &#8212; ESPN data only</div></div></div>
 <div class="modal-ov" id="claudeModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">AI PICKS ENGINE</div><div class="modal-sub">Enter your Anthropic API key to enable self-learning daily picks with grading, memory, and cumulative record tracking.<br><br>Uses <strong>claude-sonnet-4-6</strong> for analysis. Picks are generated on-demand and stored locally — your key never leaves your browser.</div><input class="modal-input" id="claudeKeyInput" type="password" placeholder="sk-ant-api03-..." autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="connectClaude()">CONNECT AI ENGINE</button><a class="modal-link" href="https://console.anthropic.com/" target="_blank">Get API key → console.anthropic.com</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('claudeModal').style.display='none'">Cancel</div></div></div>
 <div class="modal-ov" id="tnModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--cyn)">TENNIS API</div><div class="modal-sub">Enter your RapidAPI key for the <strong>Tennis API – ATP WTA ITF</strong> by matchstat.com.<br><br>Provides current-season surface records (2025), career serve stats, and player data. <strong>PRO plan $10/mo</strong> on RapidAPI — your key is stored locally.</div><input class="modal-input" id="tnKeyInput" type="password" placeholder="RapidAPI key..." autocomplete="off"><button class="modal-btn" style="background:var(--cyn);color:var(--bg0)" onclick="connectTN()">CONNECT TENNIS API</button><a class="modal-link" href="https://rapidapi.com/jjrm365-kIFr3Nx_odV/api/tennis-api-atp-wta-itf" target="_blank">Subscribe → RapidAPI ($10/mo)</a><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('tnModal').style.display='none'">Cancel</div></div></div>
