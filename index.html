@@ -2447,7 +2447,7 @@ Game number context: Early series (G1-G2) = feel-out, less reliable. Mid-series 
 - Seeds are NOISE — they are draw positions derived from rankings, which are already shown. Never cite seed number as a pick reason.
 - Season W-L record for tennis players is NOISE — it doesn't account for surface, draw difficulty, or opponent quality. Ignore it entirely for pick reasoning.
 - LIMITED DATA tag means no stats DB entry — use ranking + market price ONLY. Do not invent or guess surface records, playing style, or recent results for these players.
-- TRUE SIGNALS in priority order: (1) RetWon% ≥42% = dominant returner — highest predictive value, SCORED; (2) BPconv% gap ≥10pts = one player breaking serve reliably, SCORED; (3) 2ndWon% <50% = weak second serve vulnerability, SCORED; (4) 1stIn% gap ≥8pts = first serve consistency edge, SCORED; (5) Surface win % current season, SCORED; (6) Days rest gap ≥2 days = fatigue/freshness edge, SCORED; (7) BPsave% gap ≥10pts = one player cracking under pressure, SCORED.
+- TRUE SIGNALS in priority order: (1) RetWon% ≥42% = dominant returner — highest predictive value, SCORED; (2) BPconv% gap ≥10pts = one player breaking serve reliably, SCORED; (3) 1stIn% gap ≥8pts = first serve consistency edge, SCORED; (4) Surface win% current season, SCORED; (5) Days rest gap ≥2 days = fatigue/freshness edge, SCORED; (6) BPsave% gap ≥10pts = one player cracking under pressure, SCORED.
 - RetWon% (return points won) is the single most predictive tennis stat. When available it anchors confidence more than any other signal. ≥42% = dominant returner; gap ≥5pp between players = clear edge.
 
 ## MLB STAT POLICY
@@ -2457,10 +2457,9 @@ Game number context: Early series (G1-G2) = feel-out, less reliable. Mid-series 
 - W-L record of SP is meaningless — reflects run support, not pitcher quality. Never use it.
 
 ## NBA STAT POLICY
-- Season-average PPG, FG%, 3P%, TO/G are already fully priced into the spread — never use them as a standalone pick reason. "Team A averages 116 PPG vs Team B 108 PPG" is circular; the spread already reflects this.
-- SCORED signals in priority order: (1) L10 net rating divergence ≥4pts — what sharp books actually price, overrides season net; (2) Pace mismatch ≥4 poss/48 — structural UNDER when slow team controls tempo, OVER when both >100.5; (3) B2B / 3-in-4 fatigue; (4) Rest advantage ≥2 days; (5) Road trip depth ≥3 consecutive away games — ATS cover rate drops materially.
-- Season net rating is context only — if L10 net and season net conflict, L10 wins. Never cite season net as the primary reason.
-- Use season stats only to validate a pick you already have a reason for — not as the reason itself.
+- Season-average PPG, FG%, 3P%, TO/G are fully priced and not provided in context — do not infer or use them.
+- NBA signals are scored by Phase 1 pre-analysis. Accept NBA PRE-ANALYSIS conclusions as locked — do not re-score, do not override. For PASS games, respect the pass and do not force a pick.
+- If no Phase 1 pre-analysis exists for an NBA game: use L10 net divergence ≥4pts, pace mismatch ≥4 poss/48 (UNDER), B2B/fatigue, rest advantage ≥2d, road trip ≥3 away games.
 
 ## NHL STAT POLICY
 - SH% (shooting percentage) is HIGH-VARIANCE noise — do NOT use it as an offensive edge signal. It regresses to league average (~9%) over time and tells you nothing about the next game.
@@ -2575,7 +2574,9 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaA
         const sp=na.spread_winner!=='PASS'?`SPREAD=${na.spread_pick} | ${na.spread_confidence}`:'SPREAD=PASS';
         const to=na.total_side!=='PASS'?`TOTAL=${na.total_pick} | ${na.total_confidence}`:'TOTAL=PASS';
         const svStr=Object.entries(na.spread_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
-        msg+=`${na.matchup}: ${sp} | ${to} | Votes(${svStr}) | ${na.reasoning}\n`;
+        const tvStr=Object.entries(na.total_votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        const parlayStr=na.parlay_tier?` | ${na.units}u ${na.parlay_tier}`:'';
+        msg+=`${na.matchup}: ${sp} | ${to} | SpreadVotes(${svStr}) | TotalVotes(${tvStr})${parlayStr} | ${na.reasoning}\n`;
       });
       msg+='\n';
     }
@@ -2814,6 +2815,9 @@ REGULAR SEASON SIGNALS (use when NOT tagged [PLAYOFFS]):
 4. PACE MISMATCH — slow team (≤98 pace) vs fast team (≥102): 1 vote UNDER.
 5. HOME COURT — baseline 1 vote home unless fatigue/form overrides.
 6. LINE MOVEMENT — if noted: 1 vote in direction of sharp move.
+7. ROAD TRIP — away team on game 3+ of consecutive road trip (flagged ⚠️ ROAD TRIP in context): 1 vote AGAINST away team on spread.
+
+CONTEXT-ONLY (do not score as votes): PUBLIC BETS %, injury listings. These are already priced into the line. Reference in reasoning only if extreme (e.g., confirmed star OUT with no replacement data).
 
 ## VEHICLE FROM VOTE COUNT (spread)
 3+ votes same side, 0-1 opp → pick that side | 2-1 split → lean only, lower confidence | tied → PASS
