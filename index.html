@@ -3185,6 +3185,20 @@ async function generatePicks(){
       localStorage.setItem('et_learned_rules',trimmedRules);
     }
     if(result.grading?.length)updateCumulativeRecord(result.grading,result.picks);
+    // Enrich picks with Phase 1 vote context so the learning agent has signal attribution
+    if(result.picks?.length){
+      const _p1pool=[];
+      (tennisAnalysis?.tennis_analysis||[]).forEach(a=>_p1pool.push({mu:(a.matchup||'').toLowerCase().replace(/[^a-z0-9]/g,''),votes:a.votes}));
+      (nbaAnalysis?.nba_analysis||[]).forEach(a=>_p1pool.push({mu:(a.matchup||'').toLowerCase().replace(/[^a-z0-9]/g,''),votes:a.spread_votes}));
+      (mlbAnalysis?.mlb_analysis||[]).forEach(a=>_p1pool.push({mu:(a.matchup||'').toLowerCase().replace(/[^a-z0-9]/g,''),votes:a.ml_votes}));
+      (nhlAnalysis?.nhl_analysis||[]).forEach(a=>_p1pool.push({mu:(a.matchup||'').toLowerCase().replace(/[^a-z0-9]/g,''),votes:a.ml_votes}));
+      result.picks.forEach(p=>{
+        const pmu=(p.matchup||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const tokens=(p.matchup||'').toLowerCase().match(/[a-z]{4,}/g)||[];
+        const hit=_p1pool.find(x=>x.mu===pmu)||_p1pool.find(x=>tokens.some(t=>x.mu.includes(t)));
+        if(hit?.votes)p.phase1_votes=hit.votes;
+      });
+    }
     saveTodayToHistory();
     syncToKV(); // fire-and-forget: push updated rules + record + history to KV
   }catch(e){
