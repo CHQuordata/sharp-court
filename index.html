@@ -2445,10 +2445,11 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
 
 function getYesterdayPicks(){
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  // Return already-graded picks from last 3 days — cron handles grading, not Phase 2
   const cutoff=Date.now()-3*24*60*60*1000;
+  const today=new Date().toISOString().split('T')[0];
   const graded=[];
   history.forEach(slate=>{
+    if(slate.date===today)return; // today's bets live in MY BETS TODAY
     if(new Date(slate.date).getTime()<cutoff)return;
     (slate.picks||[]).filter(p=>!p.is_lean&&['W','L','P'].includes(p.result)).forEach(p=>graded.push(p));
   });
