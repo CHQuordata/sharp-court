@@ -2256,10 +2256,12 @@ function cycleManualBetResult(encodedPick,encodedDate){
 function renderPicksOverview(){
   const el=$('detailPanel');
   if(!todayPicksData){
+    const myBetsHtml=renderMyBetsSection();
+    const gs=myBetsHtml?'height:auto;padding:20px 24px':'';
     if(!CLAUDE_KEY){
-      el.innerHTML=`<div class="pick-gen-state"><div style="font-size:36px;opacity:.2">🤖</div><div style="font-size:13px;letter-spacing:1px;color:var(--t2)">AI PICKS ENGINE</div><div style="font-size:10px;color:var(--t4);margin-top:8px;max-width:300px;line-height:1.7">Self-learning daily picks generator. Grades yesterday's picks, updates its own rules, generates today's slate with full analysis. Memory persists in your browser.</div><button class="gen-btn" style="margin-top:20px" onclick="showPicksSetup()">CONNECT AI KEY →</button></div>${renderMyBetsSection()}`;
+      el.innerHTML=`${myBetsHtml}<div class="pick-gen-state" style="${gs}"><div style="font-size:36px;opacity:.2">🤖</div><div style="font-size:13px;letter-spacing:1px;color:var(--t2)">AI PICKS ENGINE</div><div style="font-size:10px;color:var(--t4);margin-top:8px;max-width:300px;line-height:1.7">Self-learning daily picks generator. Grades yesterday's picks, updates its own rules, generates today's slate with full analysis. Memory persists in your browser.</div><button class="gen-btn" style="margin-top:20px" onclick="showPicksSetup()">CONNECT AI KEY →</button></div>`;
     }else{
-      el.innerHTML=`<div class="pick-gen-state"><div style="font-size:36px;opacity:.2">⚡</div><div style="font-size:13px;letter-spacing:1px;color:var(--t2)">READY TO ANALYZE</div><div style="font-size:10px;color:var(--t4);margin-top:8px;max-width:300px;line-height:1.7">AI will grade yesterday's picks, update its learned rules, then generate today's slate based on live odds + ESPN data.</div><button class="gen-btn${isGenerating?' pulse':''}" style="margin-top:20px" onclick="generatePicks()" ${isGenerating?'disabled':''}>${isGenerating?'ANALYZING SLATE...':'GENERATE TODAY\'S PICKS ⚡'}</button></div>${renderMyBetsSection()}`;
+      el.innerHTML=`${myBetsHtml}<div class="pick-gen-state" style="${gs}"><div style="font-size:36px;opacity:.2">⚡</div><div style="font-size:13px;letter-spacing:1px;color:var(--t2)">READY TO ANALYZE</div><div style="font-size:10px;color:var(--t4);margin-top:8px;max-width:300px;line-height:1.7">AI will grade yesterday's picks, update its learned rules, then generate today's slate based on live odds + ESPN data.</div><button class="gen-btn${isGenerating?' pulse':''}" style="margin-top:20px" onclick="generatePicks()" ${isGenerating?'disabled':''}>${isGenerating?'ANALYZING SLATE...':'GENERATE TODAY\'S PICKS ⚡'}</button></div>`;
     }
     return;
   }
