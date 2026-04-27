@@ -1415,9 +1415,9 @@ function renderOdds(g){const bks=g.odds.bookmakers;let h=`<div class="sec"><div 
   const mktLbl={'h2h':'MONEYLINE','spreads':'SPREAD','totals':'TOTAL','h2h_1st_5_innings':'F5 ML','totals_1st_5_innings':'F5 TOTAL'};
   mkts.forEach(mk=>{const lb=mktLbl[mk]||mk.toUpperCase();const R={};
     bks.forEach(b=>{const m=b.markets.find(x=>x.key===mk);if(!m)return;m.outcomes.forEach(o=>{const s=o.point!==undefined?`${o.name} ${o.point>0?'+':''}${o.point}`:o.name;if(!R[s])R[s]={};R[s][b.title]=o.price})});
-    if(!Object.keys(R).length)return;h+=`<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:600;color:var(--amb);letter-spacing:1px;margin-bottom:6px">${lb}</div><table class="dtable"><thead><tr><th>SIDE</th>`;
-    const bn=[...new Set(bks.map(b=>b.title))].sort((a,b)=>{const ai=BOOK_ORDER.indexOf(a),bi=BOOK_ORDER.indexOf(b);return(ai===-1?99:ai)-(bi===-1?99:bi)}).slice(0,6);bn.forEach(b=>h+=`<th>${b.replace(/\s+/g,'').slice(0,8)}</th>`);h+=`<th>BEST</th></tr></thead><tbody>`;
-    Object.entries(R).forEach(([s,P])=>{const ap=Object.values(P);const bp=ap.reduce((b,p)=>aimp(p)<aimp(b)?p:b,ap[0]);h+=`<tr><td style="color:var(--cyn);font-weight:500">${s}</td>`;bn.forEach(b=>{const p=P[b];h+=p===undefined?'<td style="color:var(--t4)">-</td>':`<td class="${p===bp?'best':''}">${fp(p)}</td>`});h+=`<td class="best">${fp(bp)}</td></tr>`});
+    if(!Object.keys(R).length)return;h+=`<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:600;color:var(--amb);letter-spacing:1px;margin-bottom:6px">${lb}</div><table class="dtable" style="table-layout:fixed;width:100%"><thead><tr><th style="width:155px">SIDE</th>`;
+    const bn=[...new Set(bks.map(b=>b.title))].sort((a,b)=>{const ai=BOOK_ORDER.indexOf(a),bi=BOOK_ORDER.indexOf(b);return(ai===-1?99:ai)-(bi===-1?99:bi)}).slice(0,6);bn.forEach(b=>h+=`<th style="width:80px">${b.replace(/\s+/g,'').slice(0,8)}</th>`);h+=`<th style="width:60px">BEST</th></tr></thead><tbody>`;
+    Object.entries(R).forEach(([s,P])=>{const ap=Object.values(P);const bp=ap.reduce((b,p)=>aimp(p)<aimp(b)?p:b,ap[0]);h+=`<tr><td style="color:var(--cyn);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s}</td>`;bn.forEach(b=>{const p=P[b];h+=p===undefined?'<td style="color:var(--t4)">-</td>':`<td class="${p===bp?'best':''}">${fp(p)}</td>`});h+=`<td class="best">${fp(bp)}</td></tr>`});
     h+=`</tbody></table></div>`});return h+'</div>'}
 
 // ══════════════════════════════════════════════════
