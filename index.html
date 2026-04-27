@@ -473,6 +473,13 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 <div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
+<script type="module">
+import { aimp, kellyPct } from './lib/odds.js';
+import { extractPitchers, extractNBAStats, extractNHLStats } from './lib/parsing.js';
+import { SHARP_BOOKS, LOWVIG_BOOKS, getBookTier, detectEdges, calcEV, getLineRange, getSharp } from './lib/signals.js';
+import { getSurface } from './lib/tennis.js';
+Object.assign(window, { aimp, kellyPct, extractPitchers, extractNBAStats, extractNHLStats, SHARP_BOOKS, LOWVIG_BOOKS, getBookTier, detectEdges, calcEV, getLineRange, getSharp, getSurface });
+</script>
 <script>
 let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map(),cSharpOnly=false;
 let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
@@ -481,10 +488,7 @@ const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
 const WORKER_URL=localStorage.getItem('et_worker_url')||'';
 const ODDS_BOOKS='fanduel,draftkings,betmgm,caesars,betonlineag,mybookieag,lowvig,pinnacle,pointsbet,bet365';
 const SPORT_MARKETS={basketball_nba:'h2h,spreads,totals',icehockey_nhl:'h2h,spreads,totals',baseball_mlb:'h2h,spreads,totals,h2h_1st_5_innings,totals_1st_5_innings',_tennis:'h2h,spreads,totals'};
-// ── Book tiers: SHARP = line-setting sharp-money books; LOWVIG = structurally cheap, not directional
-const SHARP_BOOKS=['Pinnacle','Circa Sports','BetOnline.ag','Bookmaker','BookiePro'];
-const LOWVIG_BOOKS=['LowVig.ag','PropSwap','Unibet'];
-function getBookTier(b){return SHARP_BOOKS.some(s=>b.includes(s))?'sharp':LOWVIG_BOOKS.some(s=>b.includes(s))?'lowvig':'square'}
+// ── Book tiers — see lib/signals.js
 function getSportMarkets(sk){if(SPORT_MARKETS[sk])return SPORT_MARKETS[sk];if(sk.startsWith('tennis_'))return SPORT_MARKETS._tennis;return'h2h'}
 const PROP_MARKETS={basketball_nba:'player_points,player_rebounds,player_assists,player_threes',baseball_mlb:'pitcher_strikeouts,batter_home_runs,batter_hits_recorded'};
 const PROP_BOOKS='fanduel,draftkings,betmgm,pointsbet';
@@ -522,7 +526,7 @@ const SPL={nba:'NBA',nhl:'NHL',mlb:'MLB',nfl:'NFL',atp:'ATP',wta:'WTA',tennis:'T
 
 function $(id){return document.getElementById(id)}
 function fp(p){return p>0?'+'+p:''+p}
-function aimp(p){return p>0?100/(p+100):Math.abs(p)/(Math.abs(p)+100)}
+// aimp — see lib/odds.js
 function dfmt(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')}
 function xMkts(bk){const f=k=>bk.markets.find(m=>m.key===k);return{sp:f('spreads'),to:f('totals'),ml:f('h2h')}}
 function cSet(map,k,v,max=50){if(map.size>=max)map.delete(map.keys().next().value);map.set(k,v)}
@@ -798,57 +802,9 @@ async function refreshAll(forceOdds=false){
   if(AK){const ages=[..._oddsCache.values()].map(c=>Date.now()-c.ts);const minAge=ages.length?Math.min(...ages):null;const el=$('oddsCacheAge');if(el&&minAge!=null)el.textContent=minAge<60000?'odds: live':`odds: ${Math.round(minAge/60000)}m ago`}
 }
 
-function detectEdges(games){const edges=[];games.forEach(g=>{if(!g.odds?.bookmakers)return;const M={};g.odds.bookmakers.forEach(b=>{b.markets.forEach(m=>{if(!M[m.key])M[m.key]=[];m.outcomes.forEach(o=>{M[m.key].push({bk:b.title,nm:o.name,pr:o.price,pt:o.point})})})});
-  Object.keys(M).forEach(mk=>{const S={};M[mk].forEach(o=>{const k=o.pt!==undefined?`${o.nm} ${o.pt}`:o.nm;if(!S[k])S[k]=[];S[k].push(o)});
-    Object.keys(S).forEach(sk=>{const of2=S[sk];if(of2.length<2)return;const P=of2.map(o=>({...o,ip:aimp(o.pr)}));const con=P.reduce((s,p)=>s+p.ip,0)/P.length;const best=P.reduce((b,p)=>p.ip<b.ip?p:b,P[0]);const edge=((con-best.ip)/con)*100;
-      if(edge>3){const bt=getBookTier(best.bk);edges.push({g,mk,ml:mk==='h2h'?'ML':mk==='spreads'?'SPREAD':'TOTAL',side:sk,bb:best.bk,bp:best.pr,bi:best.ip,con,ep:edge,nb:of2.length,tier:edge>=8?'high':edge>=5?'med':'low',bookTier:bt,sharp:bt==='sharp',lowvig:bt==='lowvig'})}})})});
-  // Sort: sharp-book edges first (Pinnacle etc. = real signal), then by ep desc within tier; low-vig last
-  return edges.sort((a,b)=>{const ta=a.sharp?0:a.lowvig?2:1,tb=b.sharp?0:b.lowvig?2:1;return ta!==tb?ta-tb:b.ep-a.ep})}
+// detectEdges — see lib/signals.js
 
-// ══════════════════════════════
-// ── EV / LINE RANGE / SHARP
-// ══════════════════════════════
-function calcEV(g, market, pickName){
-  if(!g.odds?.bookmakers?.length)return null;
-  const pp=[],op=[];
-  g.odds.bookmakers.forEach(b=>{const m=b.markets.find(x=>x.key===market);if(!m)return;
-    m.outcomes.forEach(o=>{const key=o.point!==undefined?`${o.name} ${o.point}`:o.name;
-      if(key.includes(pickName)||o.name.includes(pickName.split(' ')[0]))pp.push({pr:o.price,bk:b.title});
-      else op.push({pr:o.price,bk:b.title});
-    });
-  });
-  if(!pp.length||!op.length)return null;
-  const pIP=pp.reduce((s,p)=>s+aimp(p.pr),0)/pp.length;
-  const oIP=op.reduce((s,p)=>s+aimp(p.pr),0)/op.length;
-  const tot=pIP+oIP;const trueP=pIP/tot;
-  const best=pp.reduce((b,p)=>aimp(p.pr)<aimp(b.pr)?p:b,pp[0]);
-  const dec=best.pr>0?(best.pr/100)+1:(100/Math.abs(best.pr))+1;
-  const ev=(trueP*dec-1)*100;
-  return{ev:+ev.toFixed(1),bp:best.pr,bk:best.bk,tp:(trueP*100).toFixed(0)};
-}
-
-function getLineRange(g, market){
-  if(!g.odds?.bookmakers?.length)return null;
-  const altMkt=market==='spreads'?'alternate_spreads':market==='totals'?'alternate_totals':null;
-  const pts=new Map();
-  g.odds.bookmakers.forEach(b=>{[market,altMkt].filter(Boolean).forEach(mk=>{const m=b.markets.find(x=>x.key===mk);if(!m)return;
-    m.outcomes.forEach(o=>{if(o.point===undefined)return;if(!pts.has(o.name))pts.set(o.name,[]);pts.get(o.name).push(o.point)})})});
-  if(!pts.size)return null;
-  let txt='';pts.forEach((vals,nm)=>{const mn=Math.min(...vals),mx=Math.max(...vals);
-    if(mn!==mx)txt+=(txt?'  ':'')+(nm.split(' ').pop()||nm)+' '+(mn<0?mn:'+'+mn)+' to '+(mx<0?mx:'+'+mx);
-    else txt+=(txt?'  ':'')+(nm.split(' ').pop()||nm)+' '+(mn<0?mn:'+'+mn);
-  });
-  return txt||null;
-}
-
-function getSharp(edges){
-  if(!edges.length)return{r:0,n:'No data',bars:''};
-  // Prefer Pinnacle/sharp-book edge as the signal — it represents real sharp action, not pricing margin
-  const e=edges.find(e=>e.sharp)||edges[0];
-  const r=e.ep>=10?5:e.ep>=7?4:e.ep>=5?3:e.ep>=3?2:1;
-  const suffix=e.sharp?' ⚡':e.lowvig?' ◎':'';
-  return{r,n:`${e.ep.toFixed(1)}% @ ${e.bb}${suffix}`,bars:Array(5).fill(0).map((_,i)=>`<div class="sb${i<r?' on':''}"></div>`).join('')};
-}
+// calcEV / getLineRange / getSharp — see lib/signals.js
 
 function renderMetrics(pk){
   let h='<div class="pick-metrics">';
@@ -1382,13 +1338,13 @@ function formBar(nm,f){if(!f.length)return'';const w=f.filter(x=>x.r==='W').leng
   return h+`</div><div class="form-streak ${sc}">${sk}</div><div style="font-size:10px;color:var(--t3)">${w}-${f.length-w}</div><div style="font-size:9px;font-weight:600;color:${l5clr};margin-left:6px">L5:${l5w}-${5-l5w}</div></div>`}
 function streak(f){if(!f.length)return'';let c=1;for(let i=1;i<f.length;i++){if(f[i].r===f[0].r)c++;else break}return f[0].r+c}
 async function fetchGameSummary(cat,gid){const ep=cat==='mlb'?'baseball/mlb':cat==='nfl'?'football/nfl':cat==='nhl'?'hockey/nhl':null;if(!ep)return null;try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/${ep}/summary?event=${gid}`,{signal:AbortSignal.timeout(7000)});return r.ok?r.json():null}catch(e){return null}}
-function extractPitchers(d){const comp=d?.header?.competitions?.[0];if(!comp)return null;const res={};(comp.competitors||[]).forEach(c=>{const p=c.probables?.[0];if(!p?.athlete)return;const cats=p.statistics?.splits?.categories||[];const sv=n=>cats.find(x=>x.name===n);const fi=sv('fullInnings')?.value||0,pi=sv('partInnings')?.value||0,ip=fi+pi/3,k=sv('strikeouts')?.value||0,bb=sv('baseOnBalls')?.value||sv('walks')?.value||0,hr=sv('homeRunsAllowed')?.value||sv('homeRuns')?.value||0;res[c.homeAway]={name:p.athlete.shortName||p.athlete.fullName,hand:p.athlete.throws?.abbreviation||'?',era:sv('ERA')?.displayValue||'--',whip:sv('WHIP')?.displayValue||'--',ip:ip.toFixed(1),k9:ip>1?(k/ip*9).toFixed(1):'--',bb9:ip>1?(bb/ip*9).toFixed(1):'--',hr9:ip>1?(hr/ip*9).toFixed(1):'--',w:sv('wins')?.value||0,l:sv('losses')?.value||0}});return Object.keys(res).length?res:null}
+// extractPitchers — see lib/parsing.js
 function extractGoalies(d){const comp=d?.header?.competitions?.[0];if(!comp)return null;const res={};(comp.competitors||[]).forEach(c=>{const p=c.probables?.[0];if(!p?.athlete)return;const cats=p.statistics?.splits?.categories||[];const sv=n=>cats.find(x=>x.name===n);res[c.homeAway]={name:p.athlete.shortName||p.athlete.fullName,savePct:sv('savePct')?.displayValue||sv('savePercentage')?.displayValue||'--',gaa:sv('goalsAgainstAvg')?.displayValue||sv('GAA')?.displayValue||'--',w:sv('wins')?.value||0,l:sv('losses')?.value||0,ot:sv('overtimeLosses')?.value||0}});return Object.keys(res).length?res:null}
 async function fetchWeather(city){if(!city)return null;try{const r=await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);if(!r.ok)return null;const d=await r.json();const c=d.current_condition?.[0];if(!c)return null;return{temp:parseInt(c.temp_F),wind:parseInt(c.windspeedMiles),windDir:c.winddir16Point,desc:c.weatherDesc?.[0]?.value||''}}catch(e){return null}}
 function getMLBParkFactor(ven){const pf={'coors':1.15,'great american':1.09,'globe life':1.07,'citizens bank':1.06,'yankee':1.05,'fenway':1.04,'angel':1.03,'wrigley':1.03,'guaranteed rate':1.02,'oracle':0.93,'petco':0.92,'t-mobile':0.93,'dodger':0.95,'kauffman':0.96,'tropicana':0.93,'camden':0.96,'progressive':0.97,'marlins':0.94,'busch':0.97};const vl=(ven||'').toLowerCase();for(const[k,v]of Object.entries(pf)){if(vl.includes(k))return v}return 1.0}
 function isOutdoor(venue,cat){if(!['mlb','nfl'].includes(cat))return false;if(cat==='nfl')return!/lucas oil|mercedes.benz|state farm|allegiant|ford field|caesars superdome|u\.s\. bank|nrg stadium|dome at|sofi|klimt|kia metlife|dome/i.test(venue||'');return!/tropicana|rogers centre|minute maid|chase field|loandepot|american family field/i.test(venue||'')}
 function cityFromTeam(nm){return(nm||'').split(' ').slice(0,-1).join(' ')||nm}
-function kellyPct(conf,pickStr,evData){const m=(pickStr||'').match(/\(([+-]\d+)\)/);const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;const p=evData?.tp?Math.min(Math.max(parseFloat(evData.tp)/100,0.45),0.75):(conf==='HIGH'?0.58:conf==='MEDIUM'?0.53:0.50);const k=(p*(dec-1)-(1-p))/(dec-1);return Math.max(0,k*100)}
+// kellyPct — see lib/odds.js
 async function fetchTennisH2H(sp,awNm,hmNm){if(!awNm||!hmNm)return null;const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   // Use multi-candidate surname matching so compound surnames (e.g. "Osorio Serrano") work
   const awCs=tnSurnameCands(awNm,norm),hmCs=tnSurnameCands(hmNm,norm);
@@ -1415,14 +1371,14 @@ async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{const awL
 function extractTennisStats(d){if(!d)return null;return{hand:d.hand?.abbreviation||null,handFull:d.hand?.displayValue||null,age:d.age||null,country:d.birthPlace?.country?.displayName||null}}
 async function fetchNBATeamStats(tid){if(!tid)return null;try{const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tid}/statistics`,{signal:AbortSignal.timeout(7000)});return r.ok?r.json():null}catch(e){return null}}
 async function fetchNHLTeamStats(tid){if(!tid)return null;try{const r=await fetch(`https://sports.core.api.espn.com/v2/sports/hockey/leagues/nhl/seasons/${sportSeason('nhl')}/types/2/teams/${tid}/statistics`,{signal:AbortSignal.timeout(7000)});return r.ok?r.json():null}catch(e){return null}}
-function extractNHLStats(d){if(!d)return null;const all=[];const cats=d.splits?.categories||d.results?.stats?.categories||[];(Array.isArray(cats)?cats:[]).forEach(c=>(c.stats||[]).forEach(s=>all.push(s)));const dv=n=>{const s=all.find(x=>x.name===n);return s?.displayValue||null};const v=n=>{const s=all.find(x=>x.name===n);return s?.value??null};const gp=v('games')||1;const goals=v('goals'),goalsAg=v('goalsAgainst');const ppPct=v('powerPlayPct')!=null?(v('powerPlayPct')).toFixed(1):dv('powerPlayPct')||null;const pkPct=v('penaltyKillPct')!=null?(v('penaltyKillPct')).toFixed(1):dv('penaltyKillPct')||null;const net=goals!=null&&goalsAg!=null?((goals-goalsAg)/gp).toFixed(2):null;return{gaa:v('avgGoalsAgainst')!=null?v('avgGoalsAgainst').toFixed(2):dv('avgGoalsAgainst'),savePct:v('savePct')!=null?v('savePct').toFixed(3):dv('savePct'),gpg:goals!=null?(goals/gp).toFixed(2):null,shotsPg:v('shotsTotal')!=null?(v('shotsTotal')/gp).toFixed(1):null,shootPct:v('shootingPct')!=null?v('shootingPct').toFixed(1):dv('shootingPct'),foPct:v('faceoffPercent')!=null?v('faceoffPercent').toFixed(1):dv('faceoffPercent'),ppg:v('powerPlayGoals'),ppPct,pkPct,net}}
+// extractNHLStats — see lib/parsing.js
 async function fetchGameProps(sport_key,eventId){if(!AK||!sport_key||!eventId)return null;const mkts=PROP_MARKETS[sport_key];if(!mkts)return null;try{const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sport_key}/events/${eventId}/odds?apiKey=${AK}&markets=${mkts}&bookmakers=${PROP_BOOKS}&oddsFormat=american`,{signal:AbortSignal.timeout(7000)});return r.ok?r.json():null}catch(e){return null}}
 function renderProps(data,cat){if(!data?.bookmakers?.length)return'';const all={};data.bookmakers.forEach(b=>b.markets.forEach(m=>m.outcomes.forEach(o=>{const k=`${m.key}::${o.description||o.name}`;if(!all[k])all[k]={mk:m.key,nm:o.description||o.name,lines:[]};all[k].lines.push({pt:o.point,pr:o.price,bk:b.title})})));
   const players={};Object.values(all).forEach(prop=>{const nm=prop.nm;if(!players[nm])players[nm]={};const mkt=prop.mk.replace('player_','').replace('pitcher_','').replace('batter_','');const best=prop.lines.reduce((b,x)=>!b||x.pr>b.pr?x:b,null);if(best?.pt!=null)players[nm][mkt]=`${best.pt} (${best.pr>0?'+':''}${best.pr})`;});
   const rows=Object.entries(players).slice(0,12).map(([nm,stats])=>`<tr><td style="color:var(--cyn);font-weight:500;white-space:nowrap">${nm}</td>${Object.entries(stats).map(([k,v])=>`<td>${v}</td>`).join('')}</tr>`);
   if(!rows.length)return'';const hdrs=Object.keys(Object.values(players)[0]||{});
   return`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--blu)"></div>PLAYER PROPS</div><table class="dtable"><thead><tr><th>PLAYER</th>${hdrs.map(h=>`<th>${h.toUpperCase().replace(/_/g,' ')}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;}
-function extractNBAStats(d){if(!d)return null;const all=[];const cats=d.results?.stats?.categories||d.results?.splits?.categories||d.splits?.categories||[];(Array.isArray(cats)?cats:[]).forEach(c=>(c.stats||[]).forEach(s=>all.push(s)));const dv=n=>{const s=all.find(x=>x.name===n);return s?.displayValue||null};const nv=n=>{const s=all.find(x=>x.name===n);return s?.value??null};const ppg=dv('avgPoints'),oppPpg=dv('avgPointsAllowed');const netPts=(ppg&&oppPpg)?((parseFloat(ppg)-parseFloat(oppPpg)).toFixed(1)):null;const paceVal=nv('pace');const pace=paceVal!=null?parseFloat(paceVal.toFixed(1)):(dv('pace')?parseFloat(dv('pace')):null);return{ppg,fgPct:dv('fieldGoalPct'),tpPct:dv('threePointPct'),ftPct:dv('freeThrowPct'),scEff:dv('scoringEfficiency'),shEff:dv('shootingEfficiency'),ast:dv('avgAssists'),reb:dv('avgRebounds'),blk:dv('avgBlocks'),stl:dv('avgSteals'),oppPpg,netPts,toPg:dv('avgTurnovers'),pace}}
+// extractNBAStats — see lib/parsing.js
 function isB2B(form,gameTm){return form.length>0&&Math.round((gameTm-form[0].dt)/864e5)<=1}
 function is3in4(form,gameTm){if(form.length<2)return false;const d1=Math.round((gameTm-form[0].dt)/864e5),d2=Math.round((gameTm-form[1].dt)/864e5);return d1<=2&&d2<=3}
 
@@ -1439,18 +1395,7 @@ function renderOdds(g){const bks=g.odds.bookmakers;let h=`<div class="sec"><div 
 // ══════════════════════════════════════════════════
 // ── PICK GENERATION with EV, LINE RANGE, SHARP
 // ══════════════════════════════════════════════════
-function getSurface(venue){const v=(venue||'').toLowerCase().replace(/_/g,' ');// underscores in odds-API sport keys become spaces
-  // Direct surface keyword — most reliable
-  if(/\bclay\b|terre battue|tierra batida|arcilla/.test(v))return'clay';
-  if(/\bgrass\b/.test(v))return'grass';
-  if(/\bindoor hard\b/.test(v))return'indoor';
-  // Clay tournaments — venue names ESPN commonly returns + tournament names
-  if(/roland garros|french open|madrid open|caja.m.gica|mutua.*madrid|rome\b|roma\b|foro italico|internazionali|foro.italico|bnl|barcelona|real club de tenis|conde de god|monte.carlo|monte carlo|rolex.*monte|atp.*monte|geneva|lyon|hamburg|am rothenbaum|bucharest|munich|estoril|marrakech|marrakesh|istanbul|prague|strasbourg|cluj|budapest|bogota|houston|stuttgart|porsche.arena|porsche tennis|bmw open|rouen|oeiras|jamor|warsaw|warszawa|lausanne|palermo|bastad|b.?stad|rabat|kit[zs]b.hel|umag|gstaad|c.rdoba|buenos.aires|\brio\b|belgrade|beograd|casablanca|perugia|cagliari|florence|firenze|parco.*del.*foro|santiago|lima|montevideo|parma|salzburg|fes |marbella|bogot|open de france|open sabadell|banque.*monaco|grand prix de tennis|porsche grand prix|hungarian open|serbia open|nordea open|generali open|swiss open|croatia open|morocco open|millennium|leon|cordoba/.test(v))return'clay';
-  // Grass tournaments
-  if(/wimbledon|queen.s club|queens club|eastbourne|halle|hertogenbosch|s-hertogenbosch|rosmalen|birmingham|nottingham|mallorca|antalya|bad homburg|devonshire park|surbiton|ilkley|edgbaston/.test(v))return'grass';
-  // Indoor hard
-  if(/bercy|paris.master|paris-bercy|wien\b|vienna|wiener stadthalle|halle.*indoor|basel|st\.?jakobs|rotterdam|ahoy|marseille|palais des sports|montpellier|sofia\b|zagreb|antwerp|lotto.*arena|metz\b|milan.*indoor|indoor/.test(v))return'indoor';
-  return'hard'}
+// getSurface — see lib/tennis.js
 function rankTier(r){if(!r)return'unranked';if(r<=10)return`#${r} (top 10)`;if(r<=20)return`#${r} (top 20)`;if(r<=50)return`#${r} (top 50)`;if(r<=100)return`#${r} (top 100)`;return`#${r}`}
 function parseRec(rec){const m=(rec||'').match(/(\d+)-(\d+)/);if(!m)return null;const w=parseInt(m[1]),l=parseInt(m[2]);return w+l>0?w/(w+l):null}
 function genPicks(g,af,hf,pitchers,weather,ext={}){
