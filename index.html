@@ -2051,7 +2051,7 @@ function _renderParlayModal(){
   $('parlayContent').innerHTML=h;
 }
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAllModals();return}if(e.target.tagName==='INPUT'){if(e.key==='Enter')connectApi();return}if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAllModals();return}if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;if($('scOverlay').classList.contains('vis')){$('scOverlay').classList.remove('vis');return}
   switch(e.key){case'r':case'R':debouncedRefresh(e.shiftKey);break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'a':case'A':showPicksSetup();break;
     case'p':case'P':switchToPicksView();break;
     case'g':case'G':if(cView==='picks')generatePicks();break;
