@@ -2838,6 +2838,7 @@ CONTEXT DATA PROVIDED: L10 net rating (labeled as primary signal), Pace (poss/48
 
 ## SIGNAL SCORING — assign favors: TeamA | TeamB | NEUTRAL | UNDER | OVER (for totals)
 Score every signal that has data. Skip signals with no data — do not invent.
+CRITICAL: Only signals listed under SIGNAL SCORING award votes. Anything listed under CONTEXTUAL FLAGS below does NOT award votes under any circumstances — not even as a tiebreaker.
 
 PLAYOFF SIGNALS (use these when game is tagged [PLAYOFFS]):
 1. REVERSION — if last game margin ≥15pts: favors the LOSER of that game (1 strong vote). Favors UNDER (blowouts followed by tighter games).
@@ -2846,7 +2847,6 @@ PLAYOFF SIGNALS (use these when game is tagged [PLAYOFFS]):
 4. DESPERATION vs COMPLACENCY — team up 3-0 or 3-1: 1 vote AGAINST that team (complacency risk). Down team: 1 vote FOR.
 5. REST DIFFERENTIAL — gap ≥2 days: 1 vote for more rested team.
 6. SERIES DOMINANCE — one team avg +8 margin across series: 1 vote for the trailing team (intensity response).
-7. LINE MOVEMENT — flag in reasoning only. If it confirms your primary lean: note as supporting. If it conflicts: add ⚠️ cautionary note. Does NOT award a vote.
 
 REGULAR SEASON SIGNALS (use when NOT tagged [PLAYOFFS]):
 1. L10 NET RATING — divergence ≥4pts: 1 vote for higher-rated team. ≥8pts: 2 votes.
@@ -2854,10 +2854,16 @@ REGULAR SEASON SIGNALS (use when NOT tagged [PLAYOFFS]):
 3. REST ADVANTAGE — gap ≥2 days: 1 vote for rested team.
 4. PACE MISMATCH — slow team (≤98 pace) vs fast team (≥102): 1 vote UNDER.
 5. HOME COURT — baseline 1 vote home unless fatigue/form overrides.
-6. LINE MOVEMENT — flag in reasoning only. If it confirms your primary lean: note as supporting. If it conflicts: add ⚠️ cautionary note. Does NOT award a vote.
-7. ROAD TRIP — away team on game 3+ of consecutive road trip (flagged ⚠️ ROAD TRIP in context): 1 vote AGAINST away team on spread.
+6. ROAD TRIP — away team on game 3+ of consecutive road trip (flagged ⚠️ ROAD TRIP in context): 1 vote AGAINST away team on spread.
 
 CONTEXT-ONLY (do not score as votes): PUBLIC BETS %, injury listings. These are already priced into the line. Reference in reasoning only if extreme (e.g., confirmed star OUT with no replacement data).
+
+## CONTEXTUAL FLAGS — read AFTER tallying votes, append to reasoning only, never award votes
+- LINE MOVEMENT: If sharp money direction confirms your tally result → note as "supporting". If it conflicts with your tally → add ⚠️ "sharp money conflicts with structural signals — structural signals take precedence". Line movement NEVER breaks a tie, NEVER upgrades confidence, NEVER awards a vote.
+- SERIES NARRATIVE (dominant team, star player form, coaching): reference in reasoning only. Does not affect vote count.
+
+## ELIMINATION PRESSURE HARD CAP
+If BOTH signal 3 (ELIMINATION PRESSURE) and signal 4 (DESPERATION/COMPLACENCY) fire for the same team in the same game, that team's confidence floor is MEDIUM regardless of line movement, series narrative, or star player quality. Two desperation signals together cannot be overridden by contextual flags. Mark this in reasoning as: "ELIM CAP APPLIED — confidence locked at MEDIUM minimum for [team]."
 
 ## VEHICLE FROM VOTE COUNT (spread)
 3+ votes same side, 0-1 opp → pick that side | 2-1 split → lean only, lower confidence | tied → PASS
