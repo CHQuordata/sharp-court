@@ -2634,6 +2634,12 @@ async function prefetchStatsForPicks(){
         const awSt=extractNHLStats(a),hmSt=extractNHLStats(h);
         if(awSt||hmSt)cSet(gameStatsCache,g.id,{awSt,hmSt,cat:'nhl'});
       }
+      if(g.cat==='mlb'&&g.aw.id&&g.hm.id&&!gameFormCache.has(g.id)){
+        const szn=sportSeason('mlb');
+        const [awFr,hmFr]=await Promise.all([espnSched('baseball','mlb',g.aw.id,szn),espnSched('baseball','mlb',g.hm.id,szn)]);
+        const af2=xForm(awFr,g.aw.id),hf2=xForm(hmFr,g.hm.id);
+        if(af2.length||hf2.length)cSet(gameFormCache,g.id,{af:af2,hf:hf2});
+      }
       if(g.cat==='mlb'&&!gamePitcherCache.has(g.id)){
         const sm=await fetchGameSummary('mlb',g.id);
         if(sm){const p=extractPitchers(sm);if(p)cSet(gamePitcherCache,g.id,p)}
@@ -3246,8 +3252,8 @@ async function aiAnalyzeGame(gid){
   const g=typeof gid==='string'?allG.find(x=>x.id===gid):fG[gid];
   if(!g||!CLAUDE_KEY)return;
   const btn=$('aiAnalyzeBtn');if(btn){btn.disabled=true;btn.textContent='ANALYZING...'}
-  // Ensure stats/form cache is warm for this game before building context
-  if((g.cat==='nba'||g.cat==='nhl')&&!gameFormCache.has(g.id))await prefetchStatsForPicks();
+  // Ensure stats/form/pitcher cache is warm for this game before building context
+  if(!gameFormCache.has(g.id)||(g.cat==='mlb'&&!gamePitcherCache.has(g.id)))await prefetchStatsForPicks();
   let ctx=`Analyze this specific matchup for betting value:\n\n`;
   ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm}\n`;
   if(g.playoff){
@@ -3278,6 +3284,20 @@ async function aiAnalyzeGame(gid){
   const _cs=gameStatsCache.get(g.id);const _cf=gameFormCache.get(g.id);
   if(_cs?.cat==='nba'&&(_cs.awSt||_cs.hmSt)){const aS=_cs.awSt,hS=_cs.hmSt;ctx+=`Team stats (regular season): ${g.aw.nm} PPG ${aS?.ppg||'?'} Pace ${aS?.pace||'?'} FG% ${aS?.fgPct||'?'} 3P% ${aS?.tpPct||'?'} TO/G ${aS?.toPg||'?'} | ${g.hm.nm} PPG ${hS?.ppg||'?'} Pace ${hS?.pace||'?'} FG% ${hS?.fgPct||'?'} 3P% ${hS?.tpPct||'?'} TO/G ${hS?.toPg||'?'}\n`+`Note: net rating is derived from L10 margin below — use that as the defensive efficiency signal, not this line.\n`}
   if(_cs?.cat==='nhl'&&(_cs.awSt||_cs.hmSt)){ctx+=`Team stats: ${g.aw.nm} GF/G ${_cs.awSt?.gpg||'?'} PP% ${_cs.awSt?.ppPct||'?'} PK% ${_cs.awSt?.pkPct||'?'} SH% ${_cs.awSt?.shootPct||'?'} | ${g.hm.nm} GF/G ${_cs.hmSt?.gpg||'?'} PP% ${_cs.hmSt?.ppPct||'?'} PK% ${_cs.hmSt?.pkPct||'?'} SH% ${_cs.hmSt?.shootPct||'?'}\n`}
+  if(g.cat==='mlb'){
+    const _pit=gamePitcherCache.get(g.id);
+    if(_pit?.away&&_pit?.home){
+      const fmt=p=>`${p.name} (${p.hand}) ERA ${p.era} WHIP ${p.whip} K/9 ${p.k9} IP ${p.ip}`;
+      ctx+=`Starting pitchers: ${g.aw.nm}: ${fmt(_pit.away)} | ${g.hm.nm}: ${fmt(_pit.home)}\n`;
+    } else ctx+=`Starting pitchers: not yet announced\n`;
+    const _wx=gameWeatherCache.get(g.id);
+    if(_wx)ctx+=`Weather: ${_wx.temp}°F, wind ${_wx.wind}mph ${_wx.windDir}, ${_wx.desc}\n`;
+    if(_cf){const{af,hf}=_cf;
+      const _l10=f=>{const ms=f.slice(0,10);const w=ms.filter(m=>m.r==='W').length;return`${w}-${ms.length-w}`;};
+      const _streak=f=>{if(!f.length)return'';let c=1;for(let i=1;i<f.length;i++){if(f[i].r===f[0].r)c++;else break;}return f[0].r+c};
+      if(af.length||hf.length)ctx+=`Recent form: ${g.aw.nm} L10 ${_l10(af)} streak ${_streak(af)} | ${g.hm.nm} L10 ${_l10(hf)} streak ${_streak(hf)}\n`;
+    }
+  }
   if(_cf&&(g.cat==='nba'||g.cat==='nhl')){const{af,hf}=_cf;const fat=[];
     if(g.cat==='nba'){const _cl10=f=>{if(!f||f.length<5)return null;const ms=f.slice(0,10).map(m=>{const p=m.sc.split('-').map(Number);return p.length===2&&!isNaN(p[0])&&!isNaN(p[1])?p[0]-p[1]:null}).filter(x=>x!==null);return ms.length>=5?parseFloat((ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1)):null};const awL10=_cl10(af),hmL10=_cl10(hf);if(awL10!==null||hmL10!==null)ctx+=`L10 net: ${g.aw.nm} ${awL10!==null?(awL10>=0?'+':'')+awL10:'N/A'} | ${g.hm.nm} ${hmL10!==null?(hmL10>=0?'+':'')+hmL10:'N/A'} pts/gm — primary sharp signal\n`;const awRt=(()=>{if(!af?.length)return 0;let n=0;for(const m of af){if(!m.hm)n++;else break;}return n})();if(!g.playoff&&awRt>=3)ctx+=`⚠️ ROAD TRIP: ${g.aw.nm} on game ${awRt+1} of road trip — ATS cover rate depressed\n`;if(g.playoff){const serAf=af.filter(m=>m.playoff&&m.opp===g.hm.ab).sort((a,b)=>a.dt-b.dt);const serHf=hf.filter(m=>m.playoff&&m.opp===g.aw.ab).sort((a,b)=>a.dt-b.dt);const serRef=serAf.length>=serHf.length?serAf:serHf;const fromAw=serRef===serAf;if(serRef.length){ctx+=`Series history (${fromAw?g.aw.nm:g.hm.nm} POV):\n`;serRef.forEach((m,i)=>{const[own,opp]=m.sc.split('-').map(Number);const margin=own-opp;ctx+=`  G${i+1}: ${m.r} ${m.sc} ${m.hm?'(home)':'(away)'} margin ${margin>=0?'+':''}${margin}\n`});const margins=serRef.map(m=>{const[a,b]=m.sc.split('-').map(Number);return a-b});const avgMargin=margins.reduce((a,b)=>a+b,0)/margins.length;const lastMargin=margins[margins.length-1];const hmHomeW=serRef.filter(m=>!m.hm&&m.r==='L').length,hmHomeL=serRef.filter(m=>!m.hm&&m.r==='W').length,hmHomePlayed=serRef.filter(m=>!m.hm).length;if(hmHomePlayed>0)ctx+=`${g.hm.nm} at home this series: ${hmHomeW}-${hmHomeL}\n`;ctx+=`Avg margin: ${fromAw?g.aw.nm:g.hm.nm} ${avgMargin>=0?'+':''}${avgMargin.toFixed(1)} | Last game: ${Math.abs(lastMargin)>=15?'⚠️ BLOWOUT ('+Math.abs(lastMargin)+' pts) — strong reversion candidate next game':lastMargin>=0?'W +'+lastMargin:'L '+lastMargin}\n`}}}
     if(is3in4(af,g.tm))fat.push(`${g.aw.nm} 3-IN-4 NIGHTS`);else if(isB2B(af,g.tm))fat.push(`${g.aw.nm} BACK-TO-BACK`);
