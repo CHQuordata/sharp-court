@@ -3471,7 +3471,7 @@ async function aiAnalyzeGame(gid){
 // ── PIN GATE ──────────────────────────────────────────────────────────────
 const PIN_HASH='b1e2d3';  // change this to your preferred PIN then update hash below
 function _ph(s){let h=0;for(let i=0;i<s.length;i++){h=Math.imul(31,h)+s.charCodeAt(i)|0}return Math.abs(h).toString(16)}
-const CORRECT_HASH=_ph('8472'); // default PIN is 8472 — change both strings to match
+const CORRECT_HASH='75b15e18';
 
 function checkPin(){
   const v=$('pinInput').value.trim();
