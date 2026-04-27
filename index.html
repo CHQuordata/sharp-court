@@ -2345,7 +2345,9 @@ function updateCumulativeRecord(){
   // Always rebuild from scratch from et_picks_history — never additive
   const rec={overall:{w:0,l:0,p:0},by_confidence:{},by_sport:{}};
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
+  if(!Array.isArray(history)){localStorage.setItem('et_cumulative',JSON.stringify(rec));return;}
   history.forEach(slate=>{
+    if(!slate)return;
     (slate.picks||[]).filter(p=>['W','L','P'].includes(p.result)&&!p.is_lean).forEach(p=>{
       const k=p.result.toLowerCase();
       rec.overall[k]=(rec.overall[k]||0)+1;
