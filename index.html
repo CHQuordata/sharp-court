@@ -2941,14 +2941,18 @@ Evaluate: Rest days, match load
 ONE vote total from this dimension.
 
 ### DIMENSION 5 — MARKET
-Implied probability anchors this dimension. Line movement is a flag only — it NEVER independently awards a vote and NEVER flips the vote against the implied-probability side.
-- Implied ≥65% → MARKET = that player (vote awarded)
-  - If line also moved same direction: note as "sharp confirmed" in signals
-  - If line moved opposite direction: add ⚠️ cautionary note in signals, but VOTE STAYS with implied
-- Implied 55–64% → MARKET = that player (soft vote)
-  - Line movement reinforces or cautions as above, does not change the vote
-- Implied <55% (near pick'em) → MARKET = NEUTRAL regardless of line movement
+Implied probability ONLY. Line movement is NOT evaluated here — it is handled in CONTEXTUAL FLAGS after tallying. Do not reference line movement in this dimension at all.
+- Implied ≥65% → MARKET = that player
+- Implied 55–64% → MARKET = that player (note as "soft" in signals)
+- Implied <55% (near pick'em) → MARKET = NEUTRAL
 ONE vote total from this dimension.
+
+## CONTEXTUAL FLAGS — read AFTER tallying all 5 dimension votes, never award votes
+- LINE MOVEMENT: If line moved same direction as your tally winner → note as "sharp confirmed". If line conflicts with your tally winner → add ⚠️ "sharp money conflicts with structural signals — structural signals take precedence". Line movement NEVER changes a dimension vote, NEVER upgrades confidence, NEVER breaks a NEUTRAL or PASS result, NEVER turns a MEDIUM into a HIGH.
+- MARKET NARRATIVE (rankings, reputation, recent headline win): reference in reasoning only. Does not affect dimension votes or confidence tier.
+
+## STRUCTURAL SIGNALS HARD CAP
+If SERVE and RETURN both vote for the same player, those are the two hardest data-driven signals in the model. In that case: confidence is determined solely by the dimension vote count — line movement and market narrative CANNOT upgrade it beyond what the tally warrants. Note in reasoning: "STRUCTURAL CAP — SERVE+RETURN locked, confidence from dimension count only."
 
 ## VEHICLE FROM DIMENSION VOTES
 - 4-5 same player, 0-1 opp → base vehicle = -1.5 sets
