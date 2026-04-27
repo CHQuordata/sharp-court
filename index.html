@@ -2728,7 +2728,7 @@ async function runNHLAnalysis(nhlCtx){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:buildNHLAnalysisPrompt(),messages:[{role:'user',content:nhlCtx+'\n\nScore every available signal for each NHL game. Tally votes. Derive ML and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:3000,system:buildNHLAnalysisPrompt(),messages:[{role:'user',content:nhlCtx+'\n\nScore every available signal for each NHL game. Tally votes. Derive ML and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
     });
     if(!resp.ok)return null;
     const data=await resp.json();
@@ -2785,7 +2785,7 @@ async function runMLBAnalysis(mlbCtx){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:buildMLBAnalysisPrompt(),messages:[{role:'user',content:mlbCtx+'\n\nScore every available signal for each MLB game. Tally votes. Derive ML and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:3000,system:buildMLBAnalysisPrompt(),messages:[{role:'user',content:mlbCtx+'\n\nScore every available signal for each MLB game. Tally votes. Derive ML and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
     });
     if(!resp.ok)return null;
     const data=await resp.json();
@@ -2855,7 +2855,7 @@ async function runNBAAnalysis(nbaCtx){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,system:buildNBAAnalysisPrompt(),messages:[{role:'user',content:nbaCtx+'\n\nScore every available signal for each NBA game. Tally votes. Derive spread and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:3000,system:buildNBAAnalysisPrompt(),messages:[{role:'user',content:nbaCtx+'\n\nScore every available signal for each NBA game. Tally votes. Derive spread and total conclusions from tallies. Output raw JSON only — start with { immediately.'}]})
     });
     if(!resp.ok)return null;
     const data=await resp.json();
@@ -2969,7 +2969,7 @@ async function runTennisAnalysis(tennisCtx){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system:buildTennisAnalysisPrompt(),messages:[{role:'user',content:tennisCtx+'\n\nEvaluate each match across 5 dimensions (SERVE, RETURN, FORM, PHYSICAL, MARKET). Each dimension produces exactly one vote. Tally dimension votes. Apply vehicle override from tournament form. Evaluate alt lines and first set. Output raw JSON only — start with { immediately.'}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:4000,system:buildTennisAnalysisPrompt(),messages:[{role:'user',content:tennisCtx+'\n\nEvaluate each match across 5 dimensions (SERVE, RETURN, FORM, PHYSICAL, MARKET). Each dimension produces exactly one vote. Tally dimension votes. Apply vehicle override from tournament form. Evaluate alt lines and first set. Output raw JSON only — start with { immediately.'}]})
     });
     if(!resp.ok)return null;
     const data=await resp.json();
@@ -3081,9 +3081,12 @@ function autoGradeFromScores(completedGames){
   if(changed){localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));updateCumulativeRecord();}
 }
 
-async function generatePicks(){
+async function generatePicks(force=false){
   if(!CLAUDE_KEY){showPicksSetup();return}
   if(isGenerating)return;
+  if(!force&&todayPicksData?.picks?.length){
+    if(!confirm('Today\'s picks already generated. Regenerate and overwrite?'))return;
+  }
   isGenerating=true;renderPicksOverview();
   try{
     // Sync from KV + fetch completed scores in parallel before doing anything else
@@ -3123,7 +3126,7 @@ async function generatePicks(){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis,nbaAnalysis,mlbAnalysis,nhlAnalysis)}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:8000,system:buildSystemPrompt(rules,rec),messages:[{role:'user',content:buildUserMsg(gamesCtx,yPicks,completed,tennisAnalysis,nbaAnalysis,mlbAnalysis,nhlAnalysis)}]})
     });
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||`API ${resp.status}`)}
     const data=await resp.json();
