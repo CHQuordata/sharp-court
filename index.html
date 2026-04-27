@@ -2157,19 +2157,14 @@ function renderPicksOverview(){
   if(rec.by_confidence){['HIGH','MEDIUM','LOW'].forEach(c=>{const cr=rec.by_confidence[c]||{};if((cr.w||0)+(cr.l||0)>0)h+=`<div class="rec-stat"><span class="rec-lbl">${c}</span><span class="rec-val ${(cr.w||0)>(cr.l||0)?'rv-pos':(cr.w||0)<(cr.l||0)?'rv-neg':'rv-neu'}">${cr.w||0}-${cr.l||0}</span></div>`})}
   if(rec.by_sport){const sp=Object.entries(rec.by_sport).filter(([,r])=>(r.w||0)+(r.l||0)>0);if(sp.length){h+=`<div style="padding:4px 12px 2px;font-size:9px;color:var(--t4);letter-spacing:1px">BY SPORT</div>`;sp.forEach(([s,r])=>{const ic=s==='tennis'?'🎾':s==='nba'?'🏀':s==='nhl'?'🏒':s==='mlb'?'⚾':s==='mma'?'🥊':'⚡';h+=`<div class="rec-stat"><span class="rec-lbl">${ic} ${s.toUpperCase()}</span><span class="rec-val ${(r.w||0)>(r.l||0)?'rv-pos':(r.w||0)<(r.l||0)?'rv-neg':'rv-neu'}">${r.w||0}-${r.l||0}</span></div>`})}}
   h+='</div>';
-  // Grading
-  if(todayPicksData.grading?.length){
-    const gradable=todayPicksData.grading.filter(g=>g.result&&g.result!=='?');
-    if(gradable.length){
-      h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>YESTERDAY GRADED</div>`;
-      todayPicksData.grading.forEach((gr,gi)=>{h+=`<div class="grade-row"><span class="pib pib-${gr.result||'Q'}" style="flex-shrink:0;cursor:pointer" title="Click to correct grade" onclick="correctGrade(${gi})">${gr.result||'?'}</span><span class="grade-pick">${gr.pick}</span><span class="grade-note">${gr.note||''}</span></div>`;
-        const clvKey=`${gr.matchup||gr.pick}|${gr.pick}`;const clvData=JSON.parse(localStorage.getItem('et_clv_lines')||'{}')[clvKey];
-        const clvGm=gr.sport&&allG.find(gm=>{const mu=(gr.matchup||gr.pick||'').toLowerCase();const an=gm.aw.nm.toLowerCase().split(' ').pop(),hn=gm.hm.nm.toLowerCase().split(' ').pop();return mu.includes(an)||mu.includes(hn)});
-        const clvSp=clvGm?.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='spreads')?.outcomes?.find(o=>o.point<0)?.point;
-        if(clvData?.sp!=null&&clvSp!=null){const clv=parseFloat((clvData.sp-clvSp).toFixed(1));if(clv!==0){const clvClr=clv>0?'var(--grn)':'var(--red)';h+=`<div class="tx4" style="margin-left:28px;margin-bottom:4px">CLV: ${clv>0?'+':''}${clv}pt ${clv>0?'✓ beat close':'✗ missed close'}</div>`}}
-      });
-      h+='</div>';
-    }
+  // Grading — reads from et_picks_history (algorithmic grades), not Claude output
+  const yGraded=getYesterdayPicks();
+  if(yGraded.length){
+    h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>YESTERDAY GRADED</div>`;
+    yGraded.forEach(gr=>{
+      h+=`<div class="grade-row"><span class="pib pib-${gr.result}" style="flex-shrink:0">${gr.result}</span><span class="grade-pick">${gr.pick}</span><span class="grade-note">${gr.matchup||''}</span></div>`;
+    });
+    h+='</div>';
   }
   // Parlays
   if(todayPicksData.parlays?.length){
@@ -2481,7 +2476,6 @@ Injury data is background context ONLY. Follow these rules strictly:
 - Games tagged [ODDS LOADING — USE STATS] are NBA/NHL/MLB with odds not yet fetched — pick freely using stats, form, and situational context.
 - Every pick and lean MUST have "sport" set to the exact category (nba/nhl/mlb/nfl/tennis/mma) and "matchup" must contain BOTH team/player last names exactly as shown in the slate so picks map to the correct game.
 - List every inactive sport explicitly with reason.
-- Grade all yesterday picks. Use "?" only if truly no result found.
 
 ## PRE-ANALYSIS (TENNIS + NBA)
 When the user message contains "TENNIS PRE-ANALYSIS" or "NBA PRE-ANALYSIS" sections, those picks have already been derived from signal vote tallies by dedicated analysts. Incorporate them exactly as provided — do not re-examine raw data, do not override conclusions, do not change vehicles or sides. Your job is to slot them into the picks array and use them for parlay construction. If a pre-analysis pick conflicts with what you might otherwise choose, the pre-analysis wins.
@@ -2508,7 +2502,6 @@ ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and Be
 ## RESPONSE FORMAT — output raw JSON only, start immediately with { no fences no preamble:
 {
   "date":"YYYY-MM-DD",
-  "grading":[{"pick":"exact pick text","sport":"sport","result":"W|L|P|?","note":"brief reason"}],
   "learned_rules_update":"ONLY include if adding/changing a rule — output full updated list, max 12 rules, each max 20 words. Omit this field entirely if no changes.",
   "picks":[{"rank":1,"sport":"nba","matchup":"Team A vs Team B","pick":"Team A -4.5 (-110)","confidence":"HIGH","score":8.2,"odds":-110,"reasoning":"Multi-sentence analysis covering key edges","filters":["net_rating","rest_edge"],"is_lean":false}],
   "parlays":[{"type":"2-Leg Conservative","legs":["leg1","leg2"],"note":"why these combine"}],
@@ -3195,7 +3188,6 @@ async function generatePicks(){
         .join('\n');
       localStorage.setItem('et_learned_rules',trimmedRules);
     }
-    if(result.grading?.length)updateCumulativeRecord(result.grading,result.picks);
     // Enrich picks with Phase 1 vote context so the learning agent has signal attribution
     if(result.picks?.length){
       const _p1pool=[];
