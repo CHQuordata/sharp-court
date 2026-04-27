@@ -2090,16 +2090,13 @@ function saveLoggedBet(){
   const wager=parseFloat($('lbWager').value)||null;
   const payout=parseFloat($('lbPayout').value)||null;
   const today=new Date().toISOString().split('T')[0];
-  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  let slate=history.find(s=>s.date===today);
-  if(!slate){slate={date:today,picks:[]};history.unshift(slate);}
-  slate.picks.push({
-    pick,sport,result,confidence:'MANUAL',score:null,is_lean:false,is_manual:true,
-    matchup:pick.slice(0,60),
-    wager:wager??undefined,payout:payout??undefined,
-    logged:new Date().toISOString()
-  });
-  localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
+  const bet={pick,sport,result,confidence:'MANUAL',score:null,is_lean:false,is_manual:true,
+    matchup:pick.slice(0,60),wager:wager??undefined,payout:payout??undefined,
+    logged:new Date().toISOString(),date:today};
+  // Store in dedicated manual bets key — never overwritten by AI pick generation
+  const manual=JSON.parse(localStorage.getItem('et_manual_bets')||'[]');
+  manual.unshift(bet);
+  localStorage.setItem('et_manual_bets',JSON.stringify(manual.slice(0,200)));
   if(['W','L','P'].includes(result))updateCumulativeRecord();
   renderDashboardStats();
   renderPicksLeaderboard();renderPicksOverview();
@@ -2199,34 +2196,29 @@ function renderPicksLeaderboard(){
 }
 
 function getAllManualBets(){
-  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  const out=[];
-  history.forEach(slate=>{
-    (slate.picks||[]).filter(p=>p.is_manual).forEach(p=>out.push({...p,_date:slate.date}));
-  });
-  return out;
+  return JSON.parse(localStorage.getItem('et_manual_bets')||'[]');
 }
 
 function renderMyBetsSection(){
-  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  const slatesWithBets=history.map(s=>({date:s.date,bets:(s.picks||[]).filter(p=>p.is_manual)})).filter(s=>s.bets.length);
-  if(!slatesWithBets.length)return'';
+  const bets=getAllManualBets();
+  if(!bets.length)return'';
   const ic=s=>s==='tennis'?'🎾':s==='nba'?'🏀':s==='nhl'?'🏒':s==='mlb'?'⚾':s==='mma'?'🥊':s==='parlay'?'🎰':'💰';
   const today=new Date().toISOString().split('T')[0];
   const fmtDate=d=>{if(d===today)return'TODAY';const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+  // Group by date
+  const byDate=[];bets.forEach(b=>{const d=b.date||today;let g=byDate.find(x=>x.date===d);if(!g){g={date:d,bets:[]};byDate.push(g);}g.bets.push(b);});
   let h=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>MY BETS <span style="font-size:9px;color:var(--t4);font-weight:400;margin-left:6px">click badge to cycle result</span></div>`;
-  slatesWithBets.forEach(({date,bets})=>{
+  byDate.forEach(({date,bets})=>{
     h+=`<div style="padding:4px 12px 2px;font-size:9px;color:var(--t4);letter-spacing:1px;border-bottom:1px solid rgba(42,42,62,.3)">${fmtDate(date)}</div>`;
-    bets.forEach(b=>{
+    bets.forEach((b,i)=>{
       const res=b.result||'?';
       const clr=res==='W'?'var(--grn)':res==='L'?'var(--red)':res==='P'?'var(--t3)':'var(--amb)';
       const wStr=b.wager!=null?`$${b.wager.toFixed(2)}`:'';
       const plStr=res==='W'&&b.payout!=null?` → <span style="color:var(--grn)">+$${(b.payout-b.wager).toFixed(2)}</span>`:res==='L'&&b.wager!=null?` → <span style="color:var(--red)">-$${b.wager.toFixed(2)}</span>`:res==='?'&&wStr?` <span style="color:var(--amb)">PENDING</span>`:'';
-      const safeP=encodeURIComponent(b.pick||'');
-      const safeD=encodeURIComponent(date);
+      const idx=bets.indexOf(b);const safeIdx=encodeURIComponent(b.logged||i);
       h+=`<div class="grade-row" style="flex-direction:column;align-items:flex-start;gap:4px">
         <div style="display:flex;align-items:center;gap:6px;width:100%">
-          <span style="font-size:9px;padding:2px 6px;border-radius:2px;font-weight:700;color:${clr};border:1px solid ${clr};cursor:pointer;flex-shrink:0" title="Click to cycle result" onclick="cycleManualBetResult('${safeP}','${safeD}')">${res}</span>
+          <span style="font-size:9px;padding:2px 6px;border-radius:2px;font-weight:700;color:${clr};border:1px solid ${clr};cursor:pointer;flex-shrink:0" title="Click to cycle result" onclick="cycleManualBetResult('${safeIdx}')">${res}</span>
           <span style="font-size:10px;font-weight:600;color:var(--t1);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic(b.sport)} ${b.pick.slice(0,80)}</span>
         </div>
         ${wStr?`<div style="font-size:10px;color:var(--t3);padding-left:2px">${wStr}${plStr}</div>`:''}
@@ -2237,18 +2229,13 @@ function renderMyBetsSection(){
   return h;
 }
 
-function cycleManualBetResult(encodedPick,encodedDate){
-  const pickText=decodeURIComponent(encodedPick);
-  const date=encodedDate?decodeURIComponent(encodedDate):new Date().toISOString().split('T')[0];
-  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
+function cycleManualBetResult(encodedLogged){
+  const logged=decodeURIComponent(encodedLogged);
+  const bets=JSON.parse(localStorage.getItem('et_manual_bets')||'[]');
   const cycle={'?':'W',W:'L',L:'P',P:'?'};
-  let found=false;
-  history.forEach(slate=>{
-    if(slate.date!==date)return;
-    (slate.picks||[]).forEach(p=>{if(p.pick===pickText&&p.is_manual){p.result=cycle[p.result]||'?';found=true;}});
-  });
-  if(found){
-    localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
+  const b=bets.find(x=>x.logged===logged);
+  if(b){b.result=cycle[b.result]||'?';
+    localStorage.setItem('et_manual_bets',JSON.stringify(bets));
     updateCumulativeRecord();renderDashboardStats();renderPicksOverview();
   }
 }
@@ -2469,30 +2456,25 @@ function getYesterdayPicks(){
 function updateCumulativeRecord(){
   // Always rebuild from scratch from et_picks_history — never additive
   const rec={overall:{w:0,l:0,p:0,profit:null,pending:null},by_confidence:{},by_sport:{}};
-  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  if(!Array.isArray(history)){localStorage.setItem('et_cumulative',JSON.stringify(rec));return;}
-  history.forEach(slate=>{
-    if(!slate)return;
-    (slate.picks||[]).filter(p=>!p.is_lean).forEach(p=>{
-      if(['W','L','P'].includes(p.result)){
-        const k=p.result.toLowerCase();
-        rec.overall[k]=(rec.overall[k]||0)+1;
-        const sp=p.sport||'unknown',cf=p.confidence||'MEDIUM';
-        if(!rec.by_sport[sp])rec.by_sport[sp]={w:0,l:0,p:0};
-        if(!rec.by_confidence[cf])rec.by_confidence[cf]={w:0,l:0,p:0};
-        rec.by_sport[sp][k]=(rec.by_sport[sp][k]||0)+1;
-        rec.by_confidence[cf][k]=(rec.by_confidence[cf][k]||0)+1;
-        if(p.wager!=null){
-          if(rec.overall.profit==null)rec.overall.profit=0;
-          if(k==='w'&&p.payout!=null)rec.overall.profit+=p.payout-p.wager;
-          else if(k==='l')rec.overall.profit-=p.wager;
-        }
-      } else if(p.result==='?'&&p.wager!=null){
-        // pending bet with a wager — track separately as "at risk"
-        if(rec.overall.pending==null)rec.overall.pending=0;
-        rec.overall.pending+=p.wager;
+  const bets=JSON.parse(localStorage.getItem('et_manual_bets')||'[]');
+  bets.forEach(p=>{
+    if(['W','L','P'].includes(p.result)){
+      const k=p.result.toLowerCase();
+      rec.overall[k]=(rec.overall[k]||0)+1;
+      const sp=p.sport||'unknown',cf='MANUAL';
+      if(!rec.by_sport[sp])rec.by_sport[sp]={w:0,l:0,p:0};
+      if(!rec.by_confidence[cf])rec.by_confidence[cf]={w:0,l:0,p:0};
+      rec.by_sport[sp][k]=(rec.by_sport[sp][k]||0)+1;
+      rec.by_confidence[cf][k]=(rec.by_confidence[cf][k]||0)+1;
+      if(p.wager!=null){
+        if(rec.overall.profit==null)rec.overall.profit=0;
+        if(k==='w'&&p.payout!=null)rec.overall.profit+=p.payout-p.wager;
+        else if(k==='l')rec.overall.profit-=p.wager;
       }
-    });
+    } else if(p.result==='?'&&p.wager!=null){
+      if(rec.overall.pending==null)rec.overall.pending=0;
+      rec.overall.pending+=p.wager;
+    }
   });
   localStorage.setItem('et_cumulative',JSON.stringify(rec));
 }
