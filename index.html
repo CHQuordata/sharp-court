@@ -2050,6 +2050,16 @@ function showBankroll(){$('bankrollModal').style.display='flex';$('bankrollInput
 function saveBankroll(){const v=parseFloat($('bankrollInput').value)||0;BANKROLL=v;localStorage.setItem('bankroll',v);$('bankrollModal').style.display='none';const btn=$('bankrollBtn');if(btn)btn.textContent=v>0?'$'+v.toLocaleString():'BANKROLL';if(selIdx>=0&&selIdx<fG.length)selGame(selIdx)}
 function connectClaude(){const k=$('claudeKeyInput').value.trim();if(!k)return;CLAUDE_KEY=k;localStorage.setItem('et_claude_key',k);$('claudeModal').style.display='none';$('aiDot').classList.add('ok');$('aiSt').textContent='AI READY';if(cView==='picks')renderPicksOverview()}
 
+function renderDashboardStats(){
+  const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
+  const ov=rec.overall||{w:0,l:0,p:0};const tot=ov.w+ov.l+ov.p;
+  document.querySelectorAll('.stat-lbl').forEach((el,i)=>{const lblMap=['TODAY','RECORD','HIT RATE','PARLAYS'];if(lblMap[i])el.textContent=lblMap[i]});
+  $('stG').textContent=todayPicksData?.picks?.length??'-';
+  $('stE').textContent=tot>0?`${ov.w}-${ov.l}`:'-';
+  $('stS').textContent=tot>0?`${Math.round(ov.w/tot*100)}%`:'-';
+  $('stI').textContent=todayPicksData?.parlays?.length??'-';
+}
+
 function switchToPicksView(){
   cView='picks';
   document.querySelectorAll('.sport-tab').forEach(t=>t.classList.remove('active'));
@@ -2059,15 +2069,7 @@ function switchToPicksView(){
   const savedDate=localStorage.getItem('et_picks_date');
   if(savedDate===new Date().toDateString()){try{todayPicksData=JSON.parse(localStorage.getItem('et_picks_today')||'null')}catch(e){todayPicksData=null}}
   else todayPicksData=null;
-  // Update dashboard stats to reflect picks data
-  const rec=JSON.parse(localStorage.getItem('et_cumulative')||'{}');
-  const ov=rec.overall||{w:0,l:0,p:0};const tot=ov.w+ov.l+ov.p;
-  const lblMap=['TODAY','RECORD','HIT RATE','PARLAYS'];
-  document.querySelectorAll('.stat-lbl').forEach((el,i)=>{if(lblMap[i])el.textContent=lblMap[i]});
-  $('stG').textContent=todayPicksData?.picks?.length??'-';
-  $('stE').textContent=tot>0?`${ov.w}-${ov.l}`:'-';
-  $('stS').textContent=tot>0?`${Math.round(ov.w/tot*100)}%`:'-';
-  $('stI').textContent=todayPicksData?.parlays?.length??'-';
+  renderDashboardStats();
   renderPicksLeaderboard();renderPicksOverview();
 }
 
@@ -2375,6 +2377,7 @@ function correctHistoryGrade(encodedPick){
   if(found){
     localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
     updateCumulativeRecord();
+    renderDashboardStats();
     renderPicksOverview();
   }
 }
