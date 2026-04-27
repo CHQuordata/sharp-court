@@ -2198,44 +2198,53 @@ function renderPicksLeaderboard(){
   el.innerHTML=h;
 }
 
-function getTodayManualBets(){
-  const today=new Date().toISOString().split('T')[0];
+function getAllManualBets(){
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
-  const slate=history.find(s=>s.date===today);
-  return (slate?.picks||[]).filter(p=>p.is_manual);
+  const out=[];
+  history.forEach(slate=>{
+    (slate.picks||[]).filter(p=>p.is_manual).forEach(p=>out.push({...p,_date:slate.date}));
+  });
+  return out;
 }
 
 function renderMyBetsSection(){
-  const bets=getTodayManualBets();
-  if(!bets.length)return'';
+  const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
+  const slatesWithBets=history.map(s=>({date:s.date,bets:(s.picks||[]).filter(p=>p.is_manual)})).filter(s=>s.bets.length);
+  if(!slatesWithBets.length)return'';
   const ic=s=>s==='tennis'?'🎾':s==='nba'?'🏀':s==='nhl'?'🏒':s==='mlb'?'⚾':s==='mma'?'🥊':s==='parlay'?'🎰':'💰';
-  let h=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>MY BETS TODAY <span style="font-size:9px;color:var(--t4);font-weight:400;margin-left:6px">click badge to update result</span></div>`;
-  bets.forEach(b=>{
-    const res=b.result||'?';
-    const clr=res==='W'?'var(--grn)':res==='L'?'var(--red)':res==='P'?'var(--t3)':'var(--amb)';
-    const wStr=b.wager!=null?`$${b.wager.toFixed(2)}`:'';
-    const plStr=res==='W'&&b.payout!=null?` → <span style="color:var(--grn)">+$${(b.payout-b.wager).toFixed(2)}</span>`:res==='L'&&b.wager!=null?` → <span style="color:var(--red)">-$${b.wager.toFixed(2)}</span>`:res==='?'&&wStr?` <span style="color:var(--amb)">PENDING</span>`:'';
-    const safeP=encodeURIComponent(b.pick||'');
-    h+=`<div class="grade-row" style="flex-direction:column;align-items:flex-start;gap:4px">
-      <div style="display:flex;align-items:center;gap:6px;width:100%">
-        <span style="font-size:9px;padding:2px 6px;border-radius:2px;font-weight:700;color:${clr};border:1px solid ${clr};cursor:pointer;flex-shrink:0" title="Click to cycle result" onclick="cycleManualBetResult('${safeP}')">${res}</span>
-        <span style="font-size:10px;font-weight:600;color:var(--t1);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic(b.sport)} ${b.pick.slice(0,80)}</span>
-      </div>
-      ${wStr?`<div style="font-size:10px;color:var(--t3);padding-left:2px">${wStr}${plStr}</div>`:''}
-    </div>`;
+  const today=new Date().toISOString().split('T')[0];
+  const fmtDate=d=>{if(d===today)return'TODAY';const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+  let h=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--cyn)"></div>MY BETS <span style="font-size:9px;color:var(--t4);font-weight:400;margin-left:6px">click badge to cycle result</span></div>`;
+  slatesWithBets.forEach(({date,bets})=>{
+    h+=`<div style="padding:4px 12px 2px;font-size:9px;color:var(--t4);letter-spacing:1px;border-bottom:1px solid rgba(42,42,62,.3)">${fmtDate(date)}</div>`;
+    bets.forEach(b=>{
+      const res=b.result||'?';
+      const clr=res==='W'?'var(--grn)':res==='L'?'var(--red)':res==='P'?'var(--t3)':'var(--amb)';
+      const wStr=b.wager!=null?`$${b.wager.toFixed(2)}`:'';
+      const plStr=res==='W'&&b.payout!=null?` → <span style="color:var(--grn)">+$${(b.payout-b.wager).toFixed(2)}</span>`:res==='L'&&b.wager!=null?` → <span style="color:var(--red)">-$${b.wager.toFixed(2)}</span>`:res==='?'&&wStr?` <span style="color:var(--amb)">PENDING</span>`:'';
+      const safeP=encodeURIComponent(b.pick||'');
+      const safeD=encodeURIComponent(date);
+      h+=`<div class="grade-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div style="display:flex;align-items:center;gap:6px;width:100%">
+          <span style="font-size:9px;padding:2px 6px;border-radius:2px;font-weight:700;color:${clr};border:1px solid ${clr};cursor:pointer;flex-shrink:0" title="Click to cycle result" onclick="cycleManualBetResult('${safeP}','${safeD}')">${res}</span>
+          <span style="font-size:10px;font-weight:600;color:var(--t1);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic(b.sport)} ${b.pick.slice(0,80)}</span>
+        </div>
+        ${wStr?`<div style="font-size:10px;color:var(--t3);padding-left:2px">${wStr}${plStr}</div>`:''}
+      </div>`;
+    });
   });
   h+='</div>';
   return h;
 }
 
-function cycleManualBetResult(encodedPick){
+function cycleManualBetResult(encodedPick,encodedDate){
   const pickText=decodeURIComponent(encodedPick);
-  const today=new Date().toISOString().split('T')[0];
+  const date=encodedDate?decodeURIComponent(encodedDate):new Date().toISOString().split('T')[0];
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
   const cycle={'?':'W',W:'L',L:'P',P:'?'};
   let found=false;
   history.forEach(slate=>{
-    if(slate.date!==today)return;
+    if(slate.date!==date)return;
     (slate.picks||[]).forEach(p=>{if(p.pick===pickText&&p.is_manual){p.result=cycle[p.result]||'?';found=true;}});
   });
   if(found){
@@ -2246,7 +2255,6 @@ function cycleManualBetResult(encodedPick){
 
 function renderPicksOverview(){
   const el=$('detailPanel');
-  const myBets=getTodayManualBets();
   if(!todayPicksData){
     if(!CLAUDE_KEY){
       el.innerHTML=`<div class="pick-gen-state"><div style="font-size:36px;opacity:.2">🤖</div><div style="font-size:13px;letter-spacing:1px;color:var(--t2)">AI PICKS ENGINE</div><div style="font-size:10px;color:var(--t4);margin-top:8px;max-width:300px;line-height:1.7">Self-learning daily picks generator. Grades yesterday's picks, updates its own rules, generates today's slate with full analysis. Memory persists in your browser.</div><button class="gen-btn" style="margin-top:20px" onclick="showPicksSetup()">CONNECT AI KEY →</button></div>${renderMyBetsSection()}`;
