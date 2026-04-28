@@ -2734,7 +2734,7 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,nbaA
     if(actionable.length){
       msg+=`\n## TENNIS PRE-ANALYSIS — LOCKED CONCLUSIONS (do not re-derive, incorporate exactly)\n`;
       actionable.forEach(ta=>{
-        const voteStr=Object.entries(ta.votes).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
+        const voteStr=Object.entries(ta.votes||{}).filter(([k])=>k!=='NEUTRAL').map(([k,v])=>`${k}:${v}`).join(' vs ');
         msg+=`${ta.matchup} [${ta.surface}]: ${ta.pick_string} | ${ta.confidence} | Votes(${voteStr}) | ${ta.reasoning}\n`;
       });
       msg+='\n';
