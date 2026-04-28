@@ -3238,7 +3238,8 @@ async function generatePicks(force=false){
   if(!force&&todayPicksData?.picks?.length){
     if(!confirm('Today\'s picks already generated. Regenerate and overwrite?'))return;
   }
-  isGenerating=true;renderPicksOverview();
+  isGenerating=true;renderPicksLeaderboard();renderPicksOverview();
+  await new Promise(r=>setTimeout(r,50)); // yield so browser paints loading state before heavy work
   try{
     // Sync from KV + fetch completed scores in parallel before doing anything else
     const [,scoresResult]=await Promise.allSettled([syncFromKV(),fetchCompletedScores()]);
