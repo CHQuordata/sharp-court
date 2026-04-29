@@ -1576,8 +1576,13 @@ function genPicks(g,af,hf,pitchers,weather,ext={}){
       reasons.push(`${b2.nm} is missing ${Math.max(awOut,hmOut)} players (OUT), thinning their rotation against a healthier ${h2.nm}`)}
     if(g.ha>0)reasons.push(`Home-court worth ~${g.ha}pts in ${spName} for ${g.hm.nm}`);
     if(spEdges.length)reasons.push(`Sharp signal: ${spEdges[0].ep.toFixed(1)}% spread edge at ${spEdges[0].bb}`);
-    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);// Only score when L10 unavailable — L10 is the primary signal per policy
-if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)}${(awL10Net!==null&&hmL10Net!==null)?' (context — L10 is primary)':' — season edge'}`)}}}
+    // Season-average net rating fallback — only applies when L10 net is null.
+    // PLAYOFF GUARD: per CLAUDE.md, season averages (including net rating) are
+    // already priced in regular season AND should be ignored entirely in
+    // playoffs. Skip the score adjustment when g.playoff is set; reason text
+    // can still display the data as informational context.
+    if(g.cat==='nba'&&awNba?.netPts!=null&&hmNba?.netPts!=null){const awNet=parseFloat(awNba.netPts),hmNet=parseFloat(hmNba.netPts);if(!isNaN(awNet)&&!isNaN(hmNet)){const nd=hmNet-awNet;if(Math.abs(nd)>=3){const b2=nd>0?g.hm:g.aw,w2=nd>0?g.aw:g.hm,bNet=Math.max(awNet,hmNet),wNet=Math.min(awNet,hmNet);// Only score when L10 unavailable AND not playoffs — L10 is primary, regular-season net is irrelevant in playoffs
+if(!g.playoff&&(awL10Net===null||hmL10Net===null))score+=nd*0.3;reasons.push(`Net rating: ${b2.nm} ${bNet>=0?'+':''}${bNet.toFixed(1)} vs ${w2.nm} ${wNet>=0?'+':''}${wNet.toFixed(1)}${g.playoff?' (regular-season context only — playoff override applies)':(awL10Net!==null&&hmL10Net!==null)?' (context — L10 is primary)':' — season edge'}`)}}}
     // L10 net divergence — what sharp books actually price, not season average.
     // PLAYOFF GUARD: per CLAUDE.md, regular-season L10 net is to be ignored in
     // playoffs (use series margin / series home record / blowout reversion
@@ -2966,6 +2971,20 @@ async function prefetchStatsForPicks(){
 //    Detected via peek-ahead: if the char after " is not a valid JSON continuation
 //    (,  }  ]  :  or end-of-input) it must be an inner quote and gets escaped.
 function _repairJSON(raw){
+  // Best-effort repair for common LLM JSON output defects. This function is
+  // ALWAYS invoked AFTER a vanilla JSON.parse has failed — so its job is to
+  // recover an already-broken response, not to validate clean output. Defects
+  // it handles: stray odds quotes, +digit unsigned numbers, unescaped inner
+  // quotes inside string values, literal control chars in strings.
+  //
+  // Risks: the state machine peeks ahead to distinguish real string endings
+  // from stray inner quotes. It is heuristic — pathological inputs can push
+  // it the wrong way. Telemetry below logs every invocation so we can see
+  // when LLM output is being mended (and if invocation rate spikes, the
+  // upstream prompt or model is producing more malformed output than usual).
+  if(typeof console!=='undefined'&&console.warn){
+    try{console.warn('[_repairJSON] invoked — input length',raw?.length||0)}catch(_){}
+  }
   // Pre-pass: fix LLM habits that break the state machine
   // 1. Missing closing quote on date field: "date": "2026-04-21, → "date": "2026-04-21",
   let s=raw.replace(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2}),/g,'"date":"$1",');
@@ -2973,7 +2992,7 @@ function _repairJSON(raw){
   s=s.replace(/([0-9][+\-])\s*"(\s*[,}\]])/g,'$1$2');
   // 3. Strip +digits (odds written as +220 which is invalid JSON number)
   s=s.replace(/\+(\d)/g,'$1').replace(/,\s*([}\]])/g,'$1');
-  let out='',inStr=false,esc=false;
+  let out='',inStr=false,esc=false,innerQuotesEscaped=0;
   for(let i=0;i<s.length;i++){
     const c=s[i];
     if(esc){out+=c;esc=false;continue}
@@ -2988,13 +3007,21 @@ function _repairJSON(raw){
         if(nxt===''||nxt===','||nxt==='}'||nxt===']'||nxt===':'){
           out+=c;inStr=false; // real string end
         } else {
-          out+='\\"'; // unescaped inner quote — escape it
+          out+='\\"';innerQuotesEscaped++; // unescaped inner quote — escape it
         }
       } else {out+=c;inStr=true;}
       continue;
     }
     if(inStr&&(c==='\n'||c==='\r'||c==='\t')){out+=c==='\n'?'\\n':c==='\r'?'\\r':'\\t';continue}
     out+=c;
+  }
+  // If we escaped a high number of inner quotes, the input was likely badly
+  // mangled — flag it loudly. A normal pick response should have at most a
+  // handful (player names with quotes, e.g. "Carreño"). Double-digit counts
+  // suggest the model emitted malformed JSON wholesale, and the recovered
+  // output may be semantically wrong even if it parses.
+  if(innerQuotesEscaped>=10&&typeof console!=='undefined'&&console.warn){
+    try{console.warn('[_repairJSON] WARNING — escaped',innerQuotesEscaped,'inner quotes; recovered JSON may be semantically wrong; consider re-running pick generation')}catch(_){}
   }
   return out;
 }
@@ -3337,11 +3364,41 @@ async function fetchCompletedScores(){
 }
 
 // ── Auto-grading from scores ──────────────────────────────────────────────────
+// MIRRORS worker/index.js gradePickFromScore. Frontend uses this when grading
+// happens client-side (manual refresh) instead of via the nightly cron. Both
+// paths must use identical logic or graded results diverge between sources.
+// AMBIG_TOKS blacklist eliminates city-prefix collisions ("LA" matching both
+// Lakers and Clippers); findGame requires both matchup sides to map to the
+// same game uniquely.
+const _AMBIG_TOKS_FE=new Set(['la','ny','sf','st','nj','tb','nb','ne','sd','gs','was','wsh','nyc','los','new','san','the']);
+function _normNameFE(s){return(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
+function _findGameFE(matchup,games){
+  const m=_normNameFE(matchup);if(!m)return null;
+  const parts=m.split(/\s+(?:@|vs|v)\s+|\s*,\s*|\s*\|\s*/).filter(Boolean);
+  if(parts.length<2){const alt=m.split(/\s+at\s+/);if(alt.length===2)parts.push(...alt)}
+  if(parts.length<2)return null;
+  const[s1,s2]=parts;
+  const _toks=s=>s.split(/\s+/).filter(w=>w.length>=3&&!_AMBIG_TOKS_FE.has(w));
+  const sideMatches=(side,team)=>{const t=_normNameFE(team);const sT=_toks(side);if(sT.some(w=>t.includes(w)))return true;const tL=t.split(/\s+/).pop();return!!(tL&&tL.length>=3&&!_AMBIG_TOKS_FE.has(tL)&&side.includes(tL))};
+  const cand=games.filter(g=>(sideMatches(s1,g.home_team)&&sideMatches(s2,g.away_team))||(sideMatches(s1,g.away_team)&&sideMatches(s2,g.home_team)));
+  return cand.length===1?cand[0]:null;
+}
+function _pickSideHomeFE(pickStr,game){
+  const ht=_normNameFE(game.home_team),at=_normNameFE(game.away_team),p=_normNameFE(pickStr);
+  const words=p.split(/\s+/).filter(w=>w.length>=3&&!_AMBIG_TOKS_FE.has(w));
+  const inH=words.some(w=>ht.includes(w)),inA=words.some(w=>at.includes(w));
+  if(inH&&!inA)return true;if(inA&&!inH)return false;
+  const hL=ht.split(/\s+/).pop(),aL=at.split(/\s+/).pop();
+  if(hL&&hL.length>=3&&!_AMBIG_TOKS_FE.has(hL)&&p.includes(hL))return true;
+  if(aL&&aL.length>=3&&!_AMBIG_TOKS_FE.has(aL)&&p.includes(aL))return false;
+  return null;
+}
 function gradePickFromScore(pick,games){
-  const pt=pick.pick||'',matchup=(pick.matchup||'').toLowerCase();
-  const tokens=matchup.split(/[\s@,|vs.]+/).filter(t=>t.length>=3);
-  const game=games.find(g=>{const ht=g.home_team.toLowerCase(),at=g.away_team.toLowerCase();return tokens.some(t=>ht.includes(t)||at.includes(t))});
+  const pt=pick.pick||'',matchup=pick.matchup||'';
+  const game=_findGameFE(matchup,games);
   if(!game?.scores?.length)return null;
+  // Tennis routes through dedicated grader regardless of score format
+  if((pick.sport||'').toLowerCase()==='tennis')return _gradeTennisPickFE(pick,game);
   const homeS=parseFloat(game.scores.find(s=>s.name===game.home_team)?.score??'NaN');
   const awayS=parseFloat(game.scores.find(s=>s.name===game.away_team)?.score??'NaN');
   if(isNaN(homeS)||isNaN(awayS))return null;
@@ -3354,28 +3411,69 @@ function gradePickFromScore(pick,games){
     if(Math.abs(c-n)<0.01)return'P';
     return(ptL.includes('over')?c>n:c<n)?'W':'L';
   }
-  // Spread: "Team -3.5 (-110)"
-  const spM=pt.match(/^(.+?)\s+([+-]\d+\.?\d*)\s*\(/);
+  // Spread — widened regex accepts "+0", ".5", and decimal-only spreads
+  const spM=pt.match(/^(.+?)\s+([+-]?\d*\.?\d+)\s*\(/);
   if(spM){
-    const toks=spM[1].trim().toLowerCase().split(/\s+/).filter(t=>t.length>=3),spread=parseFloat(spM[2]);
-    const isHome=toks.some(t=>game.home_team.toLowerCase().includes(t));
-    const isAway=!isHome&&toks.some(t=>game.away_team.toLowerCase().includes(t));
-    if(!isHome&&!isAway)return null;
+    const spread=parseFloat(spM[2]);if(isNaN(spread))return null;
+    const isHome=_pickSideHomeFE(spM[1],game);if(isHome===null)return null;
     const margin=(isHome?homeS-awayS:awayS-homeS)+spread;
     if(Math.abs(margin)<0.01)return'P';
     return margin>0?'W':'L';
   }
-  // ML: "Team ML (-150)" or "Team (-220)"
   const mlM=pt.match(/^(.+?)\s+(?:ML\s*)?[(+-]?(\d{3,})/i);
   if(mlM){
-    const toks=mlM[1].trim().toLowerCase().split(/\s+/).filter(t=>t.length>=3);
-    const isHome=toks.some(t=>game.home_team.toLowerCase().includes(t));
-    const isAway=!isHome&&toks.some(t=>game.away_team.toLowerCase().includes(t));
-    if(!isHome&&!isAway)return null;
+    const isHome=_pickSideHomeFE(mlM[1],game);if(isHome===null)return null;
     const pS=isHome?homeS:awayS,oS=isHome?awayS:homeS;
     if(pS===oS)return'P';
     return pS>oS?'W':'L';
   }
+  return null;
+}
+// Tennis grader — same logic as worker/index.js gradeTennisPick
+function _parseTennisFE(game){
+  const s1=game.scores?.find(s=>s.name===game.home_team),s2=game.scores?.find(s=>s.name===game.away_team);
+  if(!s1||!s2)return null;
+  const r1=String(s1.score||'').trim(),r2=String(s2.score||'').trim();
+  const isPerSet=/[,\s;]/.test(r1)||/[,\s;]/.test(r2);
+  if(isPerSet){
+    const ps=s=>s.split(/[,\s;]+/).filter(Boolean).map(g=>{const ld=String(g).match(/^\d+/);return ld?parseInt(ld[0],10):null}).filter(n=>n!==null&&!isNaN(n));
+    const hG=ps(r1),aG=ps(r2);if(!hG.length||!aG.length)return null;
+    const ht=hG.reduce((a,b)=>a+b,0),at=aG.reduce((a,b)=>a+b,0);
+    const len=Math.min(hG.length,aG.length);let hS=0,aS=0;
+    for(let i=0;i<len;i++){if(hG[i]>aG[i])hS++;else if(aG[i]>hG[i])aS++}
+    return{hasGameDetail:true,homeGames:ht,awayGames:at,homeSets:hS,awaySets:aS};
+  }
+  const l1=r1.match(/^\d+/),l2=r2.match(/^\d+/);if(!l1||!l2)return null;
+  const n1=parseInt(l1[0],10),n2=parseInt(l2[0],10);if(isNaN(n1)||isNaN(n2))return null;
+  return{hasGameDetail:false,homeSets:n1,awaySets:n2};
+}
+function _gradeTennisPickFE(pick,game){
+  const pt=pick.pick||'',ptL=pt.toLowerCase();
+  const ts=_parseTennisFE(game);if(!ts)return null;
+  const hW=ts.homeSets>ts.awaySets,aW=ts.awaySets>ts.homeSets;if(!hW&&!aW)return null;
+  if(ptL.includes('over')||ptL.includes('under')){
+    if(!ts.hasGameDetail)return null;
+    const n=parseFloat((pt.match(/(\d+\.?\d*)/)||[])[1]||'NaN');if(isNaN(n))return null;
+    const c=ts.homeGames+ts.awayGames;if(Math.abs(c-n)<0.01)return'P';
+    return(ptL.includes('over')?c>n:c<n)?'W':'L';
+  }
+  const spG=pt.match(/^(.+?)\s+([+-]?\d*\.?\d+)\s+games?\s*\(/i);
+  if(spG){
+    if(!ts.hasGameDetail)return null;
+    const sp=parseFloat(spG[2]);if(isNaN(sp))return null;
+    const iH=_pickSideHomeFE(spG[1],game);if(iH===null)return null;
+    const m=(iH?ts.homeGames-ts.awayGames:ts.awayGames-ts.homeGames)+sp;
+    if(Math.abs(m)<0.01)return'P';return m>0?'W':'L';
+  }
+  const spS=pt.match(/^(.+?)\s+([+-]?\d*\.?\d+)\s+sets?\s*\(/i);
+  if(spS){
+    const sp=parseFloat(spS[2]);if(isNaN(sp))return null;
+    const iH=_pickSideHomeFE(spS[1],game);if(iH===null)return null;
+    const m=(iH?ts.homeSets-ts.awaySets:ts.awaySets-ts.homeSets)+sp;
+    if(Math.abs(m)<0.01)return'P';return m>0?'W':'L';
+  }
+  const mlM=pt.match(/^(.+?)\s+(?:ML\s*)?\(?[+-]?(\d{3,})/i);
+  if(mlM){const iH=_pickSideHomeFE(mlM[1],game);if(iH===null)return null;return(iH?hW:aW)?'W':'L'}
   return null;
 }
 function autoGradeFromScores(completedGames){

@@ -265,6 +265,101 @@ describe('calcEV', () => {
     expect(result?.bk).toBe('Pinnacle');
     expect(result?.bp).toBe(120);
   });
+
+  // ── NaN / degenerate-input guards ──
+  test('returns null when all pick-side prices are zero (data corruption)', () => {
+    const game = makeGame([
+      makeBook('Pinnacle', [makeMarket('h2h', [makeOutcome('A', 0), makeOutcome('B', -110)])]),
+      makeBook('FanDuel',  [makeMarket('h2h', [makeOutcome('A', 0), makeOutcome('B', -110)])]),
+    ]);
+    expect(calcEV(game, 'h2h', 'A')).toBeNull();
+  });
+
+  test('returns null when prices are NaN', () => {
+    const game = makeGame([
+      makeBook('Pinnacle', [makeMarket('h2h', [makeOutcome('A', NaN), makeOutcome('B', -110)])]),
+      makeBook('FanDuel',  [makeMarket('h2h', [makeOutcome('A', NaN), makeOutcome('B', -110)])]),
+    ]);
+    expect(calcEV(game, 'h2h', 'A')).toBeNull();
+  });
+
+  test('returns null when prices are Infinity (corrupted upstream)', () => {
+    const game = makeGame([
+      makeBook('Pinnacle', [makeMarket('h2h', [makeOutcome('A', Infinity), makeOutcome('B', -110)])]),
+      makeBook('FanDuel',  [makeMarket('h2h', [makeOutcome('A', Infinity), makeOutcome('B', -110)])]),
+    ]);
+    expect(calcEV(game, 'h2h', 'A')).toBeNull();
+  });
+
+  test('survives mixed valid + invalid prices (filters out the bad ones)', () => {
+    // Pinnacle has a valid +120 quote, FanDuel has a corrupt 0 — calcEV
+    // should use the valid Pinnacle line and ignore FanDuel's bad data
+    const game = makeGame([
+      makeBook('Pinnacle', [makeMarket('h2h', [makeOutcome('A', 120), makeOutcome('B', -150)])]),
+      makeBook('FanDuel',  [makeMarket('h2h', [makeOutcome('A', 0),   makeOutcome('B', -110)])]),
+      makeBook('DraftKings', [makeMarket('h2h', [makeOutcome('A', -110),makeOutcome('B', -110)])]),
+    ]);
+    const result = calcEV(game, 'h2h', 'A');
+    expect(result).not.toBeNull();
+    expect(Number.isFinite(result.ev)).toBe(true);
+  });
+});
+
+// ── SHARP_BOOKS override mechanism ───────────────────────────────────────────
+describe('getBookTier with localStorage overrides', () => {
+  // Stub localStorage for node test environment
+  const stubLS = (data = {}) => {
+    globalThis.localStorage = {
+      getItem: k => k in data ? data[k] : null,
+      setItem: (k, v) => { data[k] = v; },
+      removeItem: k => { delete data[k]; },
+    };
+  };
+  const clearLS = () => { delete globalThis.localStorage; };
+
+  test('add override promotes a previously-square book to sharp', async () => {
+    stubLS({ 'et_sharp_books_add': JSON.stringify(['NewSharp']) });
+    // Re-import to pick up the override (signals.js reads localStorage at call time, not import)
+    const { getBookTier } = await import('../../lib/signals.js');
+    expect(getBookTier('NewSharp')).toBe('sharp');
+    clearLS();
+  });
+
+  test('remove override demotes Pinnacle from sharp', async () => {
+    stubLS({ 'et_sharp_books_remove': JSON.stringify(['Pinnacle']) });
+    const { getBookTier } = await import('../../lib/signals.js');
+    expect(getBookTier('Pinnacle')).toBe('square');
+    clearLS();
+  });
+
+  test('malformed JSON in override is ignored gracefully', async () => {
+    stubLS({ 'et_sharp_books_add': 'not valid json {' });
+    const { getBookTier } = await import('../../lib/signals.js');
+    // Should still classify Pinnacle as sharp (default list intact)
+    expect(getBookTier('Pinnacle')).toBe('sharp');
+    clearLS();
+  });
+
+  test('non-array JSON is ignored gracefully', async () => {
+    stubLS({ 'et_sharp_books_add': '{"not": "an array"}' });
+    const { getBookTier } = await import('../../lib/signals.js');
+    expect(getBookTier('Pinnacle')).toBe('sharp');
+    clearLS();
+  });
+
+  test('lowvig override works the same way', async () => {
+    stubLS({ 'et_lowvig_books_remove': JSON.stringify(['Unibet']) });
+    const { getBookTier } = await import('../../lib/signals.js');
+    expect(getBookTier('Unibet')).toBe('square');
+    clearLS();
+  });
+
+  test('no localStorage available (server-side) falls back to defaults', async () => {
+    clearLS();
+    const { getBookTier } = await import('../../lib/signals.js');
+    expect(getBookTier('Pinnacle')).toBe('sharp');
+    expect(getBookTier('FanDuel')).toBe('square');
+  });
 });
 
 // ── getLineRange ──────────────────────────────────────────────────────────────
