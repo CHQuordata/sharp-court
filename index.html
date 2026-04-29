@@ -1486,7 +1486,16 @@ async function selGame(idx){
     // generic "try again" text leaves us blind to root cause. Also includes
     // game context so we know which matchup triggered it.
     console.error('[selGame] render failed for',g?.aw?.nm,'vs',g?.hm?.nm,'(',g?.cat,'):',e?.stack||e?.message||e);
-    el.innerHTML=`<div class="detail-empty" style="color:var(--red)">Error loading matchup. Try clicking again.<div style="font-size:9px;color:var(--t4);margin-top:8px;font-family:var(--mono)">${(e?.message||e||'unknown').toString().slice(0,200)}</div><div style="font-size:8px;color:var(--t4);margin-top:4px">Open DevTools console for full stack trace</div></div>`;
+    // Show first 5 stack frames inline so the line number is visible without
+    // opening DevTools. Escape HTML so error text containing < > doesn't break
+    // the panel rendering itself.
+    const _esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const _stk=(e?.stack||'').split('\n').slice(0,6).map(_esc).join('<br>');
+    el.innerHTML=`<div class="detail-empty" style="color:var(--red);text-align:left;padding:16px">
+      <div style="margin-bottom:8px;font-weight:700">Error loading matchup. Try clicking again.</div>
+      <div style="font-size:10px;color:var(--amb);margin-bottom:8px;font-family:var(--mono);word-break:break-all">${_esc(e?.message||e||'unknown')}</div>
+      <div style="font-size:9px;color:var(--t3);font-family:var(--mono);line-height:1.4;background:var(--bg2);padding:8px;border-radius:3px;overflow-x:auto;white-space:nowrap">${_stk||'(no stack)'}</div>
+    </div>`;
   }
 }
 
