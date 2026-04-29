@@ -149,6 +149,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
 /* ── Mobile back button (hidden on desktop) ── */
 .mob-back-btn{display:none}
 .mob-edges-btn{display:none}
+.mob-bets-btn{display:none}
 /* ── Track button on game rows ── */
 .track-btn{background:none;border:none;cursor:pointer;padding:2px 5px;font-size:11px;color:var(--t4);line-height:1;flex-shrink:0;border-radius:3px;transition:color .15s}
 .track-btn:hover{color:var(--amb)}
@@ -200,9 +201,19 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     gap:6px;
     overflow-x:auto;
     scrollbar-width:none;
-    min-height:30px
+    min-height:30px;
+    /* Right-edge fade hints there's more content to scroll to. Without this,
+       mobile users on narrow phones (<360px) don't realize 💰 BETS / BANKROLL
+       are reachable by scrolling the topbar. */
+    -webkit-mask-image:linear-gradient(to right,#000 0,#000 calc(100% - 24px),transparent 100%);
+    mask-image:linear-gradient(to right,#000 0,#000 calc(100% - 24px),transparent 100%)
   }
   .topbar-row2::-webkit-scrollbar{display:none}
+  /* Mobile-priority action buttons (EDGES, BETS) get reordered to appear
+     BEFORE the long-form API status buttons. Discoverability — users see
+     the betting-action buttons without scrolling. */
+  .mob-edges-btn{order:-2}
+  .mob-bets-btn{order:-1}
 
   /* Logo smaller on mobile */
   .logo{font-size:11px;letter-spacing:1px;white-space:nowrap}
@@ -230,6 +241,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   .topbar-div{display:none}
   /* Show edges button only on mobile */
   .mob-edges-btn{display:inline-flex}
+  .mob-bets-btn{display:inline-flex}
   /* topbar-sp spacer not needed on mobile */
   .topbar-sp{display:none}
 
@@ -376,8 +388,11 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   .sc-panel{min-width:unset;width:92vw;max-width:360px;padding:16px 20px}
 
   /* ── Confidence filter row: tighter on mobile ── */
-  #confFilterRow{padding:4px 8px;gap:3px}
-  #confFilterRow button{font-size:clamp(11px,2.9vw,12px);padding:4px 8px}
+  #confFilterRow{padding:6px 8px;gap:4px}
+  /* Bumped padding 4px→8px and added explicit min-height to clear the 44px
+     iOS/Android touch-target guideline. Without this, ALL/HIGH/MED/PICKED
+     buttons render at ~19px tall and adjacent taps mis-register. */
+  #confFilterRow button{font-size:clamp(11px,2.9vw,12px);padding:8px 10px;min-height:36px;display:inline-flex;align-items:center}
 
   /* ── Generate button: larger tap target ── */
   .gen-btn{font-size:clamp(14px,3.6vw,15px);padding:11px 18px}
@@ -451,6 +466,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <button class="tb-btn" onclick="refreshAll()">SCAN <span class="kbd">R</span></button>
     <button class="tb-btn" onclick="refreshAll(true)" style="color:var(--amb)">ODDS ↻</button>
     <button class="tb-btn mob-edges-btn" onclick="showEdgesMob()" style="color:var(--grn);border-color:rgba(0,230,118,.3)">⚡ EDGES</button>
+    <button class="tb-btn mob-bets-btn" onclick="showMyBetsMob()" style="color:var(--cyn);border-color:rgba(0,200,255,.3)">💰 BETS</button>
     <div class="topbar-div"></div><button class="tb-btn" id="bankrollBtn" onclick="showBankroll()" style="color:var(--amb)">BANKROLL</button>
   </div>
 </div>
@@ -498,6 +514,22 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
       </div>
     </div>
     <div id="edgesMobList" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+  </div>
+</div>
+<div class="modal-ov" id="myBetsMobModal" style="display:none;align-items:flex-start;padding-top:0">
+  <div style="width:100%;max-width:100%;height:100svh;background:var(--bg0);display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bdr);flex-shrink:0">
+      <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--cyn);letter-spacing:.5px">💰 MY BETS</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button onclick="$('myBetsMobModal').style.display='none';showLogBetModal()" class="tb-btn" style="color:var(--cyn);border-color:rgba(0,200,255,.3);font-size:9px">+ LOG BET</button>
+        <button onclick="$('myBetsMobModal').style.display='none'" style="background:none;border:1px solid var(--bdr);color:var(--t2);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <div id="myBetsMobBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--bdr);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--t4);letter-spacing:.5px">
+      <span id="myBetsMobSummary"></span>
+      <span>tap badge to cycle W/L/P/?</span>
+    </div>
   </div>
 </div>
 <div class="modal-ov" id="parlayModal" style="display:none"><div class="modal" style="max-width:500px;padding:0;display:flex;flex-direction:column;max-height:90vh"><div style="padding:20px 24px 12px;flex-shrink:0"><div class="modal-title" style="color:var(--grn)">⚡ SHARP PARLAY BUILDER</div><div class="modal-sub" style="margin-bottom:0">Pinnacle-only legs · today's games · one leg per matchup</div></div><div id="parlayContent" style="margin-top:0;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 24px"></div><div style="padding:12px 24px 20px;flex-shrink:0;border-top:1px solid var(--bdr)"><button class="modal-btn" style="margin-top:0" onclick="$('parlayModal').style.display='none'">CLOSE</button></div></div></div>
@@ -1494,12 +1526,21 @@ function _tnRenderRate(){
   const rem=_tnRate.remaining,lim=_tnRate.limit;
   if(rem==null){el.textContent='TN READY';return}
   const pct=lim>0?(rem/lim)*100:100;
-  el.textContent=`TN ${rem.toLocaleString()}${lim>0?'/'+lim.toLocaleString():''}`;
+  // Compact label on mobile (< 768px) — just the count, no /limit suffix and
+  // no warning text. The dot color still conveys state visually. Full label
+  // on desktop where the topbar has plenty of room.
+  const isMobile=typeof window!=='undefined'&&window.innerWidth<=768;
+  const compactNum=rem>=1000?Math.round(rem/100)/10+'k':rem.toLocaleString();
+  if(isMobile){
+    el.textContent=`TN ${compactNum}`;
+  } else {
+    el.textContent=`TN ${rem.toLocaleString()}${lim>0?'/'+lim.toLocaleString():''}`;
+  }
   // Visual warning when running low
   if(dot){
     dot.classList.remove('warn','exhausted');
-    if(rem===0||(lim>0&&pct<5)){dot.classList.add('exhausted');el.textContent+=' ⚠ EXHAUSTED'}
-    else if(lim>0&&pct<15){dot.classList.add('warn');el.textContent+=' ⚠ LOW'}
+    if(rem===0||(lim>0&&pct<5)){dot.classList.add('exhausted');if(!isMobile)el.textContent+=' ⚠ EXHAUSTED';else el.textContent+=' ⚠'}
+    else if(lim>0&&pct<15){dot.classList.add('warn');if(!isMobile)el.textContent+=' ⚠ LOW';else el.textContent+=' ⚠'}
   }
 }
 // Wrap fetch to auto-capture rate-limit headers from any TN-host call.
@@ -2291,6 +2332,43 @@ function showEdgesMob(){
   const btn=$('sharpOnlyBtnMob');if(btn)btn.classList.toggle('sharp-on',cSharpOnly);
   $('edgesMobModal').style.display='flex';
 }
+// Mobile MY BETS modal — gives mobile users access to bet logging and the
+// running bet history without needing to navigate into the detail panel.
+// Reuses renderMyBetsSection() so format stays identical to desktop. The
+// LOG BET button in the header chains into the existing logBetModal.
+function showMyBetsMob(){
+  const body=$('myBetsMobBody'),summary=$('myBetsMobSummary');
+  const html=renderMyBetsSection();
+  if(!html){
+    body.innerHTML=`<div style="padding:32px 20px;text-align:center;color:var(--t4)">
+      <div style="font-size:32px;opacity:.3;margin-bottom:12px">💰</div>
+      <div style="font-size:12px;letter-spacing:1px;color:var(--t2);margin-bottom:8px">NO BETS LOGGED</div>
+      <div style="font-size:10px;line-height:1.7;max-width:280px;margin:0 auto">Tap <strong style="color:var(--cyn)">+ LOG BET</strong> above to record a bet. Wins and losses count toward your permanent record and feed the learning agent.</div>
+    </div>`;
+    if(summary)summary.textContent='';
+  }else{
+    body.innerHTML=html;
+    // Compute and show running totals at the bottom for quick at-a-glance review
+    const bets=getAllManualBets();
+    const w=bets.filter(b=>b.result==='W').length,l=bets.filter(b=>b.result==='L').length,p=bets.filter(b=>b.result==='P').length,q=bets.filter(b=>!b.result||b.result==='?').length;
+    const wagerTotal=bets.reduce((s,b)=>s+(b.wager||0),0);
+    const profit=bets.reduce((s,b)=>{
+      if(b.result==='W'&&b.payout&&b.wager)return s+(b.payout-b.wager);
+      if(b.result==='L'&&b.wager)return s-b.wager;
+      return s;
+    },0);
+    const profitClr=profit>0?'var(--grn)':profit<0?'var(--red)':'var(--t3)';
+    if(summary)summary.innerHTML=`${w}W-${l}L${p?'-'+p+'P':''}${q?' · '+q+' pending':''}${wagerTotal>0?` · <span style="color:${profitClr}">${profit>=0?'+':''}$${profit.toFixed(0)}</span>`:''}`;
+  }
+  $('myBetsMobModal').style.display='flex';
+}
+// Helper: refresh the mobile bets modal if it's currently visible. Called
+// from saveLoggedBet and cycleManualBetResult so adds/edits reflect live
+// without the user needing to close + reopen.
+function _refreshMyBetsMobIfOpen(){
+  const modal=$('myBetsMobModal');
+  if(modal&&modal.style.display==='flex')showMyBetsMob();
+}
 function jumpTo(id){
   const g=allG.find(x=>x.id===id);if(!g)return;
   // Switch sport tab and date filter if needed so the game is in fG
@@ -2433,6 +2511,7 @@ function saveLoggedBet(){
   if(['W','L','P'].includes(result))updateCumulativeRecord();
   renderDashboardStats();
   renderPicksLeaderboard();renderPicksOverview();_updateConfFilterAvailability();
+  _refreshMyBetsMobIfOpen();
   $('logBetModal').style.display='none';
   $('lbPick').value='';$('lbWager').value='';$('lbPayout').value='';
 }
@@ -2585,6 +2664,7 @@ function cycleManualBetResult(encodedLogged){
   if(b){b.result=cycle[b.result]||'?';
     localStorage.setItem('et_manual_bets',JSON.stringify(bets));
     updateCumulativeRecord();renderDashboardStats();renderPicksOverview();
+    _refreshMyBetsMobIfOpen();
   }
 }
 
