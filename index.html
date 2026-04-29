@@ -646,11 +646,34 @@ function mkAthlete(p){
 }
 
 // ── Action Network: public betting splits (bet% + money%) ──
+// Session-level negative cache for external fetches that return expected
+// failures (404 = no data for this date, 400 = endpoint doesn't cover this
+// event, 422 = sport out of season). Caches failed URL keys for the session
+// so we don't re-fire requests we know will fail. Keys are cheap strings;
+// memory cost is negligible.
+//
+// Browser console always logs the FIRST failed fetch (we can't suppress that
+// from JS), but the cache prevents subsequent re-fires. So a SCAN that used
+// to log 5 same 422s from the same sport now logs only 1.
+const _negFetchCache=new Map();
+const _NEG_TTL=24*60*60*1000; // 24h — long enough to absorb day-long sessions
+function _negCacheGet(key){
+  const v=_negFetchCache.get(key);
+  if(!v)return null;
+  if(Date.now()-v.ts>_NEG_TTL){_negFetchCache.delete(key);return null}
+  return v;
+}
+function _negCacheSet(key,status){_negFetchCache.set(key,{status,ts:Date.now()})}
+
 async function fetchActionNetworkSplits(){
   try{
     const dt=new Date().toISOString().split('T')[0];
+    const cacheKey=`an:nba:${dt}`;
+    // Skip request entirely if we already know this date returns 404
+    // (no NBA splits available — common on off days, niche dates)
+    if(_negCacheGet(cacheKey))return;
     const r=await fetch(`https://api.actionnetwork.com/web/v1/games?sport=NBA&date=${dt}`,{signal:AbortSignal.timeout(6000)});
-    if(!r.ok)return;
+    if(!r.ok){if(r.status===404||r.status>=400)_negCacheSet(cacheKey,r.status);return}
     const d=await r.json();
     (d.games||[]).forEach(ag=>{
       const awNm=(ag.away_team?.full_name||ag.away_team?.name||'').toLowerCase();
@@ -695,11 +718,24 @@ async function oddsFetch(sk,force=false){
   if(!AK)return[];
   const cached=_oddsCache.get(sk);
   if(!force&&cached&&(Date.now()-cached.ts)<ODDS_TTL)return cached.data;
+  // Skip request entirely if we recently got a 4xx for this sport (out of
+  // season, unsupported market combo, etc.) — caching the negative result
+  // prevents every SCAN from re-firing the same failing request.
+  const negKey=`odds:${sk}`;
+  if(!force&&_negCacheGet(negKey))return cached?.data||[];
   const now=new Date(),tmrw=new Date(now);tmrw.setDate(now.getDate()+2);
   const tf=now.toISOString().split('T')[0]+'T00:00:00Z',tt=tmrw.toISOString().split('T')[0]+'T23:59:59Z';
   const mkts=getSportMarkets(sk);
   try{const r=await fetch(`https://api.the-odds-api.com/v4/sports/${sk}/odds/?apiKey=${AK}&bookmakers=${ODDS_BOOKS}&markets=${mkts}&oddsFormat=american&commenceTimeFrom=${tf}&commenceTimeTo=${tt}`);
-  if(!r.ok){if(r.status===429){$('apiDot').classList.remove('ok');$('apiSt').textContent='Rate limited'}else if(r.status===401&&!_oddsEverOk){$('apiDot').classList.remove('ok');$('apiSt').textContent='Invalid key'}/* all other errors (401 after confirmed, 422 unsupported market, etc.) silent */;return cached?.data||[];}
+  if(!r.ok){
+    if(r.status===429){$('apiDot').classList.remove('ok');$('apiSt').textContent='Rate limited'}
+    else if(r.status===401&&!_oddsEverOk){$('apiDot').classList.remove('ok');$('apiSt').textContent='Invalid key'}
+    // Cache 4xx responses (except 429 rate-limit which is transient and 401
+    // which is auth, not "won't work for this sport"). 422 = unsupported
+    // sport/markets, 400 = bad request, 404 = sport doesn't exist.
+    else if(r.status===422||r.status===400||r.status===404)_negCacheSet(negKey,r.status);
+    return cached?.data||[];
+  }
   const rem=r.headers.get('x-requests-remaining');if(rem!=null){_oddsEverOk=true;$('apiCalls').textContent=`${parseInt(rem).toLocaleString()} calls left`;$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
   const data=await r.json();_oddsCache.set(sk,{data,ts:Date.now()});return data;}catch(e){return cached?.data||[]}}
 
@@ -1723,10 +1759,18 @@ async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{
   const sig=()=>({signal:AbortSignal.timeout(7000)});
   // ESPN summary endpoint requires a real numeric competition ID. Tennis IDs
   // synthesized at slate-load (e.g. "wta_12345_0") will 400 on ESPN. Skip the
-  // summary fetch for non-numeric IDs to avoid console noise.
+  // summary fetch for non-numeric IDs to avoid console noise. ALSO skip if
+  // the event ID has previously returned 400 — many real ESPN tennis events
+  // (qualifiers, lower-tier matches) just don't have summary endpoints, and
+  // re-querying the same ID on every match click was logging duplicates.
   const isNumericId=gid&&/^\d+$/.test(String(gid));
-  const sumPromise=isNumericId
-    ?fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`,sig()).then(r=>r.ok?r.json():null).catch(()=>null)
+  const sumCacheKey=`espn:tn:${sp}:${gid}`;
+  const sumNeg=_negCacheGet(sumCacheKey);
+  const sumPromise=(isNumericId&&!sumNeg)
+    ?fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`,sig()).then(r=>{
+      if(!r.ok){if(r.status>=400)_negCacheSet(sumCacheKey,r.status);return null}
+      return r.json();
+    }).catch(()=>null)
     :Promise.resolve(null);
   const[sum,awNews,hmNews]=await Promise.all([
     sumPromise,
