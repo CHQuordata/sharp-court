@@ -2416,7 +2416,16 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
       // Sparse-data AI hint: instruct LLM to fill in from training knowledge
       const _awHasDb=!!(tc?.awSurf||tnGameCache.get(g.id)?.awData||(tennisForm.get(String(g.aw.id))?.length));
       const _hmHasDb=!!(tc?.hmSurf||tnGameCache.get(g.id)?.hmData||(tennisForm.get(String(g.hm.id))?.length));
-      if(!_awHasDb||!_hmHasDb){const _sp=[!_awHasDb?g.aw.nm:null,!_hmHasDb?g.hm.nm:null].filter(Boolean);ctx+=`  [LIMITED DATA — ${_sp.join(', ')}: not in stats DB. Use ranking position and market pricing as primary signals only. Do not speculate about surface record, playing style, or results not present in the data above.]\n`}}
+      if(!_awHasDb||!_hmHasDb){const _sp=[!_awHasDb?g.aw.nm:null,!_hmHasDb?g.hm.nm:null].filter(Boolean);ctx+=`  [LIMITED DATA — ${_sp.join(', ')}: not in stats DB. Use ranking position and market pricing as primary signals only. Do not speculate about surface record, playing style, or results not present in the data above.]\n`}
+      // Critical data check: per CLAUDE.md, RetWon% / BPconv% are top-priority tennis signals.
+      // If matchstat live stats are blank for either player, flag loudly so the LLM downgrades
+      // confidence and does NOT silently drop the pick under the algo threshold floor.
+      {const _tng=tnGameCache.get(g.id);
+        const _hasRet=d=>{if(!d)return false;const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};return (parseInt(st.breakPointOpportunitiesGm||0)>0)||(parseInt(st.returnPointsTotalGm||st.returnPointsOfGm||st.returnGamesGm||0)>0)};
+        const _awHasRet=_hasRet(_tng?.awData),_hmHasRet=_hasRet(_tng?.hmData);
+        if(!_awHasRet||!_hmHasRet){const _miss=[!_awHasRet?g.aw.nm:null,!_hmHasRet?g.hm.nm:null].filter(Boolean);
+          ctx+=`  [CRITICAL DATA MISSING — RetWon%/BPconv% blank for: ${_miss.join(', ')}. These are top-priority tennis signals per house policy. DO NOT silently drop this match. If algo confidence is borderline, route to MANUAL REVIEW with an explicit "missing return-game data" note rather than producing a low-confidence pick or dropping below threshold.]\n`}
+      }}
     if(g.odds?.bookmakers?.length){const bks=g.odds.bookmakers;
       // Consensus ML — best price per side across all books
       const mlAll={};bks.forEach(b=>{const m=b.markets.find(x=>x.key==='h2h');if(m)m.outcomes.forEach(o=>{if(!mlAll[o.name]||o.price>mlAll[o.name])mlAll[o.name]=o.price})});
@@ -2780,15 +2789,21 @@ async function prefetchStatsForPicks(){
       }
       if(g.cat==='tennis'){
         if(!tennisCache.has(g.id)){
-          const h2h=await fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm);
-          if(h2h)cSet(tennisCache,g.id,h2h);
+          try{const h2h=await fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm);
+            if(h2h)cSet(tennisCache,g.id,h2h);
+            else console.warn('[TN] H2H/Sackmann empty:',g.aw.nm,'vs',g.hm.nm);
+          }catch(e){console.warn('[TN] H2H fetch failed:',g.aw.nm,'vs',g.hm.nm,e?.message||e)}
         }
         if(TN_API_KEY&&!tnGameCache.has(g.id)){
-          const pair=await fetchTNPlayerPair(g.sp,g.aw.nm,g.hm.nm);
-          if(pair)cSet(tnGameCache,g.id,{awData:pair.awData,hmData:pair.hmData});
+          try{const pair=await fetchTNPlayerPair(g.sp,g.aw.nm,g.hm.nm);
+            if(pair){cSet(tnGameCache,g.id,{awData:pair.awData,hmData:pair.hmData});
+              if(!pair.awData)console.warn('[TN] matchstat blank for:',g.aw.nm);
+              if(!pair.hmData)console.warn('[TN] matchstat blank for:',g.hm.nm);
+            }else console.warn('[TN] matchstat pair missing:',g.aw.nm,'vs',g.hm.nm);
+          }catch(e){console.warn('[TN] matchstat fetch failed:',g.aw.nm,'vs',g.hm.nm,e?.message||e)}
         }
       }
-    }catch(e){}
+    }catch(e){console.warn('[FETCH] outer fail',g?.aw?.nm,'vs',g?.hm?.nm,e?.message||e)}
   };
   // Hard 15s cap — tennis fetches add latency (H2H CSV + RapidAPI pair lookups)
   await Promise.race([
