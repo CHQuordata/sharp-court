@@ -1610,6 +1610,18 @@ if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2
     if(awOut+hmOut>=4){reasons.push(`${awOut+hmOut} combined players out could slow pace and depress scoring`);ts2-=0.8}
     if(toEdges.length){reasons.push(`${toEdges[0].ep.toFixed(1)}% total edge at ${toEdges[0].bb} on ${toEdges[0].side}`);ts2+=toEdges[0].side.toLowerCase().includes('over')?1:-1}
     // ── Probable pitchers (MLB) ──
+    // Per CLAUDE.md MLB policy: ERA + WHIP combo is critical, K/9 only valid
+    // with ERA confirmation. ESPN returns '--' for missing stats, parseFloat
+    // returns NaN, NaN||4.2 silently substitutes league average — DANGEROUS
+    // because it mints phantom signals. We still apply defaults to keep the
+    // pipeline running, but track the gap and route the pick to REVIEW if the
+    // non-SP score is weak.
+    var _mlbSPGap=false;
+    if(pitchers&&g.cat==='mlb'){const ap=pitchers.away,hp=pitchers.home;
+      const _spOk=p=>p&&p.era&&p.era!=='--'&&!isNaN(parseFloat(p.era))&&p.whip&&p.whip!=='--'&&!isNaN(parseFloat(p.whip));
+      _mlbSPGap=!_spOk(ap)||!_spOk(hp);
+      if(_mlbSPGap)console.warn('[MLB] SP data partial/missing:',g.aw.nm,'@',g.hm.nm,'| aw:',ap?.name||'TBD',ap?.era||'no ERA','| hm:',hp?.name||'TBD',hp?.era||'no ERA');
+    }
     if(pitchers&&g.cat==='mlb'){const ap=pitchers.away,hp=pitchers.home;if(ap||hp){const aEra=parseFloat(ap?.era)||4.2,hEra=parseFloat(hp?.era)||4.2;const combined=aEra+hEra;const adj=(combined-8.4)*0.3;ts2+=adj;
       // K/9 signal: requires ERA context per policy — high K alone doesn't suppress runs
       const aK=parseFloat(ap?.k9)||8.0,hK=parseFloat(hp?.k9)||8.0;const combK=(aK+hK)/2;if(combK>=9.5&&combined<=8.5){ts2-=0.8;reasons.push(`High-K/low-ERA duel: ${ap?.name||'SP'} ${ap?.k9||'--'} K/9 (${aEra.toFixed(2)} ERA) + ${hp?.name||'SP'} ${hp?.k9||'--'} K/9 (${hEra.toFixed(2)} ERA) — elite control suppresses offense, UNDER lean`)}else if(combK>=9.5){reasons.push(`K rate elevated (avg ${combK.toFixed(1)}/9) — context only, ERA doesn't confirm suppression`)}
@@ -1656,8 +1668,17 @@ if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2
     if(!reasons.length&&toOver)reasons.push(`Scoring stats not yet loaded — line posted at ${toOver.point}. EV and line range below reflect current book pricing only`);
     const ou=ts2>=0?'OVER':'UNDER',mag=Math.abs(ts2),conf=mag>=3?'HIGH':mag>=1.5?'MEDIUM':'LOW';
     const pickStr=toOver?`${ou} ${toOver.point} (${fp(ou==='OVER'?toOver.price:toUnder?.price||toOver.price)})`:ou;
-    picks.push({label:'TOTAL ANALYSIS',pick:pickStr,conf,score:parseFloat(mag.toFixed(1)),reasoning:reasons.slice(0,4).join('. ')+'.',
+    // MLB data-gap: if SP data was missing and the non-park/non-weather score
+    // is weak (mag<1.5), the pick is essentially built on phantom 4.2 ERA
+    // defaults. Route to REVIEW so the user knows.
+    const _mlbConfTo=g.cat==='mlb'&&_mlbSPGap&&mag<1.5?'REVIEW':conf;
+    const _mlbReasonsTo=g.cat==='mlb'&&_mlbSPGap&&mag<1.5?[
+      `INSUFFICIENT DATA — probable pitcher ERA/WHIP missing for one or both starters. Algo applied league-average defaults (4.2 ERA / 1.30 WHIP) which mute the SP edge signal. Routing to manual review.`,
+      ...reasons.slice(0,3)
+    ]:reasons.slice(0,4);
+    picks.push({label:'TOTAL ANALYSIS',pick:pickStr,conf:_mlbConfTo,score:parseFloat(mag.toFixed(1)),reasoning:_mlbReasonsTo.join('. ')+'.',
       evData:calcEV(g,'totals',ou==='OVER'?'Over':'Under'),lineRange:getLineRange(g,'totals'),sharp:getSharp(toEdges),
+      dataGap:(g.cat==='mlb'&&_mlbSPGap&&mag<1.5)||undefined,
       gradeData:{type:'total',side:ou,line:toOver?.point??null}});
   }
 
@@ -1686,13 +1707,26 @@ if(awL10Net===null||hmL10Net===null)score+=nd*0.3;reasons.push(`Net rating: ${b2
         const f5ou=f5ts<0?'UNDER':'OVER';
         const f5ouOdds=f5ou==='OVER'?f5Over:f5Under;
         const f5mag=Math.abs(f5ts),f5conf=f5mag>=2?'HIGH':f5mag>=1?'MEDIUM':'LOW';
+        // F5 picks are PURELY SP-driven — bullpen variance is removed by
+        // definition. If SP data is partial/missing, league-average defaults
+        // (4.2 ERA / 8.0 K/9 / 3.5 BB/9) drive the entire score. The pick is
+        // worthless without real SP data; route directly to REVIEW or skip.
         if(f5Over||f5Under){
           const f5pick=f5ouOdds?`F5 ${f5ou} ${f5ouOdds.point} (${fp(f5ouOdds.price)})`:`F5 ${f5ou}`;
-          picks.push({label:'F5 TOTAL',pick:f5pick,conf:f5conf,score:parseFloat(f5mag.toFixed(1)),reasoning:f5reasons.slice(0,3).join('. ')+'.',
-            evData:calcEV(g,'totals_1st_5_innings',f5ou==='OVER'?'Over':'Under'),lineRange:null,sharp:{r:0,n:'No F5 data',bars:Array(5).fill('<div class="sb"></div>').join('')},gradeData:{type:'total',side:f5ou,line:f5ouOdds?.point??null}});
+          const _f5Conf=_mlbSPGap?'REVIEW':f5conf;
+          const _f5Reasons=_mlbSPGap?[
+            `INSUFFICIENT DATA — F5 picks rely entirely on starting-pitcher quality. ERA/WHIP missing for one or both SPs; algo applied league-average defaults. Manual review required.`,
+            ...f5reasons.slice(0,2)
+          ]:f5reasons.slice(0,3);
+          picks.push({label:'F5 TOTAL',pick:f5pick,conf:_f5Conf,score:parseFloat(f5mag.toFixed(1)),reasoning:_f5Reasons.join('. ')+'.',
+            evData:calcEV(g,'totals_1st_5_innings',f5ou==='OVER'?'Over':'Under'),lineRange:null,sharp:{r:0,n:'No F5 data',bars:Array(5).fill('<div class="sb"></div>').join('')},
+            dataGap:_mlbSPGap||undefined,
+            gradeData:{type:'total',side:f5ou,line:f5ouOdds?.point??null}});
         }
-        // F5 ML — only when SP talent gap is clear
-        const f5mlSide=aEra<hEra-0.75?g.aw:hEra<aEra-0.75?g.hm:null;
+        // F5 ML — only when SP talent gap is clear. Skip entirely if SP data
+        // is missing (the "ERA gap" comparison is meaningless against a
+        // defaulted 4.2 value).
+        const f5mlSide=(!_mlbSPGap)&&(aEra<hEra-0.75?g.aw:hEra<aEra-0.75?g.hm:null);
         const f5mlOdds=f5mlSide===g.aw?f5AwML:f5mlSide===g.hm?f5HmML:null;
         if(f5mlSide&&f5mlOdds){
           const betterSP=f5mlSide===g.aw?ap:hp,worseSP=f5mlSide===g.aw?hp:ap;
@@ -2526,6 +2560,19 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
         const fat=[];if(awB2b)fat.push(`${g.aw.nm} BACK-TO-BACK`);if(hmB2b)fat.push(`${g.hm.nm} BACK-TO-BACK`);
         if(fat.length)ctx+=`  ⚠️ FATIGUE: ${fat.join(' | ')}\n`;}}
     const pitchers=gamePitcherCache.get(g.id);
+    if(g.cat==='mlb'){
+      // CRITICAL data-gap check — per CLAUDE.md, ERA+WHIP is the primary
+      // MLB signal. If pitcher data is missing or shows '--' for either
+      // starter, instruct the LLM to flag MANUAL REVIEW rather than score
+      // confidently on park/weather/form alone.
+      const _spOk2=p=>p&&p.era&&p.era!=='--'&&p.whip&&p.whip!=='--';
+      const _aw=pitchers?.away,_hm=pitchers?.home;
+      if(!pitchers||!_spOk2(_aw)||!_spOk2(_hm)){
+        const _miss=[!_spOk2(_aw)?(g.aw.nm+(_aw?.name?' — '+_aw.name+' (no ERA/WHIP on file)':' — TBD')):null,
+                     !_spOk2(_hm)?(g.hm.nm+(_hm?.name?' — '+_hm.name+' (no ERA/WHIP on file)':' — TBD')):null].filter(Boolean);
+        ctx+=`  [CRITICAL DATA MISSING — MLB starting-pitcher ERA/WHIP unavailable for: ${_miss.join(' | ')}. ERA+WHIP is the primary MLB signal per house policy. DO NOT silently score this game on park factor and weather alone. If algo confidence is borderline, route to MANUAL REVIEW with an explicit "missing pitcher data" note rather than producing a confident pick.]\n`;
+      }
+    }
     if(pitchers){const ap=pitchers.away,hp=pitchers.home;if(ap||hp){ctx+=`  SP: ${ap?g.aw.nm+' — '+ap.name+' '+ap.era+' ERA '+ap.whip+' WHIP '+ap.bb9+' BB/9 '+ap.hr9+' HR/9':'TBD'} | ${hp?g.hm.nm+' — '+hp.name+' '+hp.era+' ERA '+hp.whip+' WHIP '+hp.bb9+' BB/9 '+hp.hr9+' HR/9':'TBD'}\n`;const _pf=getMLBParkFactor(g.ven);if(_pf!==1.0)ctx+=`  Park factor (${g.ven||'stadium'}): ${_pf>1?'hitter-friendly +':'-'}${Math.abs((_pf-1)*100).toFixed(0)}%\n`;const _wx=gameWeatherCache.get(g.id);if(_wx){ctx+=`  Weather: ${_wx.temp}°F wind ${_wx.wind}mph ${_wx.windDir} ${_wx.desc}\n`;if(_wx.wind>=10)ctx+=`  ⚠️ WIND ${_wx.wind}mph ${_wx.windDir}\n`;if(_wx.temp<50)ctx+=`  ⚠️ COLD ${_wx.temp}°F\n`}}}
     ctx+='\n';
   });
@@ -2836,7 +2883,10 @@ async function prefetchStatsForPicks(){
       }
       if(g.cat==='mlb'&&!gamePitcherCache.has(g.id)){
         const sm=await fetchGameSummary('mlb',g.id);
-        if(sm){const p=extractPitchers(sm);if(p)cSet(gamePitcherCache,g.id,p)}
+        if(sm){const p=extractPitchers(sm);
+          if(p)cSet(gamePitcherCache,g.id,p);
+          else console.warn('[MLB] extractPitchers returned null:',g.aw.nm,'@',g.hm.nm);
+        }else console.warn('[MLB] fetchGameSummary returned null:',g.aw.nm,'@',g.hm.nm);
       }
       if(g.cat==='mlb'&&isOutdoor(g.ven,g.cat)&&!gameWeatherCache.has(g.id)){
         const wx=await fetchWeather(cityFromTeam(g.hm.nm));
