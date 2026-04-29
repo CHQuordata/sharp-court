@@ -703,12 +703,26 @@ async function oddsFetch(sk,force=false){
   const rem=r.headers.get('x-requests-remaining');if(rem!=null){_oddsEverOk=true;$('apiCalls').textContent=`${parseInt(rem).toLocaleString()} calls left`;$('apiDot').classList.add('ok');$('apiSt').textContent='CONNECTED'}
   const data=await r.json();_oddsCache.set(sk,{data,ts:Date.now()});return data;}catch(e){return cached?.data||[]}}
 
+// Pinnacle worker session-level circuit breaker. If the worker returns 500
+// (typically Pinnacle creds expired/revoked or upstream API down), trip the
+// breaker so we don't keep firing requests across multiple sport keys.
+// Resets on next page load — user redeploys worker or fixes creds, refreshes.
+let _pinnacleWorkerDown=false;
+let _pinnacleLastError='';
 async function injectPinnacleOdds(){
-  if(!WORKER_URL)return;
+  if(!WORKER_URL||_pinnacleWorkerDown)return;
   const spMap={basketball_nba:'nba',icehockey_nhl:'nhl',baseball_mlb:'mlb'};
   await Promise.allSettled(Object.keys(spMap).map(async sk=>{
     try{
       const r=await fetch(`${WORKER_URL}/pinnacle/odds?sport=${sk}`,{signal:AbortSignal.timeout(6000)});
+      // Trip breaker on 500 — likely auth/upstream issue, won't recover
+      // on retry within this session. Stash error for status display.
+      if(r.status>=500){
+        _pinnacleWorkerDown=true;
+        try{const errBody=await r.json();_pinnacleLastError=errBody?.error||`Worker returned ${r.status}`}catch(_){_pinnacleLastError=`Worker returned ${r.status}`}
+        console.warn('[Pinnacle] worker error — breaker engaged for session:',_pinnacleLastError);
+        return;
+      }
       if(!r.ok)return;
       const pg=await r.json();if(!Array.isArray(pg))return;
       const gSp=spMap[sk];
@@ -1064,7 +1078,13 @@ function renderSlate(){const el=$('slateList');if(!fG.length){el.innerHTML='<div
 // ══════════════════════════════
 // ── DETAIL VIEW
 // ══════════════════════════════
+// Session-level circuit breaker for LWoT article fetcher. corsproxy.io
+// rate-limits aggressively; once we hit 403, every subsequent fetch this
+// session also 403s. Track first failure and short-circuit afterwards so
+// we don't flood the console with 403s on every tennis match click.
+let _lwotProxyBlocked=false;
 async function fetchLWOTArticle(awNm,hmNm){
+  if(_lwotProxyBlocked)return null;
   const ln1=(awNm||'').split(' ').pop(),ln2=(hmNm||'').split(' ').pop();
   if(ln1.length<3||ln2.length<3)return null;
   const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -1072,7 +1092,14 @@ async function fetchLWOTArticle(awNm,hmNm){
   try{
     const q=encodeURIComponent(`${ln1} ${ln2}`);
     const proxy='https://corsproxy.io/?url=';
-    const sHtml=await fetch(proxy+encodeURIComponent(`https://lastwordonsports.com/?s=${q}&category_name=tennis`),{signal:AbortSignal.timeout(7000)}).then(r=>r.ok?r.text():null).catch(()=>null);
+    const sRes=await fetch(proxy+encodeURIComponent(`https://lastwordonsports.com/?s=${q}&category_name=tennis`),{signal:AbortSignal.timeout(7000)}).catch(()=>null);
+    // Detect proxy blocking (403/429) and trip the breaker for the session
+    if(sRes&&(sRes.status===403||sRes.status===429)){
+      _lwotProxyBlocked=true;
+      console.warn('[LWoT] corsproxy.io returned',sRes.status,'\u2014 skipping LWoT fetches for rest of session');
+      return null;
+    }
+    const sHtml=sRes&&sRes.ok?await sRes.text().catch(()=>null):null;
     if(!sHtml)return null;
     const links=[...sHtml.matchAll(/href="(https:\/\/lastwordonsports\.com\/tennis\/\d{4}\/\d{2}\/\d{2}\/[^"]+?)"/g)].map(m=>m[1]);
     const art=links.find(u=>{const ul=norm(u);return ul.includes(nl1)||ul.includes(nl2)})||links[0];
@@ -1583,9 +1610,31 @@ function _tnRenderRate(){
 // Wrap fetch to auto-capture rate-limit headers from any TN-host call.
 // Caller passes the full URL; we route through native fetch and tap the
 // response headers before returning the response unmodified.
+//
+// CIRCUIT BREAKER: when RapidAPI returns 429 (rate limit), we set a
+// short-circuit window during which subsequent calls return a synthetic
+// "rate-limited" response WITHOUT hitting the API. This prevents quota
+// from being burned on retries when we know we're already over.
+let _tnBreakerUntil=0;
 async function _tnFetch(url,opts){
-  const r=await fetch(url,opts);
+  // If circuit breaker is active, return a synthetic 429 immediately.
+  // Caller code (which already checks r.ok) treats this like any 429.
+  if(Date.now()<_tnBreakerUntil){
+    return new Response(null,{status:429,statusText:'Rate limited (circuit breaker)'});
+  }
+  let r;
+  try{r=await fetch(url,opts)}catch(e){throw e}
   try{_tnReadRate(r.headers)}catch(_){}
+  // Trip circuit breaker on 429. Duration scales with how depleted we are:
+  // - If reset header tells us when quota resets, use that (capped at 5min)
+  // - Otherwise default to 60s — long enough to absorb a burst, short enough
+  //   to recover quickly when quota refreshes
+  if(r.status===429){
+    const fromHeader=_tnRate.resetAt&&_tnRate.resetAt>Date.now()?Math.min(_tnRate.resetAt-Date.now(),300000):0;
+    const breakerMs=fromHeader||60000;
+    _tnBreakerUntil=Date.now()+breakerMs;
+    console.warn('[TN] 429 received — circuit breaker engaged for',Math.round(breakerMs/1000),'s. Subsequent TN calls will short-circuit.');
+  }
   return r;
 }
 async function fetchTNFixtures(tour){if(!TN_API_KEY)return null;const ck='fix:'+tour;const cached=_tnFixCache.get(ck);if(cached&&Date.now()-cached.ts<3*3600000)return cached.data;const mkDate=off=>{const d=new Date();d.setDate(d.getDate()+off);return d.toISOString().split('T')[0]};const dates=[mkDate(0),mkDate(-1),mkDate(1)];try{const all=[];await Promise.all(dates.map(async date=>{let page=1,hasNext=true;while(hasNext&&page<=2){const r=await _tnFetch(`https://${TN_HOST}/tennis/v2/${tour}/fixtures/${date}?filter=PlayerGroup:singles&pageSize=100&pageNo=${page}`,{headers:tnHdr(),signal:AbortSignal.timeout(8000)});if(!r.ok)break;const d=await r.json();const items=Array.isArray(d)?d:d.data||[];all.push(...items);hasNext=!!(d.hasNextPage);page++}}));if(all.length){_tnFixCache.set(ck,{data:all,ts:Date.now()});return all}return null}catch(e){return null}}
@@ -1653,7 +1702,29 @@ async function fetchTAPlayerStats(name){
     return{surface,stats:[],_taSource:true};
   }catch(e){console.warn('[TA] fetch failed for',name,e?.message||e);return null}
 }
-async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{const awL=(awNm||'').split(' ').pop().toLowerCase(),hmL=(hmNm||'').split(' ').pop().toLowerCase();const newsUrl=sp=>id=>id?`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/athletes/${id}/news?limit=10`:`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/news?limit=30`;const sig=()=>({signal:AbortSignal.timeout(7000)});const[sum,awNews,hmNews]=await Promise.all([fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`,sig()).then(r=>r.ok?r.json():null).catch(()=>null),fetch(newsUrl(sp)(awId),sig()).then(r=>r.ok?r.json():null).catch(()=>null),hmId&&hmId!==awId?fetch(newsUrl(sp)(hmId),sig()).then(r=>r.ok?r.json():null).catch(()=>null):Promise.resolve(null)]);const out={};if(sum){const comp=sum.header?.competitions?.[0];const art=sum.article;if(art?.story||art?.description){out.espnStory=(art.story||art.description).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();out.espnLink=art.links?.web?.href||null;}out.espnHead=art?.headline||comp?.notes?.[0]?.headline||null;}const findArt=(feed,a,b)=>(feed?.articles||[]).find(x=>{const t=((x.headline||'')+' '+(x.description||'')).toLowerCase();return a.length>2&&b.length>2&&t.includes(a)&&t.includes(b)});const art=findArt(awNews,awL,hmL)||findArt(hmNews,hmL,awL)||findArt(awNews,hmL,awL);if(art){out.newsHead=art.headline;out.newsDesc=art.description;out.newsLink=art.links?.web?.href||null;}return Object.keys(out).length?out:null}catch(e){return null}}
+async function fetchTennisMatchSummary(sp,gid,awNm,hmNm,awId,hmId){try{
+  const awL=(awNm||'').split(' ').pop().toLowerCase(),hmL=(hmNm||'').split(' ').pop().toLowerCase();
+  const newsUrl=sp=>id=>id?`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/athletes/${id}/news?limit=10`:`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/news?limit=30`;
+  const sig=()=>({signal:AbortSignal.timeout(7000)});
+  // ESPN summary endpoint requires a real numeric competition ID. Tennis IDs
+  // synthesized at slate-load (e.g. "wta_12345_0") will 400 on ESPN. Skip the
+  // summary fetch for non-numeric IDs to avoid console noise.
+  const isNumericId=gid&&/^\d+$/.test(String(gid));
+  const sumPromise=isNumericId
+    ?fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${sp}/summary?event=${gid}`,sig()).then(r=>r.ok?r.json():null).catch(()=>null)
+    :Promise.resolve(null);
+  const[sum,awNews,hmNews]=await Promise.all([
+    sumPromise,
+    fetch(newsUrl(sp)(awId),sig()).then(r=>r.ok?r.json():null).catch(()=>null),
+    hmId&&hmId!==awId?fetch(newsUrl(sp)(hmId),sig()).then(r=>r.ok?r.json():null).catch(()=>null):Promise.resolve(null)
+  ]);
+  const out={};
+  if(sum){const comp=sum.header?.competitions?.[0];const art=sum.article;if(art?.story||art?.description){out.espnStory=(art.story||art.description).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();out.espnLink=art.links?.web?.href||null;}out.espnHead=art?.headline||comp?.notes?.[0]?.headline||null;}
+  const findArt=(feed,a,b)=>(feed?.articles||[]).find(x=>{const t=((x.headline||'')+' '+(x.description||'')).toLowerCase();return a.length>2&&b.length>2&&t.includes(a)&&t.includes(b)});
+  const art=findArt(awNews,awL,hmL)||findArt(hmNews,hmL,awL)||findArt(awNews,hmL,awL);
+  if(art){out.newsHead=art.headline;out.newsDesc=art.description;out.newsLink=art.links?.web?.href||null;}
+  return Object.keys(out).length?out:null;
+}catch(e){return null}}
 function extractTennisStats(d){if(!d)return null;return{hand:d.hand?.abbreviation||null,handFull:d.hand?.displayValue||null,age:d.age||null,country:d.birthPlace?.country?.displayName||null}}
 async function fetchNBATeamStats(tid){
   if(!tid)return null;

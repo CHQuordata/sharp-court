@@ -662,6 +662,12 @@ async function handleTennisAbstract(name, env) {
 // ── Pinnacle ──────────────────────────────────────────────────────────────────
 
 async function getPinnacleOdds(env, sportId) {
+  // Sanity-check creds BEFORE making the call so we return a useful error
+  // instead of an opaque 500. Auth issues are the most common cause of
+  // Pinnacle worker failures (creds expire, env var typo, etc.).
+  if (!env.PINNACLE_USER || !env.PINNACLE_PWD) {
+    throw new Error(`Pinnacle creds missing — set PINNACLE_USER and PINNACLE_PWD env vars in Cloudflare Worker settings`);
+  }
   const auth = btoa(`${env.PINNACLE_USER}:${env.PINNACLE_PWD}`);
   const headers = {
     'Authorization': `Basic ${auth}`,
@@ -673,13 +679,25 @@ async function getPinnacleOdds(env, sportId) {
     fetch(`https://api.pinnacle.com/v2/odds?sportId=${sportId}&oddsFormat=American`, { headers }),
   ]);
 
+  // 401/403 are auth errors (creds bad/revoked); 429 = rate limit; 5xx = upstream issue.
+  // Return descriptive errors so the frontend status indicator can show WHY.
   if (!fixturesRes.ok) {
     const txt = await fixturesRes.text();
-    throw new Error(`Pinnacle fixtures ${fixturesRes.status}: ${txt.slice(0, 200)}`);
+    const reason = fixturesRes.status === 401 || fixturesRes.status === 403
+      ? `auth rejected (creds may be expired or revoked)`
+      : fixturesRes.status === 429 ? `rate limited by Pinnacle`
+      : fixturesRes.status >= 500 ? `Pinnacle upstream error`
+      : `request failed`;
+    throw new Error(`Pinnacle fixtures ${fixturesRes.status} — ${reason}: ${txt.slice(0, 200)}`);
   }
   if (!oddsRes.ok) {
     const txt = await oddsRes.text();
-    throw new Error(`Pinnacle odds ${oddsRes.status}: ${txt.slice(0, 200)}`);
+    const reason = oddsRes.status === 401 || oddsRes.status === 403
+      ? `auth rejected (creds may be expired or revoked)`
+      : oddsRes.status === 429 ? `rate limited by Pinnacle`
+      : oddsRes.status >= 500 ? `Pinnacle upstream error`
+      : `request failed`;
+    throw new Error(`Pinnacle odds ${oddsRes.status} — ${reason}: ${txt.slice(0, 200)}`);
   }
 
   const [fixtures, odds] = await Promise.all([fixturesRes.json(), oddsRes.json()]);
