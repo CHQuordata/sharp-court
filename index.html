@@ -477,6 +477,8 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
     <div class="stat-grid"><div class="stat-cell"><div class="stat-lbl">GAMES</div><div class="stat-val" id="stG">-</div></div><div class="stat-cell"><div class="stat-lbl">EDGES</div><div class="stat-val g" id="stE">-</div></div><div class="stat-cell"><div class="stat-lbl">SPORTS</div><div class="stat-val a" id="stS">-</div></div><div class="stat-cell"><div class="stat-lbl">INJURIES</div><div class="stat-val r" id="stI">-</div></div></div>
     <div class="panel-hdr" id="trackedHdr" style="display:none"><span class="panel-title">📌 TRACKED</span><span id="trackedCount" style="font-size:9px;color:var(--t4);margin-left:6px"></span></div>
     <div id="trackedGames"></div>
+    <div class="panel-hdr" id="portfolioHdr" style="display:none;gap:6px"><span class="panel-title" style="flex:1">💰 PORTFOLIO</span><button onclick="showPortfolioSettings()" class="tb-btn" title="Set bankroll exposure thresholds" style="font-size:9px">⚙</button></div>
+    <div id="portfolioBox"></div>
     <div class="panel-hdr" style="gap:6px"><span class="panel-title" style="flex:1">Top Edges</span><button id="sharpOnlyBtn" onclick="toggleSharpOnly()" class="tb-btn" title="Show only Pinnacle sharp-money edges">⚡ SHARP</button><button onclick="buildSharpParlay()" class="tb-btn" style="color:var(--amb);border-color:rgba(255,171,0,.3)" title="Build a parlay from today's Pinnacle edges">PARLAY →</button></div><div class="panel-body" id="edgeAlerts"><div class="no-data" style="padding:20px">Scan to populate</div></div>
   </div>
 </div>
@@ -533,6 +535,22 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   </div>
 </div>
 <div class="modal-ov" id="parlayModal" style="display:none"><div class="modal" style="max-width:500px;padding:0;display:flex;flex-direction:column;max-height:90vh"><div style="padding:20px 24px 12px;flex-shrink:0"><div class="modal-title" style="color:var(--grn)">⚡ SHARP PARLAY BUILDER</div><div class="modal-sub" style="margin-bottom:0">Pinnacle-only legs · today's games · one leg per matchup</div></div><div id="parlayContent" style="margin-top:0;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 24px"></div><div style="padding:12px 24px 20px;flex-shrink:0;border-top:1px solid var(--bdr)"><button class="modal-btn" style="margin-top:0" onclick="$('parlayModal').style.display='none'">CLOSE</button></div></div></div>
+<div class="modal-ov" id="portfolioSettingsModal" style="display:none"><div class="modal" style="max-width:420px;width:100%">
+  <div class="modal-title" style="color:var(--cyn)">PORTFOLIO THRESHOLDS</div>
+  <div class="modal-sub" style="margin-bottom:16px">Set warning levels based on % of bankroll currently in pending bets. Visual alerts fire automatically when crossed.</div>
+  <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-bottom:8px">
+    <label style="font-size:10px;color:var(--t2)">⚠ Caution at exposure %</label>
+    <input id="psCaution" type="number" min="1" max="100" step="1" style="width:80px;padding:6px;font-family:var(--mono);font-size:11px;background:var(--bg3);color:var(--t1);border:1px solid var(--bdr);border-radius:3px">
+    <label style="font-size:10px;color:var(--amb)">⚠ Warning at exposure %</label>
+    <input id="psWarn" type="number" min="1" max="100" step="1" style="width:80px;padding:6px;font-family:var(--mono);font-size:11px;background:var(--bg3);color:var(--amb);border:1px solid var(--bdr);border-radius:3px">
+    <label style="font-size:10px;color:var(--red)">🚨 Critical at exposure %</label>
+    <input id="psCrit" type="number" min="1" max="100" step="1" style="width:80px;padding:6px;font-family:var(--mono);font-size:11px;background:var(--bg3);color:var(--red);border:1px solid var(--bdr);border-radius:3px">
+    <label style="font-size:10px;color:var(--t2)">Per-entity concentration %</label>
+    <input id="psEntity" type="number" min="1" max="100" step="1" style="width:80px;padding:6px;font-family:var(--mono);font-size:11px;background:var(--bg3);color:var(--t1);border:1px solid var(--bdr);border-radius:3px">
+  </div>
+  <button class="modal-btn" style="background:var(--cyn);color:var(--bg0);margin-top:12px" onclick="savePortfolioSettings()">SAVE THRESHOLDS</button>
+  <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('portfolioSettingsModal').style.display='none'">Cancel</div>
+</div></div>
 <div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
 <div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
@@ -903,7 +921,7 @@ async function refreshAll(forceOdds=false){
   applyFilters();
   if(cView==='picks')renderPicksLeaderboard();
   _updateConfFilterAvailability();
-  updateStats();updateEdges();renderTracked();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
+  updateStats();updateEdges();renderTracked();renderPortfolio();$('lastScan').textContent=`LAST SCAN: ${new Date().toLocaleTimeString('en-US',{hour12:false})}`;
   if(AK){const ages=[..._oddsCache.values()].map(c=>Date.now()-c.ts);const minAge=ages.length?Math.min(...ages):null;const el=$('oddsCacheAge');if(el&&minAge!=null)el.textContent=minAge<60000?'odds: live':`odds: ${Math.round(minAge/60000)}m ago`}
 }
 
@@ -2342,16 +2360,17 @@ function showEdgesMob(){
 // LOG BET button in the header chains into the existing logBetModal.
 function showMyBetsMob(){
   const body=$('myBetsMobBody'),summary=$('myBetsMobSummary');
+  const portfolioHtml=renderPortfolioCompact();
   const html=renderMyBetsSection();
   if(!html){
-    body.innerHTML=`<div style="padding:32px 20px;text-align:center;color:var(--t4)">
+    body.innerHTML=`${portfolioHtml||''}<div style="padding:32px 20px;text-align:center;color:var(--t4)">
       <div style="font-size:32px;opacity:.3;margin-bottom:12px">💰</div>
       <div style="font-size:12px;letter-spacing:1px;color:var(--t2);margin-bottom:8px">NO BETS LOGGED</div>
       <div style="font-size:10px;line-height:1.7;max-width:280px;margin:0 auto">Tap <strong style="color:var(--cyn)">+ LOG BET</strong> above to record a bet. Wins and losses count toward your permanent record and feed the learning agent.</div>
     </div>`;
     if(summary)summary.textContent='';
   }else{
-    body.innerHTML=html;
+    body.innerHTML=`${portfolioHtml||''}${html}`;
     // Compute and show running totals at the bottom for quick at-a-glance review
     const bets=getAllManualBets();
     const w=bets.filter(b=>b.result==='W').length,l=bets.filter(b=>b.result==='L').length,p=bets.filter(b=>b.result==='P').length,q=bets.filter(b=>!b.result||b.result==='?').length;
@@ -2515,7 +2534,7 @@ function saveLoggedBet(){
   if(['W','L','P'].includes(result))updateCumulativeRecord();
   renderDashboardStats();
   renderPicksLeaderboard();renderPicksOverview();_updateConfFilterAvailability();
-  _refreshMyBetsMobIfOpen();
+  renderPortfolio();_refreshMyBetsMobIfOpen();
   $('logBetModal').style.display='none';
   $('lbPick').value='';$('lbWager').value='';$('lbPayout').value='';
 }
@@ -2630,6 +2649,236 @@ function getAllManualBets(){
   return JSON.parse(localStorage.getItem('et_manual_bets')||'[]');
 }
 
+// ── Portfolio / concentration risk ────────────────────────────────────────────
+// Cross-sport exposure, bankroll burn, and correlation tracking. Reads
+// et_manual_bets (sport-agnostic) and produces an aggregated view used by
+// both the desktop dashboard panel and the mobile MY BETS modal. At the
+// user's stake size a single bad-correlated-bet day eats dozens of marginal
+// edge wins, so this is the highest-leverage risk dashboard in the app.
+
+const _DEFAULT_PORTFOLIO_THRESHOLDS={caution:30,warn:50,crit:70,entity:15};
+function _getPortfolioThresholds(){
+  try{const s=JSON.parse(localStorage.getItem('et_portfolio_thresh')||'null');
+    return s?{..._DEFAULT_PORTFOLIO_THRESHOLDS,...s}:_DEFAULT_PORTFOLIO_THRESHOLDS;
+  }catch(_){return _DEFAULT_PORTFOLIO_THRESHOLDS}
+}
+function showPortfolioSettings(){
+  const t=_getPortfolioThresholds();
+  $('psCaution').value=t.caution;$('psWarn').value=t.warn;$('psCrit').value=t.crit;$('psEntity').value=t.entity;
+  $('portfolioSettingsModal').style.display='flex';
+}
+function savePortfolioSettings(){
+  const t={caution:parseInt($('psCaution').value)||30,warn:parseInt($('psWarn').value)||50,crit:parseInt($('psCrit').value)||70,entity:parseInt($('psEntity').value)||15};
+  localStorage.setItem('et_portfolio_thresh',JSON.stringify(t));
+  $('portfolioSettingsModal').style.display='none';
+  renderPortfolio();_refreshMyBetsMobIfOpen();
+}
+
+// Extract the primary entity (player surname / team last word) from a bet's
+// pick string by cross-referencing the matchup. This lets us group bets that
+// ride on the same player/team even when written different ways
+// ("Lehecka ML +153" vs "Jiri Lehecka -2.5 games"). Returns null for totals
+// (over/under) and unmatchable picks; those get bucketed under the matchup.
+function _extractPickEntity(bet){
+  const pick=(bet.pick||'').toLowerCase();
+  const matchup=(bet.matchup||'').toLowerCase();
+  // Totals → no single entity, group by matchup
+  if(/\b(over|under|o\d|u\d)\b/.test(pick))return null;
+  // Try to find which side of the matchup the pick references
+  const sides=matchup.split(/\s+(?:@|vs|v|at)\s+|\s*\|\s*/).filter(Boolean);
+  for(const side of sides){
+    const sideWords=side.split(/\s+/).filter(w=>w.length>=3);
+    for(const w of sideWords){
+      if(pick.includes(w)){
+        // Return the full side string, capitalized
+        return side.split(/\s+/).map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join(' ');
+      }
+    }
+  }
+  // No match — try first word(s) of pick before market keywords
+  const trimmed=pick.replace(/\s+(ml|spread|games?|sets?|moneyline|run line|puck line|h2h|total|first 5|f5|1q|1h|2h)\b.*$/i,'').trim();
+  if(trimmed){
+    return trimmed.split(/\s+/).map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join(' ');
+  }
+  return null;
+}
+
+function _buildPortfolio(){
+  const bets=getAllManualBets();
+  const bankroll=parseFloat(localStorage.getItem('bankroll'))||0;
+  const t=_getPortfolioThresholds();
+  const today=new Date().toISOString().split('T')[0];
+  const weekCut=new Date();weekCut.setDate(weekCut.getDate()-7);
+  const weekCutStr=weekCut.toISOString().split('T')[0];
+  const isPending=b=>!b.result||b.result==='?';
+  const wagerOf=b=>parseFloat(b.wager)||0;
+  // Pending bets — these contribute to current exposure
+  const pending=bets.filter(b=>isPending(b)&&wagerOf(b)>0);
+  const settled=bets.filter(b=>!isPending(b));
+  const totalOpen=pending.reduce((s,b)=>s+wagerOf(b),0);
+  const todayPending=pending.filter(b=>(b.date||today)===today);
+  const todayOpen=todayPending.reduce((s,b)=>s+wagerOf(b),0);
+  const weekPending=pending.filter(b=>(b.date||today)>=weekCutStr);
+  const weekOpen=weekPending.reduce((s,b)=>s+wagerOf(b),0);
+  // Per-entity rollup — group pending bets by extracted player/team
+  const byEntity=new Map();
+  pending.forEach(b=>{
+    const ent=_extractPickEntity(b)||(b.matchup?.split(/\s+(?:vs|@|v|at)\s+/)[0]||'(unknown)');
+    if(!byEntity.has(ent))byEntity.set(ent,{name:ent,sport:b.sport,bets:[],total:0});
+    const e=byEntity.get(ent);e.bets.push(b);e.total+=wagerOf(b);
+  });
+  // Per-matchup rollup — flag stacked bets on same matchup
+  const byMatchup=new Map();
+  pending.forEach(b=>{
+    const m=b.matchup||'(no matchup)';
+    if(!byMatchup.has(m))byMatchup.set(m,{matchup:m,sport:b.sport,bets:[],total:0});
+    const e=byMatchup.get(m);e.bets.push(b);e.total+=wagerOf(b);
+  });
+  // Per-sport breakdown
+  const bySport=new Map();
+  pending.forEach(b=>{
+    const s=b.sport||'unknown';
+    if(!bySport.has(s))bySport.set(s,{sport:s,bets:0,total:0});
+    const e=bySport.get(s);e.bets++;e.total+=wagerOf(b);
+  });
+  // P&L from settled bets
+  const todayPL=settled.filter(b=>(b.date||'')===today).reduce((s,b)=>s+_betPL(b),0);
+  const weekPL=settled.filter(b=>(b.date||'')>=weekCutStr).reduce((s,b)=>s+_betPL(b),0);
+  const allTimePL=settled.reduce((s,b)=>s+_betPL(b),0);
+  // Threshold computation
+  const pctOpen=bankroll>0?(totalOpen/bankroll)*100:null;
+  const tier=pctOpen==null?'unknown':pctOpen>=t.crit?'crit':pctOpen>=t.warn?'warn':pctOpen>=t.caution?'caution':'ok';
+  // Concentration warnings (only fire when bankroll is set)
+  const warnings=[];
+  if(bankroll>0){
+    if(tier==='crit')warnings.push({lvl:'crit',msg:`🚨 ${pctOpen.toFixed(0)}% of bankroll in pending bets — above critical threshold (${t.crit}%)`});
+    else if(tier==='warn')warnings.push({lvl:'warn',msg:`⚠ ${pctOpen.toFixed(0)}% of bankroll in pending bets — above warning threshold (${t.warn}%)`});
+    else if(tier==='caution')warnings.push({lvl:'caution',msg:`${pctOpen.toFixed(0)}% of bankroll exposed`});
+    [...byEntity.values()].forEach(e=>{
+      const ePct=(e.total/bankroll)*100;
+      if(ePct>=t.entity)warnings.push({lvl:'warn',msg:`⚠ ${e.name}: $${e.total.toLocaleString()} across ${e.bets.length} bets (${ePct.toFixed(0)}% bankroll)`});
+    });
+    [...byMatchup.values()].forEach(m=>{
+      if(m.bets.length>=3)warnings.push({lvl:'warn',msg:`⚠ ${m.matchup}: ${m.bets.length} bets stacked on same matchup ($${m.total.toLocaleString()})`});
+    });
+  }
+  return{bankroll,totalOpen,todayOpen,weekOpen,pctOpen,tier,thresholds:t,
+    pendingCount:pending.length,todayPendingCount:todayPending.length,
+    byEntity:[...byEntity.values()].sort((a,b)=>b.total-a.total),
+    byMatchup:[...byMatchup.values()].sort((a,b)=>b.total-a.total),
+    bySport:[...bySport.values()].sort((a,b)=>b.total-a.total),
+    todayPL,weekPL,allTimePL,warnings};
+}
+function _betPL(b){
+  const w=parseFloat(b.wager)||0,p=parseFloat(b.payout)||0;
+  if(b.result==='W'&&w&&p)return p-w;
+  if(b.result==='L'&&w)return -w;
+  return 0;
+}
+function _sportIcon(s){return s==='tennis'?'🎾':s==='nba'?'🏀':s==='nhl'?'🏒':s==='mlb'?'⚾':s==='nfl'?'🏈':s==='mma'?'🥊':s==='parlay'?'🎰':'💰'}
+function _fmtMoney(n){const a=Math.abs(n);if(a>=1000)return (n<0?'-':'')+'$'+(a/1000).toFixed(a>=10000?0:1)+'k';return (n<0?'-':'')+'$'+a.toFixed(0)}
+
+// Desktop dashboard panel render
+function renderPortfolio(){
+  const box=$('portfolioBox'),hdr=$('portfolioHdr');if(!box)return;
+  const p=_buildPortfolio();
+  if(!p.pendingCount&&p.allTimePL===0){
+    if(hdr)hdr.style.display='none';box.innerHTML='';return;
+  }
+  if(hdr)hdr.style.display='flex';
+  const tierClr=p.tier==='crit'?'var(--red)':p.tier==='warn'?'var(--amb)':p.tier==='caution'?'var(--cyn)':'var(--grn)';
+  const expoText=p.bankroll>0?`${_fmtMoney(p.totalOpen)} <span style="color:var(--t4);font-size:9px;font-weight:400">(${p.pctOpen.toFixed(0)}% of $${p.bankroll.toLocaleString()})</span>`:`${_fmtMoney(p.totalOpen)} <span style="color:var(--t4);font-size:9px;font-weight:400;cursor:pointer" onclick="showBankroll()">set bankroll →</span>`;
+  let h=`<div style="padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--bdr)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <span style="font-size:9px;color:var(--t4);letter-spacing:1px">OPEN EXPOSURE</span>
+      <span style="font-size:14px;font-weight:700;color:${tierClr}">${expoText}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);gap:6px">
+      <span>Today: <span style="color:var(--t1);font-weight:600">${_fmtMoney(p.todayOpen)}</span> (${p.todayPendingCount})</span>
+      <span>Week: <span style="color:var(--t1);font-weight:600">${_fmtMoney(p.weekOpen)}</span> (${p.pendingCount})</span>
+    </div>`;
+  if(p.weekPL!==0||p.todayPL!==0){
+    const tdC=p.todayPL>=0?'var(--grn)':'var(--red)',wkC=p.weekPL>=0?'var(--grn)':'var(--red)';
+    h+=`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);gap:6px;margin-top:4px">
+      <span>P&L today: <span style="color:${tdC};font-weight:600">${p.todayPL>=0?'+':''}${_fmtMoney(p.todayPL)}</span></span>
+      <span>P&L week: <span style="color:${wkC};font-weight:600">${p.weekPL>=0?'+':''}${_fmtMoney(p.weekPL)}</span></span>
+    </div>`;
+  }
+  h+=`</div>`;
+  // Warnings
+  if(p.warnings.length){
+    h+='<div style="padding:6px 12px">';
+    p.warnings.forEach(w=>{
+      const c=w.lvl==='crit'?'var(--red)':w.lvl==='warn'?'var(--amb)':'var(--cyn)';
+      const bg=w.lvl==='crit'?'rgba(255,71,87,.08)':w.lvl==='warn'?'rgba(255,171,0,.08)':'rgba(0,200,255,.06)';
+      h+=`<div style="font-size:9px;color:${c};background:${bg};padding:4px 6px;border-radius:3px;margin-bottom:3px;line-height:1.4">${w.msg}</div>`;
+    });
+    h+='</div>';
+  }
+  // Top entities (top 4)
+  if(p.byEntity.length){
+    h+='<div style="padding:4px 12px 8px;font-size:9px;color:var(--t4);letter-spacing:1px">TOP EXPOSURES</div>';
+    p.byEntity.slice(0,4).forEach(e=>{
+      const ePct=p.bankroll>0?(e.total/p.bankroll)*100:null;
+      const flag=p.bankroll>0&&ePct>=p.thresholds.entity?` <span style="color:var(--amb);font-size:8px">⚠</span>`:'';
+      h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 12px;font-size:10px;border-bottom:1px solid rgba(42,42,62,.3)">
+        <span style="color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${_sportIcon(e.sport)} ${e.name}${flag}</span>
+        <span style="color:var(--t2);font-weight:600;flex-shrink:0;margin-left:8px">${_fmtMoney(e.total)} <span style="color:var(--t4);font-weight:400">(${e.bets.length})</span></span>
+      </div>`;
+    });
+  }
+  // Sport breakdown (only if multi-sport)
+  if(p.bySport.length>=2){
+    h+='<div style="padding:6px 12px 4px;font-size:9px;color:var(--t4);letter-spacing:1px">BY SPORT</div>';
+    p.bySport.forEach(s=>{
+      const sPct=p.totalOpen>0?(s.total/p.totalOpen)*100:0;
+      h+=`<div style="display:flex;justify-content:space-between;padding:2px 12px;font-size:9px"><span>${_sportIcon(s.sport)} ${s.sport.toUpperCase()}</span><span style="color:var(--t2)">${_fmtMoney(s.total)} (${sPct.toFixed(0)}%)</span></div>`;
+    });
+  }
+  box.innerHTML=h;
+}
+
+// Compact portfolio summary for the mobile MY BETS modal — same data, more
+// vertical layout. Returns HTML string for injection at top of modal body.
+function renderPortfolioCompact(){
+  const p=_buildPortfolio();
+  if(!p.pendingCount&&p.allTimePL===0)return'';
+  const tierClr=p.tier==='crit'?'var(--red)':p.tier==='warn'?'var(--amb)':p.tier==='caution'?'var(--cyn)':'var(--grn)';
+  const expoText=p.bankroll>0?`${_fmtMoney(p.totalOpen)} (${p.pctOpen.toFixed(0)}%)`:`${_fmtMoney(p.totalOpen)}`;
+  let h=`<div style="padding:10px 12px;background:var(--bg1);border-bottom:1px solid var(--bdr)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-size:9px;color:var(--t4);letter-spacing:1px">EXPOSURE</span>
+      <span style="font-size:16px;font-weight:700;color:${tierClr}">${expoText}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--t3);margin-top:4px">
+      <span>Today $${p.todayOpen.toLocaleString()} (${p.todayPendingCount})</span>
+      <span>Week $${p.weekOpen.toLocaleString()} (${p.pendingCount})</span>
+    </div>`;
+  if(p.warnings.length){
+    h+='<div style="margin-top:6px">';
+    p.warnings.slice(0,3).forEach(w=>{
+      const c=w.lvl==='crit'?'var(--red)':w.lvl==='warn'?'var(--amb)':'var(--cyn)';
+      const bg=w.lvl==='crit'?'rgba(255,71,87,.08)':w.lvl==='warn'?'rgba(255,171,0,.08)':'rgba(0,200,255,.06)';
+      h+=`<div style="font-size:9px;color:${c};background:${bg};padding:4px 6px;border-radius:3px;margin-top:3px;line-height:1.4">${w.msg}</div>`;
+    });
+    h+='</div>';
+  }
+  if(p.byEntity.length){
+    h+='<div style="margin-top:8px"><div style="font-size:9px;color:var(--t4);letter-spacing:1px;margin-bottom:3px">TOP EXPOSURES</div>';
+    p.byEntity.slice(0,3).forEach(e=>{
+      const ePct=p.bankroll>0?(e.total/p.bankroll)*100:null;
+      const flag=p.bankroll>0&&ePct>=p.thresholds.entity?` <span style="color:var(--amb)">⚠</span>`:'';
+      h+=`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0">
+        <span style="color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${_sportIcon(e.sport)} ${e.name}${flag}</span>
+        <span style="color:var(--t2);font-weight:600;margin-left:8px">${_fmtMoney(e.total)} (${e.bets.length})</span>
+      </div>`;
+    });
+    h+='</div>';
+  }
+  h+=`</div>`;
+  return h;
+}
+
 function renderMyBetsSection(){
   const bets=getAllManualBets();
   if(!bets.length)return'';
@@ -2668,7 +2917,7 @@ function cycleManualBetResult(encodedLogged){
   if(b){b.result=cycle[b.result]||'?';
     localStorage.setItem('et_manual_bets',JSON.stringify(bets));
     updateCumulativeRecord();renderDashboardStats();renderPicksOverview();
-    _refreshMyBetsMobIfOpen();
+    renderPortfolio();_refreshMyBetsMobIfOpen();
   }
 }
 
