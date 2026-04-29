@@ -995,6 +995,10 @@ function setConfFilter(f){
   }
   cConfFilter=f;
   ['all','HIGH','MEDIUM','picked'].forEach(k=>{const el=$(k==='all'?'cfAll':k==='HIGH'?'cfHigh':k==='MEDIUM'?'cfMed':'cfPicked');if(el)el.classList.toggle('active',k===f)});
+  // Reset pick selection when filter changes — old selPickIdx may now point
+  // to a different pick (or be out of bounds) in the newly-filtered list.
+  // Without this, the detail panel showed a stale pick after filter changes.
+  selPickIdx=-1;
   if(cView==='picks')renderPicksLeaderboard();else applyFilters();
 }
 // Update conf-filter button visual state — call this after picks are loaded
@@ -2465,7 +2469,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAllModals();re
   switch(e.key){case'r':case'R':debouncedRefresh(e.shiftKey);break;case'?':toggleSC();break;case'k':case'K':showSetup();break;case'a':case'A':showPicksSetup();break;
     case'p':case'P':switchToPicksView();break;
     case'g':case'G':if(cView==='picks')generatePicks();break;
-    case'ArrowDown':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){const pp=todayPicksData.picks.filter(p=>!p.is_lean);selPickIdx=Math.min(selPickIdx+1,pp.length-1);selPick(selPickIdx)}else if(fG.length){selIdx=Math.min(selIdx+1,fG.length-1);selGame(selIdx);scrSel()}break;
+    case'ArrowDown':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){const pp=_getDisplayedPicks();selPickIdx=Math.min(selPickIdx+1,pp.length-1);selPick(selPickIdx)}else if(fG.length){selIdx=Math.min(selIdx+1,fG.length-1);selGame(selIdx);scrSel()}break;
     case'ArrowUp':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){selPickIdx=Math.max(selPickIdx-1,0);selPick(selPickIdx)}else if(fG.length){selIdx=Math.max(selIdx-1,0);selGame(selIdx);scrSel()}break;
     case'Enter':if(cView==='picks'&&selPickIdx>=0)selPick(selPickIdx);else if(selIdx>=0)selGame(selIdx);break;
     case'1':setSport('all');break;case'2':setSport('nba');break;case'3':setSport('nhl');break;case'4':setSport('mlb');break;case'5':setSport('tennis');break;case'6':setSport('tennis');break;case'7':setSport('mma');break;case'8':switchToPicksView();break}});
@@ -2726,9 +2730,21 @@ function renderPicksOverview(){
   el.innerHTML=h;el.scrollTop=0;
 }
 
+// Returns the picks array CURRENTLY VISIBLE in the leaderboard, accounting
+// for any active confidence filter. Used by selPick, arrow-key nav, and any
+// other code that maps a clickable index back to the underlying pick object.
+// Without this, clicking pick #N in a filtered view (e.g. MED only) would
+// dereference picks[N] from the UNFILTERED list — landing on a HIGH pick
+// from a different game. (Real bug seen: clicked Noskova in MED filter,
+// got Detroit Pistons HIGH pick instead.)
+function _getDisplayedPicks(){
+  const all=todayPicksData?.picks?.filter(p=>!p.is_lean)||[];
+  if(cConfFilter==='all'||cConfFilter==='picked')return all;
+  return all.filter(p=>p.confidence===cConfFilter);
+}
 function selPick(idx){
   selPickIdx=idx;renderPicksLeaderboard();
-  const picks=todayPicksData?.picks?.filter(p=>!p.is_lean)||[];
+  const picks=_getDisplayedPicks();
   const p=picks[idx];if(!p)return;
   const el=$('detailPanel');
   if(window.innerWidth<=768)document.body.classList.add('mob-detail-open');
