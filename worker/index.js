@@ -38,7 +38,63 @@ export default {
         return jsonResponse(data);
       }
       if (path === '/health') {
-        return jsonResponse({ status: 'ok', version: '2.1' });
+        return jsonResponse({ status: 'ok', version: '2.2' });
+      }
+      // Manual cron trigger — for diagnostic / on-demand use. Same code path
+      // as the nightly scheduled handler. No auth required since the operation
+      // is idempotent (just re-grades existing picks against latest scores)
+      // and the worker URL isn't publicly advertised.
+      if (path === '/admin/run-cron' && request.method === 'POST') {
+        await runNightlyCron(env);
+        const diag = await env.LEARNING_STORE.get('et_cron_diagnostic');
+        return jsonResponse({ ok: true, diagnostic: diag ? JSON.parse(diag) : null });
+      }
+      // Per-pick grading dry-run — helps diagnose why cron isn't grading
+      // pending picks.
+      if (path === '/admin/grade-trace' && request.method === 'GET') {
+        const histRaw = await env.LEARNING_STORE.get('et_picks_history');
+        const cgRaw = await env.LEARNING_STORE.get('et_completed_games');
+        if (!histRaw || !cgRaw) return jsonResponse({ error: 'history or completed games missing' });
+        const history = JSON.parse(histRaw);
+        const completedGames = JSON.parse(cgRaw).games || [];
+        const trace = [];
+        history.forEach(slate => {
+          (slate.picks || []).forEach(pick => {
+            if (pick.result && pick.result !== '?') return;
+            const matchup = pick.matchup || '';
+            const matchedGame = findGameForPick(matchup, completedGames, slate.date);
+            const result = gradePickFromScore(pick, completedGames, slate.date);
+            // Exhaustive candidate enumeration so we can see WHY no match
+            const m = _normName(matchup);
+            const parts = m.split(/\s+(?:@|vs|v)\s+|\s*,\s*|\s*\|\s*/).filter(Boolean);
+            const allMatches = completedGames.filter(g => {
+              const ht = g.home_team, at = g.away_team;
+              if (parts.length < 2) return false;
+              const [s1, s2] = parts;
+              const sideMatch = (side, team) => {
+                const t = _normName(team);
+                const sideToks = side.split(/\s+/).filter(w => w.length >= 3 && !_AMBIG_TOKS.has(w));
+                if (sideToks.some(w => t.includes(w))) return true;
+                const tLast = t.split(/\s+/).pop();
+                return !!(tLast && tLast.length >= 3 && !_AMBIG_TOKS.has(tLast) && side.includes(tLast));
+              };
+              return (sideMatch(s1, ht) && sideMatch(s2, at)) || (sideMatch(s1, at) && sideMatch(s2, ht));
+            });
+            trace.push({
+              date: slate.date,
+              sport: pick.sport,
+              matchup,
+              pick: pick.pick,
+              normalizedParts: parts,
+              candidatesFound: allMatches.length,
+              candidatesList: allMatches.map(g => `${g.away_team} @ ${g.home_team}`).slice(0, 5),
+              uniqueMatch: matchedGame ? `${matchedGame.away_team} @ ${matchedGame.home_team}` : null,
+              result,
+              reason: result ? 'graded' : matchedGame ? 'matched but pick not parsed' : (allMatches.length > 1 ? `${allMatches.length} ambiguous candidates` : 'no matching game')
+            });
+          });
+        });
+        return jsonResponse({ pendingTotal: trace.length, completedGamesTotal: completedGames.length, trace });
       }
       // Tennis Abstract player stats — third-tier fallback when matchstat and
       // Sackmann are both blank. Returns parsed surface W-L when available,
@@ -94,11 +150,28 @@ async function runNightlyCron(env) {
   // 1. Fetch completed scores across all active sports
   const completedGames = await fetchAllCompletedScores(env.ODDS_API_KEY);
 
-  // 2. Store raw completed games for the frontend to pull as training data
+  // Extract diagnostic info before storing (it's attached to the array)
+  const breakdown = completedGames._breakdown || {};
+  const sportsListErr = completedGames._sportsListErr;
+  // Strip diagnostic metadata before persisting the games array itself
+  const games = completedGames.filter(g => g && !g._breakdown);
+
+  // 2. Store raw completed games + per-cron diagnostic so the user can
+  // see what each cron run actually fetched and why (rate limits?
+  // empty days? auth fail?). Diagnostic is queryable via
+  //   curl https://sportsedge-proxy.chuynh.workers.dev/kv/et_cron_diagnostic
   await env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
     ts: Date.now(),
-    games: completedGames
+    games
   }), { expirationTtl: 60 * 60 * 24 * 4 }); // 4-day TTL
+
+  await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    sportsListErr,
+    breakdown,
+    totalCompleted: games.length
+  }), { expirationTtl: 60 * 60 * 24 * 14 }); // 14-day TTL
 
   // 3. Read pick history from KV, auto-grade ungraded picks
   const historyRaw = await env.LEARNING_STORE.get('et_picks_history');
@@ -111,7 +184,9 @@ async function runNightlyCron(env) {
   history.forEach(slate => {
     (slate.picks || []).forEach(pick => {
       if (pick.result && pick.result !== '?') return;
-      const result = gradePickFromScore(pick, completedGames);
+      // Pass slate.date through so findGameForPick can disambiguate when
+      // multiple completed games match the matchup (series play).
+      const result = gradePickFromScore(pick, completedGames, slate.date);
       if (result) { pick.result = result; changed = true; }
     });
     // Also update grading array if present
@@ -131,10 +206,15 @@ async function runNightlyCron(env) {
     await env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30)));
   }
 
-  // 4. Learning agent — runs whenever new picks were graded
-  if (changed) {
-    await runLearningAgent(env, history);
-  }
+  // 4. Learning agent — runs EVERY cron, not just when new picks were graded.
+  // computeSignalPerformance is deterministic and cheap (just counts W/L/P
+  // by signal tag across existing graded history). Gating it on `changed`
+  // meant the KV state went stale on any day where no new completed games
+  // matched pending picks, even though the underlying graded-pick data was
+  // there. The Claude rule-rewrite call inside runLearningAgent has its own
+  // internal gating (requires ≥5 recent picks and CLAUDE_API_KEY) so it
+  // won't fire wastefully when there's nothing new to learn from.
+  await runLearningAgent(env, history);
 }
 
 // ── Learning agent ────────────────────────────────────────────────────────────
@@ -315,28 +395,44 @@ async function fetchAllCompletedScores(apiKey) {
   const sports = [...CRON_SPORTS];
 
   // Discover active tennis sport keys
+  let sportsListErr = null;
   try {
     const r = await fetch(`https://api.the-odds-api.com/v4/sports/?apiKey=${apiKey}`);
     if (r.ok) {
       const all = await r.json();
       const tennis = all.filter(s => s.active && s.key.startsWith('tennis_')).slice(0, 8).map(s => s.key);
       sports.push(...tennis);
+    } else {
+      sportsListErr = `sports list ${r.status}`;
     }
-  } catch (_) {}
+  } catch (e) { sportsListErr = e?.message || String(e); }
 
   const results = [];
+  // Per-sport diagnostic counters — written to KV alongside results so we
+  // can see WHY completed-games is empty (rate limit? no games? auth fail?)
+  // instead of silently returning [] with no explanation.
+  const breakdown = {};
   await Promise.allSettled(sports.map(async sport => {
+    breakdown[sport] = { fetched: 0, completed: 0, status: null, err: null };
     try {
       const r = await fetch(
         `https://api.the-odds-api.com/v4/sports/${sport}/scores/?daysFrom=3&apiKey=${apiKey}`,
         { signal: AbortSignal.timeout(8000) }
       );
+      breakdown[sport].status = r.status;
       if (!r.ok) return;
       const data = await r.json();
-      data.filter(g => g.completed).forEach(g => results.push({ sport, ...g }));
-    } catch (_) {}
+      breakdown[sport].fetched = Array.isArray(data) ? data.length : 0;
+      data.filter(g => g.completed).forEach(g => {
+        results.push({ sport, ...g });
+        breakdown[sport].completed++;
+      });
+    } catch (e) { breakdown[sport].err = e?.message || String(e); }
   }));
 
+  // Stash the breakdown for retrieval via /kv/et_cron_diagnostic
+  results._breakdown = breakdown;
+  results._sportsListErr = sportsListErr;
   return results;
 }
 
@@ -369,7 +465,7 @@ const _AMBIG_TOKS = new Set([
   'la','ny','sf','st','nj','tb','nb','ne','sd','gs','was','wsh','nyc','los',
   'new','san','the','los angeles','new york'
 ]);
-function findGameForPick(matchup, games) {
+function findGameForPick(matchup, games, pickDate) {
   const m = _normName(matchup);
   if (!m) return null;
   // Split matchup into two sides on common separators
@@ -396,15 +492,33 @@ function findGameForPick(matchup, games) {
     return (sideMatches(side1, ht) && sideMatches(side2, at)) ||
            (sideMatches(side1, at) && sideMatches(side2, ht));
   });
-  // Strict: only return if exactly ONE game matches. Ambiguous → null →
-  // pick stays ungraded rather than getting a wrong result.
-  return candidates.length === 1 ? candidates[0] : null;
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  // Multiple candidates — common when teams play a series (MLB 3-game series,
+  // NBA/NHL playoffs). Disambiguate by matching pickDate to game commence_time.
+  if (pickDate) {
+    const exact = candidates.filter(g => (g.commence_time || '').slice(0, 10) === pickDate);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return exact[0]; // same-day duplicates → just pick first
+    // No exact-date match — pick game closest to pickDate that's BEFORE or on pickDate
+    // (a pick made April 29 for a game that completed April 28 = the prior game)
+    const target = new Date(pickDate + 'T12:00:00Z').getTime();
+    const sorted = candidates
+      .map(g => ({ g, dt: new Date(g.commence_time || 0).getTime() }))
+      .filter(x => x.dt <= target + 24 * 3600 * 1000) // allow up to 1 day after pick date
+      .sort((a, b) => Math.abs(a.dt - target) - Math.abs(b.dt - target));
+    if (sorted.length) return sorted[0].g;
+  }
+  // No date provided or no good date match — pick the most recent completed game
+  return candidates.sort((a, b) => new Date(b.commence_time || 0) - new Date(a.commence_time || 0))[0];
 }
 
-function gradePickFromScore(pick, games) {
+function gradePickFromScore(pick, games, pickDate) {
   const pt = pick.pick || '';
   const matchup = pick.matchup || '';
-  const game = findGameForPick(matchup, games);
+  // pickDate is the slate date (YYYY-MM-DD) — used to disambiguate when the
+  // same matchup has multiple completed games (series play, repeat fixtures).
+  const game = findGameForPick(matchup, games, pickDate || pick.date);
   if (!game?.scores?.length) return null;
 
   // Tennis routes through a dedicated grader regardless of score format —
@@ -465,6 +579,22 @@ function gradePickFromScore(pick, games) {
   const mlM = pt.match(/^(.+?)\s+(?:ML\s*)?\(?[+-]?(\d{3,})/i);
   if (mlM) {
     const isHome = pickSideIsHome(mlM[1]);
+    if (isHome === null) return null;
+    const pS = isHome ? homeS : awayS, oS = isHome ? awayS : homeS;
+    if (pS === oS) return 'P';
+    return pS > oS ? 'W' : 'L';
+  }
+
+  // Fallback ML parsing — handles picks where the strict regex fails:
+  //   "Pittsburgh Pirates ML"            (no odds suffix)
+  //   "Tampa Bay Rays ML (implied ~+103)" (non-numeric in parens)
+  //   "Milwaukee Brewers ML (run line TBD)"
+  // Strategy: split on " ML" and use the prefix as the team name. As long
+  // as the matchup-side resolution (pickSideIsHome) succeeds, we can grade
+  // an ML pick without needing to parse the odds at all.
+  const mlSplit = pt.match(/^(.+?)\s+ML\b/i);
+  if (mlSplit) {
+    const isHome = pickSideIsHome(mlSplit[1]);
     if (isHome === null) return null;
     const pS = isHome ? homeS : awayS, oS = isHome ? awayS : homeS;
     if (pS === oS) return 'P';
