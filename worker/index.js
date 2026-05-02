@@ -887,18 +887,22 @@ function gradeTennisPick(pick, game) {
   const pickSideIsHome = (pickStr) => {
     const ht = _normName(game.home_team), at = _normName(game.away_team);
     const p = _normName(pickStr);
-    const words = p.split(/\s+/).filter(w => w.length >= 4);
-    const inH = words.some(w => ht.includes(w));
-    const inA = words.some(w => at.includes(w));
-    if (inH && !inA) return true;
-    if (inA && !inH) return false;
-    // Both matched — shared first name (e.g. "Alexander Zverev" vs "Alexander Blockx").
-    // Break tie using the last (family) name which is unique.
+    // 1. Last name first — the final token is almost always the family name
+    //    and is unique between two players. Handles "Zverev vs Zverev" edge
+    //    case by falling through; handles shared first names (two Alexanders).
     const pLast = p.split(/\s+/).pop();
     if (pLast && pLast.length >= 3) {
-      if (ht.includes(pLast) && !at.includes(pLast)) return true;
-      if (at.includes(pLast) && !ht.includes(pLast)) return false;
+      const inHt = ht.includes(pLast), inAt = at.includes(pLast);
+      if (inHt && !inAt) return true;
+      if (inAt && !inHt) return false;
     }
+    // 2. Any word that appears in exactly one team — more reliable than "any
+    //    word appears in either team" since shared first names cause false ties.
+    const words = p.split(/\s+/).filter(w => w.length >= 3);
+    const htOnly = words.some(w => ht.includes(w) && !at.includes(w));
+    const atOnly = words.some(w => at.includes(w) && !ht.includes(w));
+    if (htOnly && !atOnly) return true;
+    if (atOnly && !htOnly) return false;
     return null;
   };
 
