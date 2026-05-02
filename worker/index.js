@@ -190,63 +190,44 @@ async function runNightlyCron(env) {
   // organically as the user refreshes the dashboard pre-game.
   await snapshotClosingOdds(env).catch(() => {});
 
-  // 1. Fetch completed scores across all active sports + ESPN tennis (parallel)
-  // Odds API tennis score coverage is sparse — ESPN fills the gap reliably
-  // for both ATP and WTA without requiring a key.
-  const [completedGames, espnTennisGames] = await Promise.all([
-    fetchAllCompletedScores(env.ODDS_API_KEY),
-    fetchTennisScoresFromESPN()
-  ]);
-  completedGames.push(...espnTennisGames);
-
-  // Extract diagnostic info before storing (it's attached to the array)
+  // 1. Fetch Odds API scores (primary source for CLV data)
+  const completedGames = await fetchAllCompletedScores(env.ODDS_API_KEY);
   const breakdown = completedGames._breakdown || {};
   const sportsListErr = completedGames._sportsListErr;
-  // Strip diagnostic metadata before persisting the games array itself
   const games = completedGames.filter(g => g && !g._breakdown);
 
-  // 2. Store raw completed games + per-cron diagnostic so the user can
-  // see what each cron run actually fetched and why (rate limits?
-  // empty days? auth fail?). Diagnostic is queryable via
-  //   curl https://sportsedge-proxy.chuynh.workers.dev/kv/et_cron_diagnostic
   await env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
-    ts: Date.now(),
-    games
-  }), { expirationTtl: 60 * 60 * 24 * 4 }); // 4-day TTL
+    ts: Date.now(), games
+  }), { expirationTtl: 60 * 60 * 24 * 4 });
 
   await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    sportsListErr,
-    breakdown,
-    totalCompleted: games.length
-  }), { expirationTtl: 60 * 60 * 24 * 14 }); // 14-day TTL
+    ts: Date.now(), iso: new Date().toISOString(),
+    sportsListErr, breakdown, totalCompleted: games.length
+  }), { expirationTtl: 60 * 60 * 24 * 14 });
 
-  // 3. Read pick history from KV, auto-grade ungraded picks
+  // 2. Read pick history
   const historyRaw = await env.LEARNING_STORE.get('et_picks_history');
   if (!historyRaw) return;
-
   let history;
   try { history = JSON.parse(historyRaw); } catch { return; }
 
+  // 3. Fetch ESPN scores for every pending pick, targeted by exact date+sport.
+  //    No fixed lookback window — goes as far back as needed. Covers all sports.
+  const espnGames = await fetchESPNScoresForPendingPicks(history);
+  const gradingPool = [...games, ...espnGames];
+
+  // 4. Grade all pending picks against the combined pool
   let changed = false;
-  // Collect CLV computation tasks — done after grading loop since they're
-  // async KV reads that we want to batch.
   const clvTasks = [];
   history.forEach(slate => {
     (slate.picks || []).forEach(pick => {
       if (pick.result && pick.result !== '?') return;
-      // Pass slate.date through so findGameForPick can disambiguate when
-      // multiple completed games match the matchup (series play).
-      const result = gradePickFromScore(pick, completedGames, slate.date);
+      const result = gradePickFromScore(pick, gradingPool, slate.date);
       if (result) {
         pick.result = result; changed = true;
-        // Queue CLV computation for newly graded picks. Skip if pick already
-        // has CLV from a prior run.
         if (pick.clv == null) clvTasks.push(pick);
       }
     });
-    // Also update grading array if present
     if (slate.grading) {
       slate.grading.forEach(g => {
         if (g.result && g.result !== '?') return;
@@ -534,65 +515,101 @@ Output format (all 4 sport fields required even if unchanged):
 
 // ── Score fetching ────────────────────────────────────────────────────────────
 
-// ESPN public scoreboard API — free, no key, covers ATP + WTA with per-set
-// linescores. Used as primary tennis scoring source since Odds API tennis
-// score coverage is sparse (typically returns 0 completed matches mid-tournament).
-// Fetches the last 7 days so all pending tennis picks are in range.
-async function fetchTennisScoresFromESPN(daysBack = 7) {
+// ESPN sport key map. Tennis needs both ATP and WTA leagues.
+const ESPN_LEAGUES = {
+  tennis: ['tennis/atp', 'tennis/wta'],
+  nba:    ['basketball/nba'],
+  nhl:    ['hockey/nhl'],
+  mlb:    ['baseball/mlb'],
+};
+
+// Fetch ESPN scores for every pending pick by exact date+sport.
+// No fixed lookback window — if a pick from 3 weeks ago is still ungraded,
+// we fetch that exact date. Covers all sports. Deduplicates by ESPN comp ID.
+async function fetchESPNScoresForPendingPicks(history) {
+  // Collect unique {sport, dateStr} pairs from ungraded picks only
+  const needed = new Map();
+  history.forEach(slate => {
+    (slate.picks || []).forEach(pick => {
+      if (pick.result && pick.result !== '?') return;
+      const sport = (pick.sport || '').toLowerCase();
+      if (!ESPN_LEAGUES[sport] || !slate.date) return;
+      const dateStr = slate.date.replace(/-/g, '');
+      const key = `${sport}:${dateStr}`;
+      if (!needed.has(key)) needed.set(key, { sport, leagues: ESPN_LEAGUES[sport], dateStr });
+    });
+  });
+  if (!needed.size) return [];
+
   const games = [];
-  const leagues = ['atp', 'wta'];
-  const dates = [];
-  for (let i = 0; i <= daysBack; i++) {
-    const d = new Date(Date.now() - i * 24 * 3600 * 1000);
-    dates.push(d.toISOString().slice(0, 10).replace(/-/g, ''));
-  }
-  // ESPN tennis scoreboard returns tournament-level events where individual
-  // matches live inside event.groupings[].competitions[] — not event.competitions[].
-  // Per-set game counts are in competitor.linescores[].value (one entry per set).
-  // Each date's response includes the full tournament history, so the same match
-  // appears across multiple date fetches — deduplicate by ESPN competition ID.
   const seen = new Set();
-  await Promise.allSettled(leagues.flatMap(league =>
-    dates.map(async date => {
+
+  await Promise.allSettled([...needed.values()].flatMap(({ sport, leagues, dateStr }) =>
+    leagues.map(async league => {
       try {
         const r = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/tennis/${league}/scoreboard?dates=${date}`,
+          `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?dates=${dateStr}`,
           { signal: AbortSignal.timeout(8000) }
         );
         if (!r.ok) return;
         const data = await r.json();
-        (data.events || []).forEach(event => {
-          (event.groupings || []).forEach(grp => {
-            (grp.competitions || []).forEach(comp => {
-              if (!comp?.status?.type?.completed) return;
-              if (seen.has(comp.id)) return;
-              seen.add(comp.id);
-              const [c1, c2] = comp.competitors || [];
-              if (!c1 || !c2) return;
-              const name1 = c1.athlete?.displayName || '';
-              const name2 = c2.athlete?.displayName || '';
-              if (!name1 || !name2) return;
-              // linescores gives per-set games won for this player (e.g. [6,7] for
-              // a 6-x 7-x win). This enables game spread + totals grading.
-              // Falls back to sets-won score string which still grades ML picks.
-              const scoreStr = c => c.linescores?.length
-                ? c.linescores.map(s => Math.round(s.value ?? 0)).join(',')
-                : String(c.score || '');
-              games.push({
-                sport: 'tennis',
-                id: `espn_${comp.id}`,
-                home_team: name1,
-                away_team: name2,
-                commence_time: comp.date || comp.startDate,
-                completed: true,
-                scores: [
-                  { name: name1, score: scoreStr(c1) },
-                  { name: name2, score: scoreStr(c2) }
-                ]
+
+        if (sport === 'tennis') {
+          // Tennis: matches live in event.groupings[].competitions[]
+          (data.events || []).forEach(event => {
+            (event.groupings || []).forEach(grp => {
+              (grp.competitions || []).forEach(comp => {
+                if (!comp?.status?.type?.completed) return;
+                if (seen.has(comp.id)) return;
+                seen.add(comp.id);
+                const [c1, c2] = comp.competitors || [];
+                if (!c1 || !c2) return;
+                const name1 = c1.athlete?.displayName || '';
+                const name2 = c2.athlete?.displayName || '';
+                if (!name1 || !name2) return;
+                const scoreStr = c => c.linescores?.length
+                  ? c.linescores.map(s => Math.round(s.value ?? 0)).join(',')
+                  : String(c.score || '');
+                games.push({
+                  sport: 'tennis',
+                  id: `espn_${comp.id}`,
+                  home_team: name1, away_team: name2,
+                  commence_time: comp.date || comp.startDate,
+                  completed: true,
+                  scores: [
+                    { name: name1, score: scoreStr(c1) },
+                    { name: name2, score: scoreStr(c2) }
+                  ]
+                });
               });
             });
           });
-        });
+        } else {
+          // NBA / NHL / MLB: matches at event.competitions[0]
+          (data.events || []).forEach(event => {
+            const comp = event.competitions?.[0];
+            if (!comp?.status?.type?.completed) return;
+            if (seen.has(comp.id)) return;
+            seen.add(comp.id);
+            const home = comp.competitors?.find(c => c.homeAway === 'home');
+            const away = comp.competitors?.find(c => c.homeAway === 'away');
+            if (!home || !away) return;
+            const homeName = home.team?.displayName || '';
+            const awayName = away.team?.displayName || '';
+            if (!homeName || !awayName) return;
+            games.push({
+              sport,
+              id: `espn_${comp.id}`,
+              home_team: homeName, away_team: awayName,
+              commence_time: comp.date || event.date,
+              completed: true,
+              scores: [
+                { name: homeName, score: String(home.score ?? '') },
+                { name: awayName, score: String(away.score ?? '') }
+              ]
+            });
+          });
+        }
       } catch (_) {}
     })
   ));
