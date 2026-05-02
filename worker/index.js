@@ -546,6 +546,9 @@ async function fetchTennisScoresFromESPN(daysBack = 7) {
     const d = new Date(Date.now() - i * 24 * 3600 * 1000);
     dates.push(d.toISOString().slice(0, 10).replace(/-/g, ''));
   }
+  // ESPN tennis scoreboard returns tournament-level events where individual
+  // matches live inside event.groupings[].competitions[] — not event.competitions[].
+  // Per-set game counts are in competitor.linescores[].value (one entry per set).
   await Promise.allSettled(leagues.flatMap(league =>
     dates.map(async date => {
       try {
@@ -556,29 +559,33 @@ async function fetchTennisScoresFromESPN(daysBack = 7) {
         if (!r.ok) return;
         const data = await r.json();
         (data.events || []).forEach(event => {
-          const comp = event.competitions?.[0];
-          if (!comp?.status?.type?.completed) return;
-          const [c1, c2] = comp.competitors || [];
-          if (!c1 || !c2) return;
-          const name1 = c1.athlete?.displayName || '';
-          const name2 = c2.athlete?.displayName || '';
-          if (!name1 || !name2) return;
-          // Prefer per-set linescores (needed for game spread + totals grading).
-          // Falls back to sets-won string which still grades ML picks correctly.
-          const scoreStr = c => c.linescores?.length
-            ? c.linescores.map(s => s.value ?? s.displayValue ?? '').join(',')
-            : String(c.score || '');
-          games.push({
-            sport: 'tennis',
-            id: `espn_${event.id}`,
-            home_team: name1,
-            away_team: name2,
-            commence_time: comp.date || event.date,
-            completed: true,
-            scores: [
-              { name: name1, score: scoreStr(c1) },
-              { name: name2, score: scoreStr(c2) }
-            ]
+          (event.groupings || []).forEach(grp => {
+            (grp.competitions || []).forEach(comp => {
+              if (!comp?.status?.type?.completed) return;
+              const [c1, c2] = comp.competitors || [];
+              if (!c1 || !c2) return;
+              const name1 = c1.athlete?.displayName || '';
+              const name2 = c2.athlete?.displayName || '';
+              if (!name1 || !name2) return;
+              // linescores gives per-set games won for this player (e.g. [6,7] for
+              // a 6-x 7-x win). This enables game spread + totals grading.
+              // Falls back to sets-won score string which still grades ML picks.
+              const scoreStr = c => c.linescores?.length
+                ? c.linescores.map(s => Math.round(s.value ?? 0)).join(',')
+                : String(c.score || '');
+              games.push({
+                sport: 'tennis',
+                id: `espn_${comp.id}`,
+                home_team: name1,
+                away_team: name2,
+                commence_time: comp.date || comp.startDate,
+                completed: true,
+                scores: [
+                  { name: name1, score: scoreStr(c1) },
+                  { name: name2, score: scoreStr(c2) }
+                ]
+              });
+            });
           });
         });
       } catch (_) {}
