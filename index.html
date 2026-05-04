@@ -907,7 +907,15 @@ async function refreshAll(forceOdds=false){
           const _odblAw=o.away_team.includes('/')||o.away_team.includes(' / ');
           const _odblHm=o.home_team.includes('/')||o.home_team.includes(' / ');
           const _odbl=_odblAw||_odblHm;
-          const _mkOddsAth=(nm)=>({nm:fixTennisName(nm),ab:nm.split(/[/ ]+/).filter(Boolean).slice(-2).join('/'),id:null,rec:'',sc:null});
+          // Singles: ab = last name only ("Moez Echargui" → "Echargui")
+          // Doubles: ab = last names of each pair member ("Echargui / Aguilar" → "Echargui/Aguilar")
+          const _mkOddsAth=(nm)=>{
+            const isPair=nm.includes('/');
+            const ab=isPair
+              ? nm.split('/').map(s=>s.trim().split(/\s+/).pop()).filter(Boolean).join('/')
+              : nm.trim().split(/\s+/).pop()||nm;
+            return{nm:fixTennisName(nm),ab,id:null,rec:'',sc:null};
+          };
           allG.push({id:'t_'+o.id,sp:lg,cat:'tennis',spL:lg==='wta'?'WTA':'ATP',spI:'\u{1F3BE}',
             aw:_mkOddsAth(o.away_team),hm:_mkOddsAth(o.home_team),
             tm:new Date(o.commence_time),st:'pre',stD:'',ven:_oVen,tnName:_oVen,surf:_oSurf,bc:'',odds:o,inj:{aw:[],hm:[]},eOdds:null,ha:0,isTeam:false,isDoubles:_odbl});
