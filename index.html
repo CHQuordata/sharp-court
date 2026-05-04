@@ -3874,11 +3874,17 @@ function autoGradeFromScores(completedGames){
 
 // SUPERVISOR: Pure-JS match classification — no API call.
 // Returns {deep, quick, skip} arrays based on data richness.
+// Uses a rolling 30-hour window from now (NOT calendar-day) so we catch
+// matches happening in user's tomorrow that are actually "today" in the
+// tournament's local TZ — e.g. Rome qualifiers at 12:00 CET = 03:00 PDT.
 function supervisorClassify(matches){
   const deep=[],quick=[],skip=[];
-  const today=new Date().toDateString();
+  const _now=Date.now();
+  const _windowStart=_now-2*60*60*1000;     // include matches that started up to 2h ago (in-progress)
+  const _windowEnd=_now+30*60*60*1000;       // 30h forward — covers the full overlap with any tournament TZ
   matches.forEach(g=>{
-    if(g.tm.toDateString()!==today){skip.push(g);return;}
+    const t=g.tm.getTime();
+    if(t<_windowStart||t>_windowEnd){skip.push(g);return;}
     if(g.isDoubles){quick.push(g);return;} // doubles: ML only → quick classification
     const hasOdds=!!(g.odds?.bookmakers?.length);
     const hasTNStats=tnGameCache.has(g.id);
@@ -4116,9 +4122,12 @@ async function generatePicks(force=false){
     _setGenStatus('FETCHING STATS...');
     await prefetchStatsForPicks();
     const _todayStr=new Date().toDateString();
-    // ── Step 3: SUPERVISOR — classify today's matches ─────────────────────────
+    // ── Step 3: SUPERVISOR — classify upcoming matches (rolling 30h window) ───
     _setGenStatus('SUPERVISOR: CLASSIFYING SLATE...');
-    const _todayMatches=allG.filter(g=>g.cat==='tennis'&&g.tm.toDateString()===_todayStr);
+    // Use a time-from-now window instead of calendar day so tournament-TZ
+    // matches (e.g. Rome qualifiers at 03:00 user-local) aren't dropped.
+    const _winNow=Date.now(),_winStart=_winNow-2*60*60*1000,_winEnd=_winNow+30*60*60*1000;
+    const _todayMatches=allG.filter(g=>g.cat==='tennis'&&g.tm.getTime()>=_winStart&&g.tm.getTime()<=_winEnd);
     const {deep,quick,skip:_skipped}=supervisorClassify(_todayMatches);
     const _agentTargets=[...deep,...quick];
     console.log(`[supervisor] DEEP=${deep.length} QUICK=${quick.length} SKIP=${_skipped.length}`);
