@@ -3112,7 +3112,12 @@ function selLean(idx){
 function buildGamesContext(todayOnly=false,gameFilter=null){
   const now=new Date();
   const todayStr=now.toDateString();
-  const _base=todayOnly?allG.filter(g=>g.tm.toDateString()===todayStr):allG;
+  // todayOnly uses a rolling 30h window (2h lookback) instead of calendar-day —
+  // matches the supervisor classifier so tournament-TZ slates (Rome qualis at
+  // 03:00 PDT, etc.) reach the synthesizer's slate context. Calendar-day
+  // filtering silently drops half the actionable slate for non-EU users.
+  const _winNow=now.getTime(),_winStart=_winNow-2*60*60*1000,_winEnd=_winNow+30*60*60*1000;
+  const _base=todayOnly?allG.filter(g=>g.tm.getTime()>=_winStart&&g.tm.getTime()<=_winEnd):allG;
   const games=gameFilter?_base.filter(gameFilter):_base;
   let ctx=`TODAY: ${now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}\nTIME: ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'})}\n\nGAMES ON SLATE (${games.length}):\n\n`;
   games.forEach(g=>{
@@ -3368,9 +3373,19 @@ When the user message contains "TENNIS PRE-ANALYSIS" sections, those picks have 
 
 ## TENNIS PRIORITY (ATP/WTA SEASON ACTIVE)
 This is a tennis-only terminal. ALL matches on the slate are fair game regardless of book availability — the user decides where to place their bet.
-1. Prioritize matches tagged [DK ✓] or [MGM ✓] for graded picks (confirmed US retail availability).
-2. Matches without a book tag are still eligible for graded picks if a clear signal exists — user may have access on Pinnacle, BetOnline, qualifying-round books, or offshore.
-3. Target 4-6 picks per slate. Tennis edges: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
+
+### TOURNAMENT TIER — READ FIRST, ENFORCE STRICTLY
+The slate may contain a mix of tour-level and lower-tier events. Pick priority by tier:
+1. **TIER 1 (highest priority)** — ATP/WTA 1000s (Indian Wells, Miami, Madrid, **Italian Open / Rome**, Canada, Cincinnati, Shanghai, Paris) and Grand Slams (Australian Open, Roland Garros, Wimbledon, US Open). **INCLUDES qualifying rounds at these events** — Rome qualis, Roland Garros qualis, etc. are TIER 1.
+2. **TIER 2** — ATP/WTA 500s and 250s (regular tour stops).
+3. **TIER 3 (lowest priority — only if Tier 1/2 yield no edges)** — ITF $25K/$60K/$100K, WTA 125 Challengers, ATP Challengers.
+
+When a Tier 1 event is in season (Rome, French Open, Wimbledon, etc.), **at least 70% of your picks must come from Tier 1 matches**. Do NOT load up the slate with low-tier ITF matches when Masters 1000 qualifying or main draw is happening — those are the matches the user actually bets on.
+
+### BOOK AVAILABILITY
+4. Matches tagged [DK ✓] or [MGM ✓] have confirmed US retail; prefer these when tier is equal.
+5. Matches without a book tag (Pinnacle/BetOnline only) are STILL fully eligible — the user has access. Do not deprioritize a Tier 1 Rome qualifier just because DK hasn't posted yet.
+6. Target 4-6 picks per slate. Tennis edges: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
 
 ## DOUBLES MATCHES
 Games tagged [DOUBLES] in the slate have no individual player stats. For doubles:
