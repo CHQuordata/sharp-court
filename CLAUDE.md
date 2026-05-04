@@ -2,7 +2,7 @@
 
 ## PROJECT OVERVIEW
 
-Single-file Bloomberg Terminal-style tennis betting dashboard. All logic lives in `index.html` (~3,200 lines). Zero dependencies, no build step. Deployed on GitHub Pages at `https://chquordata.github.io/sportsedge-terminal/` (URL kept for backward compatibility).
+Single-file Bloomberg Terminal-style tennis betting dashboard. All logic lives in `index.html` (~3,200 lines). Zero dependencies, no build step. Deployed on GitHub Pages at `https://chquordata.github.io/sharp-court/` (old `sportsedge-terminal` URL still redirects).
 
 - **Worker proxy:** `worker/index.js` — Cloudflare Worker for Pinnacle API (Tennis #33) to bypass CORS
 - **Dev server:** `npx serve -p 3000 .` (configured in `.claude/launch.json`)
