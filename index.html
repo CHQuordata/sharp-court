@@ -3125,14 +3125,11 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
     const _plGn=(g.playoff&&g.aw.serW!=null&&g.hm.serW!=null)?g.aw.serW+g.hm.serW+1:null;
     const _awW=g.aw.serW??0,_hmW=g.hm.serW??0,_serLeader=g.playoff&&g.aw.serW!=null?(_awW>_hmW?g.aw:_hmW>_awW?g.hm:null):null,_serTrailer=_serLeader===g.aw?g.hm:g.aw;
     const playoffTag=g.playoff?` [PLAYOFFS Game ${_plGn||'?'} — HOME: ${g.hm.nm} | AWAY: ${g.aw.nm} | SERIES: ${g.aw.nm} ${_awW}-${_hmW} ${g.hm.nm}${_serLeader?` | LEADER: ${_serLeader.nm} | FACING ELIM: ${_serTrailer.nm}`:''}]`:'';
-    const hasUsOdds=hasUsBookOdds(g);
-    const _hasDK=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('draftkings')||(b.title||'').toLowerCase().includes('draftkings'));
-    const _hasMGM=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('betmgm')||(b.title||'').toLowerCase().includes('betmgm'));
-    const _tnBookTag=(_hasDK||_hasMGM)?` [${_hasDK?'DK ✓':''}${_hasDK&&_hasMGM?' ':''}${_hasMGM?'MGM ✓':''}]`:'';
+    const hasAnyOdds=!!(g.odds?.bookmakers?.length);
     const _tnBanned=g.cat==='tennis'&&TN_BAN_LIST.some(b=>[g.aw.nm,g.hm.nm].some(n=>n.toLowerCase().includes(b)));
     const _dblTag=g.isDoubles?' [DOUBLES — ML only, no individual player stats available]':'';
-    const _oddsTag=!hasUsOdds?' [ODDS LOADING]':'';
-    ctx+=`[${g.spL}${g.isDoubles?' DOUBLES':''}] ${g.aw.nm} vs ${g.hm.nm} — ${t}${playoffTag}${_oddsTag}${_tnBanned?' [BETTING BAN — DO NOT PICK EITHER SIDE]':''}${_tnBanned?'':_tnBookTag}${_dblTag}\n`;
+    const _oddsTag=!hasAnyOdds?' [ODDS LOADING]':'';
+    ctx+=`[${g.spL}${g.isDoubles?' DOUBLES':''}] ${g.aw.nm} vs ${g.hm.nm} — ${t}${playoffTag}${_oddsTag}${_tnBanned?' [BETTING BAN — DO NOT PICK EITHER SIDE]':''}${_dblTag}\n`;
     // Doubles: odds only, skip all stats
     if(g.isDoubles)return;
     // Rankings — for tennis use fetched WTA/ATP rankings as fallback
@@ -3383,9 +3380,9 @@ The slate may contain a mix of tour-level and lower-tier events. Pick priority b
 When a Tier 1 event is in season (Rome, French Open, Wimbledon, etc.), **at least 70% of your picks must come from Tier 1 matches**. Do NOT load up the slate with low-tier ITF matches when Masters 1000 qualifying or main draw is happening — those are the matches the user actually bets on.
 
 ### BOOK AVAILABILITY
-4. Matches tagged [DK ✓] or [MGM ✓] have confirmed US retail; prefer these when tier is equal.
-5. Matches without a book tag (Pinnacle/BetOnline only) are STILL fully eligible — the user has access. Do not deprioritize a Tier 1 Rome qualifier just because DK hasn't posted yet.
-6. Target 4-6 picks per slate. Tennis edges: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
+Book availability is IRRELEVANT to pick selection. Pinnacle, BetOnline, DraftKings, BetMGM, FanDuel, offshore — all the same to you. Pick the best edges on the slate regardless of which books carry the line. The user decides where to place the bet. Do NOT mention book availability in reasoning, do NOT prefer one match over another because of book tags, do NOT skip a match because it lacks DK/MGM.
+
+Target 4-6 picks per slate. Tennis edges: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
 
 ## DOUBLES MATCHES
 Games tagged [DOUBLES] in the slate have no individual player stats. For doubles:
