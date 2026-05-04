@@ -21,8 +21,17 @@ Never stop at commit. The live site only updates on push (GitHub Pages).
 
 | Sport | Key | Markets |
 |-------|-----|---------|
-| Tennis (ATP) | `tennis_atp` | h2h, spreads, totals |
-| Tennis (WTA) | `tennis_wta` | h2h, spreads, totals |
+| Tennis (ATP) Singles | `tennis_atp` | h2h, spreads, totals |
+| Tennis (WTA) Singles | `tennis_wta` | h2h, spreads, totals |
+| Tennis Doubles (ATP/WTA) | via ESPN + same Odds API keys | h2h (ML only) |
+
+**UI tabs:** ATP | WTA | DOUBLES | ⚡ PICKS
+
+**Doubles rules:**
+- No individual player stats — ML only
+- Signals limited to pair seeding, partnership form, odds movement, surface
+- Default confidence MEDIUM/LOW unless dominant seeded pairing
+- Never fabricate serve/return stats for doubles players
 
 ---
 
@@ -158,9 +167,13 @@ If the dog has a concrete structural edge on the current surface (better surface
 
 ## DATA SOURCES
 
-| Source | Purpose |
-|--------|---------|
-| The Odds API | Live odds, 10+ sportsbooks (500 req/mo free) |
-| Pinnacle API (CF Worker) | Sharp money reference — Tennis |
-| Tennis News API (TheSportsDB) | Player profiles, H2H records, ATP/WTA rankings |
-| GitHub / Jeff Sackmann | ATP/WTA historical match data 2021–2024 (surface stats) |
+All APIs below are actively used. None are candidates for removal.
+
+| Source | Purpose | Required? |
+|--------|---------|-----------|
+| The Odds API | Live odds from all active `tennis_*` sport keys | Yes — live odds |
+| Anthropic Claude API | AI picks generation + single-match deep analysis | Yes — AI engine |
+| ESPN API (free, no key) | ATP/WTA schedules, rankings, player stats, match summaries | Yes — schedule + metadata |
+| Pinnacle API (CF Worker) | Sharp money reference odds — Tennis | Optional but improves edge detection |
+| Tennis API / matchstat.com (RapidAPI) | Current-season surface records, serve/return stats, H2H | Optional — enriches picks |
+| Tennis Abstract (CF Worker proxy) | Sackmann historical match data fallback for stats | Optional — stat fallback |

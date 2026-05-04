@@ -449,8 +449,9 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   <div class="topbar-row1">
     <div class="logo">SPORTSEDGE<span>TERMINAL v2.9</span></div><div class="topbar-div"></div>
     <div class="sport-tabs" id="sportTabs">
-      <button class="sport-tab active" data-sport="all" onclick="setSport('all')">ALL</button>
-      <button class="sport-tab" data-sport="tennis" onclick="setSport('tennis')">TENNIS</button>
+      <button class="sport-tab active" data-sport="atp" onclick="setSport('atp')">ATP</button>
+      <button class="sport-tab" data-sport="wta" onclick="setSport('wta')">WTA</button>
+      <button class="sport-tab" data-sport="doubles" onclick="setSport('doubles')">DOUBLES</button>
       <button class="sport-tab picks-tab" data-sport="picks" onclick="switchToPicksView()">⚡ PICKS</button>
     </div>
     <div class="topbar-sp"></div>
@@ -551,7 +552,7 @@ html,body{height:100%;background:var(--bg0);color:var(--t1);font-family:var(--mo
   <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('portfolioSettingsModal').style.display='none'">Cancel</div>
 </div></div>
 <div class="modal-ov" id="bankrollModal" style="display:none"><div class="modal"><div class="modal-title" style="color:var(--amb)">BANKROLL SIZING</div><div class="modal-sub">Set your total bankroll for Kelly criterion bet sizing. This is stored locally and never shared.</div><input class="modal-input" id="bankrollInput" type="number" placeholder="e.g. 50000" autocomplete="off"><button class="modal-btn" style="background:var(--amb)" onclick="saveBankroll()">SAVE BANKROLL</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--t4);cursor:pointer" onclick="$('bankrollModal').style.display='none'">Cancel</div></div></div>
-<div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1-7</span></div><div class="sc-desc">Sport tabs</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
+<div class="sc-ov" id="scOverlay"><div class="sc-panel"><div class="sc-title">KEYBOARD SHORTCUTS</div><div class="sc-row"><div><span class="kbd">R</span></div><div class="sc-desc">Refresh ESPN (cached odds)</div></div><div class="sc-row"><div><span class="kbd">⇧R</span></div><div class="sc-desc">Force-refresh odds from API</div></div><div class="sc-row"><div><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></div><div class="sc-desc">Navigate slate</div></div><div class="sc-row"><div><span class="kbd">Enter</span></div><div class="sc-desc">Select matchup</div></div><div class="sc-row"><div><span class="kbd">1</span><span class="kbd">2</span><span class="kbd">3</span><span class="kbd">4</span></div><div class="sc-desc">ATP / WTA / DOUBLES / PICKS</div></div><div class="sc-row"><div><span class="kbd">K</span></div><div class="sc-desc">API key setup</div></div><div class="sc-row"><div><span class="kbd">A</span></div><div class="sc-desc">AI key setup</div></div><div class="sc-row"><div><span class="kbd">Esc</span></div><div class="sc-desc">Close overlay</div></div></div></div>
 
 <script type="module">
 import { aimp, kellyPct } from './lib/odds.js';
@@ -560,7 +561,7 @@ import { getSurface } from './lib/tennis.js';
 Object.assign(window, { aimp, kellyPct, getBookTier, detectEdges, calcEV, getLineRange, getSharp, getSurface });
 </script>
 <script>
-let AK=localStorage.getItem('odds_api_key')||'',cSport='all',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map(),cSharpOnly=false;
+let AK=localStorage.getItem('odds_api_key')||'',cSport='atp',selIdx=-1,allG=[],fG=[],allE=[],tennisForm=new Map(),cSharpOnly=false;
 let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
@@ -636,6 +637,15 @@ function mkAthlete(p){
   nm=fixTennisName(nm);
   const ab=p.athlete?.shortName||nm.split(' ').pop()||'?';
   return{nm,ab,id:p.id||null,rec:p.records?.[0]?.summary||'',sc:p.score||null,seed:p.curatedRank?.current||null,country:p.athlete?.flag?.alt||null}
+}
+function mkDoublePair(p){
+  // ESPN doubles: competitor has p.athletes[] (array of 2) instead of p.athlete
+  const aths=p.athletes||[];
+  const n0=fixTennisName(aths[0]?.displayName||aths[0]?.shortName||'?');
+  const n1=fixTennisName(aths[1]?.displayName||aths[1]?.shortName||'?');
+  const nm=`${n0} / ${n1}`;
+  const ab=`${n0.split(' ').pop()}/${n1.split(' ').pop()}`;
+  return{nm,ab,id:p.id||null,rec:p.records?.[0]?.summary||'',sc:p.score||null,seed:null,country:null,p1:n0,p2:n1};
 }
 
 // ── Action Network: public betting splits (bet% + money%) ──
@@ -790,10 +800,13 @@ async function refreshAll(forceOdds=false){
       (ev.groupings||[]).forEach(grp=>{
         (grp.competitions||[]).forEach(cp=>{
           const comps=cp.competitors;if(!comps||comps.length<2)return;
-          if(!comps[0].athlete||!comps[1].athlete)return; // skip doubles/mixed
+          // Detect doubles: each competitor has athletes[] (pair) rather than athlete (single)
+          const _isDbl=!comps[0].athlete&&(comps[0].athletes?.length>=1||comps[1].athletes?.length>=1);
+          if(!comps[0].athlete&&!_isDbl)return; // skip unknown format (mixed doubles w/o athlete data)
           const mDate=new Date(cp.date||ev.date);const st=cp.status?.type?.name;
           if(['STATUS_FINAL','STATUS_RETIRED','STATUS_WALKOVER','STATUS_FORFEIT'].includes(st)){
-            comps.forEach((cx,i)=>{const aid=cx.id;if(!aid)return;const op=comps[1-i];const sc=(cx.linescores||[]).map((ls,si)=>`${ls.value}-${op.linescores?.[si]?.value??''}`).join(' ');if(!tennisForm.has(aid))tennisForm.set(aid,[]);tennisForm.get(aid).push({W:!!cx.winner,opp:op.athlete?.shortName||op.athlete?.displayName?.split(' ').pop()||'?',oppId:op.id||null,score:sc,round:cp.round?.displayName||'',tn:ev.name||'',dt:mDate,ret:st!=='STATUS_FINAL'});});
+            // Only track form for singles (player IDs available)
+            if(!_isDbl)comps.forEach((cx,i)=>{const aid=cx.id;if(!aid)return;const op=comps[1-i];const sc=(cx.linescores||[]).map((ls,si)=>`${ls.value}-${op.linescores?.[si]?.value??''}`).join(' ');if(!tennisForm.has(aid))tennisForm.set(aid,[]);tennisForm.get(aid).push({W:!!cx.winner,opp:op.athlete?.shortName||op.athlete?.displayName?.split(' ').pop()||'?',oppId:op.id||null,score:sc,round:cp.round?.displayName||'',tn:ev.name||'',dt:mDate,ret:st!=='STATUS_FINAL'});});
             return;
           }
           if(mDate<startOfToday&&st!=='STATUS_IN_PROGRESS')return;
@@ -804,12 +817,14 @@ async function refreshAll(forceOdds=false){
           const _surfHint=(cp.type?.text||cp.subType?.text||'').toLowerCase();
           const _surfStr=`${_ven} ${_tnNm} ${_surfHint}`;
           const _surf=getSurface(_surfStr);
+          const _awP=_isDbl?mkDoublePair(comps[0]):mkAthlete(comps[0]);
+          const _hmP=_isDbl?mkDoublePair(comps[1]):mkAthlete(comps[1]);
           allG.push({id:mId,sp:lg,cat:'tennis',spL:c.lb,spI:c.ic,
-            aw:mkAthlete(comps[0]),hm:mkAthlete(comps[1]),
+            aw:_awP,hm:_hmP,
             tm:mDate,st,stD:cp.status?.type?.shortDetail||'',
             ven:_ven||_tnNm,tnName:_tnNm,round:cp.round?.displayName||'',
             surf:_surf,
-            bc:'',odds:null,inj:{aw:[],hm:[]},eOdds:null,ha:0,isTeam:false});
+            bc:'',odds:null,inj:{aw:[],hm:[]},eOdds:null,ha:0,isTeam:false,isDoubles:_isDbl});
         });
       });
     });
@@ -856,10 +871,13 @@ async function refreshAll(forceOdds=false){
           const lg=_lgFromTitle||(t.includes('wta')?'wta':'atp');
           // Also fix existing game if it was mis-tagged (e.g. ATP match grabbed by WTA key first)
           const _oSurf=getSurface(`${_oVen} ${t}`);
+          const _odblAw=o.away_team.includes('/')||o.away_team.includes(' / ');
+          const _odblHm=o.home_team.includes('/')||o.home_team.includes(' / ');
+          const _odbl=_odblAw||_odblHm;
+          const _mkOddsAth=(nm)=>({nm:fixTennisName(nm),ab:nm.split(/[/ ]+/).filter(Boolean).slice(-2).join('/'),id:null,rec:'',sc:null});
           allG.push({id:'t_'+o.id,sp:lg,cat:'tennis',spL:lg==='wta'?'WTA':'ATP',spI:'\u{1F3BE}',
-            aw:{nm:fixTennisName(o.away_team),ab:o.away_team.split(' ').pop(),id:null,rec:'',sc:null},
-            hm:{nm:fixTennisName(o.home_team),ab:o.home_team.split(' ').pop(),id:null,rec:'',sc:null},
-            tm:new Date(o.commence_time),st:'pre',stD:'',ven:_oVen,tnName:_oVen,surf:_oSurf,bc:'',odds:o,inj:{aw:[],hm:[]},eOdds:null,ha:0,isTeam:false});
+            aw:_mkOddsAth(o.away_team),hm:_mkOddsAth(o.home_team),
+            tm:new Date(o.commence_time),st:'pre',stD:'',ven:_oVen,tnName:_oVen,surf:_oSurf,bc:'',odds:o,inj:{aw:[],hm:[]},eOdds:null,ha:0,isTeam:false,isDoubles:_odbl});
         })}));
       }
     }catch(e){}
@@ -923,7 +941,7 @@ function setDateFilter(f){cDateFilter=f;['today','tomorrow','all'].forEach(k=>{c
   const dp=$('detailPanel');if(dp)dp.innerHTML='<div class="detail-empty"><div class="detail-empty-icon">&#9672;</div><div class="detail-empty-text">SELECT A MATCHUP TO RESEARCH</div><div style="font-size:10px;color:var(--t4);margin-top:8px">Use <span class="kbd">&#8593;</span><span class="kbd">&#8595;</span> to navigate</div></div>';
   applyFilters();
 }
-const US_MAJOR_BOOKS=['fanduel','draftkings','betmgm','caesars'];
+const US_MAJOR_BOOKS=['fanduel','draftkings','betmgm','caesars','pinnacle','betonlineag'];
 function hasUsBookOdds(g){return g.odds?.bookmakers?.some(b=>US_MAJOR_BOOKS.some(k=>(b.key||'').includes(k)||(b.title||'').toLowerCase().includes(k)))}
 let cConfFilter='all';
 function _loadTodayPicks(){if(!todayPicksData){const sd=localStorage.getItem('et_picks_date');if(sd===new Date().toDateString()){try{todayPicksData=JSON.parse(localStorage.getItem('et_picks_today')||'null')}catch(e){}}}}
@@ -978,7 +996,7 @@ function _updateConfFilterAvailability(){
     else{el.style.opacity='0.4';el.style.cursor='not-allowed';el.title='Generate AI picks first to enable confidence filtering'}
   });
 }
-function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport==='all'?[...allG]:cSport==='tennis'?allG.filter(g=>g.cat==='tennis'):allG.filter(g=>g.cat===cSport);if(cDateFilter!=='all'){const ref=new Date();if(cDateFilter==='tomorrow')ref.setDate(ref.getDate()+1);const ds=ref.toDateString();g=g.filter(x=>x.tm.toDateString()===ds)}
+function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport==='atp'?allG.filter(g=>g.sp==='atp'&&!g.isDoubles):cSport==='wta'?allG.filter(g=>g.sp==='wta'&&!g.isDoubles):cSport==='doubles'?allG.filter(g=>g.isDoubles):[...allG];if(cDateFilter!=='all'){const ref=new Date();if(cDateFilter==='tomorrow')ref.setDate(ref.getDate()+1);const ds=ref.toDateString();g=g.filter(x=>x.tm.toDateString()===ds)}
 // Strip tennis with no major US book odds — not bettable on FD/DK/BetMGM/Caesars
 if(AK)g=g.filter(gm=>gm.cat!=='tennis'||hasUsBookOdds(gm));
 // Confidence filter — only applies when AI picks have been generated
@@ -1066,12 +1084,12 @@ async function selGame(idx){
   let af=[],hf=[],awTn=null,hmTn=null,tnSum=null,tnH2H=null,lwotArt=null,awTnApi=null,hmTnApi=null;
   const _eo=g.st!=='STATUS_FINAL';
   const [_awt,_hmt,_tns,_h2h,_lwot,_tnp]=(await Promise.allSettled([
-    _eo&&g.cat==='tennis'&&g.aw.id?fetchTennisPlayerStats(g.sp,g.aw.id):Promise.resolve(null),
-    _eo&&g.cat==='tennis'&&g.hm.id?fetchTennisPlayerStats(g.sp,g.hm.id):Promise.resolve(null),
+    _eo&&g.cat==='tennis'&&g.aw.id&&!g.isDoubles?fetchTennisPlayerStats(g.sp,g.aw.id):Promise.resolve(null),
+    _eo&&g.cat==='tennis'&&g.hm.id&&!g.isDoubles?fetchTennisPlayerStats(g.sp,g.hm.id):Promise.resolve(null),
     _eo&&g.cat==='tennis'?fetchTennisMatchSummary(g.sp,g.id,g.aw.nm,g.hm.nm,g.aw.id,g.hm.id):Promise.resolve(null),
-    g.cat==='tennis'?fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm):Promise.resolve(null),
-    _eo&&g.cat==='tennis'?fetchLWOTArticle(g.aw.nm,g.hm.nm):Promise.resolve(null),
-    g.cat==='tennis'&&TN_API_KEY?fetchTNPlayerPair(g.sp,g.aw.nm,g.hm.nm):Promise.resolve(null)])).map(r=>r.status==='fulfilled'?r.value:null);
+    g.cat==='tennis'&&!g.isDoubles?fetchTennisH2H(g.sp,g.aw.nm,g.hm.nm):Promise.resolve(null),
+    _eo&&g.cat==='tennis'&&!g.isDoubles?fetchLWOTArticle(g.aw.nm,g.hm.nm):Promise.resolve(null),
+    g.cat==='tennis'&&TN_API_KEY&&!g.isDoubles?fetchTNPlayerPair(g.sp,g.aw.nm,g.hm.nm):Promise.resolve(null)])).map(r=>r.status==='fulfilled'?r.value:null);
   if(_awt)awTn=extractTennisStats(_awt);
   if(_hmt)hmTn=extractTennisStats(_hmt);
   if(g.cat==='tennis'){
@@ -2114,14 +2132,14 @@ if(!g.playoff&&(awL10Net===null||hmL10Net===null))score+=nd*0.3;reasons.push(`Ne
     //    MANUAL REVIEW so it surfaces in the UI rather than getting silently
     //    dropped under the 2.5 score floor.
     let _tnDataGap=false;
-    if(g.cat==='tennis'&&!_tnPickBanned){
+    if(g.cat==='tennis'&&!g.isDoubles&&!_tnPickBanned){
       const _retMissing=(awRet==null&&hmRet==null);
       const _bpcMissing=(awBpConv==null&&hmBpConv==null);
       const _surfMissing=(!awTS&&!hmTS);
       if((_retMissing||_bpcMissing)&&_surfMissing)_tnDataGap=true;
     }
     if(!_tnPickBanned&&reasons.length){
-      let _fPick=`${side.nm} ML${mlPrice}`,_fLabel=g.cat==='tennis'?'TENNIS ANALYSIS':'MONEYLINE ANALYSIS',_fEv=calcEV(g,'h2h',side.nm.split(' ').pop());
+      let _fPick=`${side.nm} ML${mlPrice}`,_fLabel=g.isDoubles?'DOUBLES ML':g.cat==='tennis'?'TENNIS ANALYSIS':'MONEYLINE ANALYSIS',_fEv=calcEV(g,'h2h',side.nm.split(' ').pop());
       if(g.cat==='tennis'&&mlO&&mlO.price<-250){
         const _bk=g.odds?.bookmakers?.[0];
         const _spMkt=_bk?.markets?.find(m=>m.key==='spreads');
@@ -2421,7 +2439,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAllModals();re
     case'ArrowDown':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){const pp=_getDisplayedPicks();selPickIdx=Math.min(selPickIdx+1,pp.length-1);selPick(selPickIdx)}else if(fG.length){selIdx=Math.min(selIdx+1,fG.length-1);selGame(selIdx);scrSel()}break;
     case'ArrowUp':e.preventDefault();if(cView==='picks'&&todayPicksData?.picks){selPickIdx=Math.max(selPickIdx-1,0);selPick(selPickIdx)}else if(fG.length){selIdx=Math.max(selIdx-1,0);selGame(selIdx);scrSel()}break;
     case'Enter':if(cView==='picks'&&selPickIdx>=0)selPick(selPickIdx);else if(selIdx>=0)selGame(selIdx);break;
-    case'1':setSport('all');break;case'2':setSport('tennis');break;case'3':switchToPicksView();break}});
+    case'1':setSport('atp');break;case'2':setSport('wta');break;case'3':setSport('doubles');break;case'4':switchToPicksView();break}});
 function scrSel(){const r=document.querySelector(`.game-row[data-i="${selIdx}"]`);if(r)r.scrollIntoView({block:'nearest',behavior:'smooth'})}
 function toggleSC(){$('scOverlay').classList.toggle('vis')}
 
@@ -3082,9 +3100,12 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
     const _hasMGM=g.cat==='tennis'&&g.odds?.bookmakers?.some(b=>(b.key||'').includes('betmgm')||(b.title||'').toLowerCase().includes('betmgm'));
     const _tnBookTag=(_hasDK||_hasMGM)?` [${_hasDK?'DK ✓':''}${_hasDK&&_hasMGM?' ':''}${_hasMGM?'MGM ✓':''}] ← PRIORITY PICK TARGET`:'';
     const _tnBanned=g.cat==='tennis'&&TN_BAN_LIST.some(b=>[g.aw.nm,g.hm.nm].some(n=>n.toLowerCase().includes(b)));
-    ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}${_tnBanned?' [BETTING BAN — DO NOT PICK EITHER SIDE]':''}${_tnBanned?'':_tnBookTag}\n`;
+    const _dblTag=g.isDoubles?' [DOUBLES — ML only, no individual player stats available]':'';
+    ctx+=`[${g.spL}${g.isDoubles?' DOUBLES':''}] ${g.aw.nm} vs ${g.hm.nm} — ${t}${playoffTag}${noOddsBlock?' [NO US BOOK ODDS — DO NOT PICK]':!hasUsOdds?' [ODDS LOADING — USE STATS]':''}${_tnBanned?' [BETTING BAN — DO NOT PICK EITHER SIDE]':''}${_tnBanned?'':_tnBookTag}${_dblTag}\n`;
     // No-odds tennis: header only, no stats (can't be picked anyway)
     if(noOddsBlock)return;
+    // Doubles: odds only, skip all stats
+    if(g.isDoubles)return;
     // Rankings — for tennis use fetched WTA/ATP rankings as fallback
     const _awRk=g.aw.rank||(g.cat==='tennis'?tennisRankings.get(String(g.aw.id??''))||null:null);
     const _hmRk=g.hm.rank||(g.cat==='tennis'?tennisRankings.get(String(g.hm.id??''))||null:null);
@@ -3351,16 +3372,22 @@ Injury data is background context ONLY. Follow these rules strictly:
 - Every pick and lean MUST have "sport" set to the exact category (nba/nhl/mlb/nfl/tennis/mma) and "matchup" must contain BOTH team/player last names exactly as shown in the slate so picks map to the correct game.
 - List every inactive sport explicitly with reason.
 
-## PRE-ANALYSIS (TENNIS + NBA)
-When the user message contains "TENNIS PRE-ANALYSIS" or "NBA PRE-ANALYSIS" sections, those picks have already been derived from signal vote tallies by dedicated analysts. Incorporate them exactly as provided — do not re-examine raw data, do not override conclusions, do not change vehicles or sides. Your job is to slot them into the picks array and use them for parlay construction. If a pre-analysis pick conflicts with what you might otherwise choose, the pre-analysis wins.
+## PRE-ANALYSIS (TENNIS)
+When the user message contains "TENNIS PRE-ANALYSIS" sections, those picks have already been derived from signal vote tallies by dedicated analysts. Incorporate them exactly as provided — do not re-examine raw data, do not override conclusions, do not change vehicles or sides. Your job is to slot them into the picks array and use them for parlay construction. If a pre-analysis pick conflicts with what you might otherwise choose, the pre-analysis wins.
 
 ## TENNIS PRIORITY (ATP/WTA SEASON ACTIVE)
 ATP and WTA clay/hard season is in full swing. Tennis picks on DraftKings and BetMGM are the PRIMARY focus of this slate. Follow this allocation:
 1. FIRST allocate graded pick slots to tennis matches tagged [DK ✓] or [MGM ✓] that have qualifying edges.
-2. Fill remaining slots with NBA/NHL/MLB picks.
-3. Target 3-5 tennis picks per slate when ≥3 qualifying matches exist on DK or BetMGM.
-4. Tennis edges to prioritize: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
-5. Only pick tennis games carrying the [DK ✓] or [MGM ✓] tag — all others are leans.
+2. Target 3-5 singles picks per slate when ≥3 qualifying matches exist on DK or BetMGM.
+3. Tennis edges to prioritize: clay specialist vs hard-court player on clay, ranking gap ≥20 places, market favorite ≥65% implied with confirmed surface record, one-sided H2H on surface (3-0 or better).
+4. Only pick tennis games carrying the [DK ✓] or [MGM ✓] tag — all others are leans.
+
+## DOUBLES MATCHES
+Games tagged [DOUBLES] in the slate have no individual player stats. For doubles:
+- Only ML betting is reliable (spreads/totals rarely offered on US books for doubles)
+- Signals: partnership record at this tournament, seedings (if listed), odds movement, surface
+- Treat doubles with lower default confidence unless the pair is a dominant #1 seed pairing
+- Do NOT fabricate serve/return stats for doubles players — use market price and ranking as the only signals
 
 ## JSON OUTPUT RULES — CRITICAL: violating any rule causes a parse failure
 - Output raw JSON only — NO markdown fences, NO prose, NO text before or after the JSON
@@ -4011,7 +4038,8 @@ async function aiAnalyzeGame(gid){
   // Ensure stats/form/pitcher cache is warm for this game before building context
   if(!gameFormCache.has(g.id))await prefetchStatsForPicks();
   let ctx=`Analyze this specific matchup for betting value:\n\n`;
-  ctx+=`[${g.spL}] ${g.aw.nm} @ ${g.hm.nm}\n`;
+  ctx+=`[${g.spL}${g.isDoubles?' DOUBLES':''}] ${g.aw.nm} vs ${g.hm.nm}\n`;
+  if(g.isDoubles)ctx+=`⚠️ DOUBLES MATCH — Only ML available. No individual serve/return stats. Focus on pair partnership history, odds, surface, and tournament context.\n`;
   if(g.playoff){
     const gameNum=(g.aw.serW!=null&&g.hm.serW!=null)?(g.aw.serW+g.hm.serW+1):null;
     ctx+=`⚠️ THIS IS A ${g.cat==='nhl'?'NHL':'NBA'} PLAYOFF GAME`;
@@ -4026,14 +4054,16 @@ async function aiAnalyzeGame(gid){
   if(g.cat==='tennis'){
     const surf=( g.surf || getSurface(g.ven) );ctx+=`Surface: ${surf}\n`;
     if(g.round)ctx+=`Round: ${g.round}\n`;if(g.tnName)ctx+=`Tournament: ${g.tnName}\n`;
-    [g.aw,g.hm].forEach(pl=>{const _allFmA=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt);const fm=_allFmA.slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+(m.score?' '+m.score:'')+' vs '+m.opp+(m.tn?' ('+m.tn+')':'')+(m.round?' '+m.round:'')).join(', ')}\n`;const _tnWA=(g.tnName||'').toLowerCase().split(/\s+/).filter(t=>t.length>3);if(_tnWA.length){const tnMsA=_allFmA.filter(m=>m.tn&&_tnWA.some(t=>m.tn.toLowerCase().includes(t))).sort((a,b)=>a.dt-b.dt);if(tnMsA.length){const has3SA=tnMsA.some(m=>m.score&&m.score.split(' ').filter(x=>x.includes('-')).length>=3);const hasTBA=tnMsA.some(m=>m.score&&m.score.split(' ').some(s=>s.startsWith('7-6')||s.startsWith('6-7')));ctx+=`${pl.nm} this tournament: ${tnMsA.map(m=>`${m.W?'W':'L'} ${m.score||'?'}${m.ret?' (ret/WO)':''} vs ${m.opp}${m.oppId&&tennisRankings.get(String(m.oppId))?' #'+tennisRankings.get(String(m.oppId)):''} (${m.round||'?'})`).join(', ')}${has3SA?' ⚠️ has dropped a set':''}${hasTBA?' ⚠️ tiebreak in draw':''}\n`}}}});
-    const tc=tennisCache.get(g.id);
+    if(!g.isDoubles)[g.aw,g.hm].forEach(pl=>{const _allFmA=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt);const fm=_allFmA.slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+(m.score?' '+m.score:'')+' vs '+m.opp+(m.tn?' ('+m.tn+')':'')+(m.round?' '+m.round:'')).join(', ')}\n`;const _tnWA=(g.tnName||'').toLowerCase().split(/\s+/).filter(t=>t.length>3);if(_tnWA.length){const tnMsA=_allFmA.filter(m=>m.tn&&_tnWA.some(t=>m.tn.toLowerCase().includes(t))).sort((a,b)=>a.dt-b.dt);if(tnMsA.length){const has3SA=tnMsA.some(m=>m.score&&m.score.split(' ').filter(x=>x.includes('-')).length>=3);const hasTBA=tnMsA.some(m=>m.score&&m.score.split(' ').some(s=>s.startsWith('7-6')||s.startsWith('6-7')));ctx+=`${pl.nm} this tournament: ${tnMsA.map(m=>`${m.W?'W':'L'} ${m.score||'?'}${m.ret?' (ret/WO)':''} vs ${m.opp}${m.oppId&&tennisRankings.get(String(m.oppId))?' #'+tennisRankings.get(String(m.oppId)):''} (${m.round||'?'})`).join(', ')}${has3SA?' ⚠️ has dropped a set':''}${hasTBA?' ⚠️ tiebreak in draw':''}\n`}}}});
+    if(g.isDoubles){/* no individual player stats for doubles */}
+    else{const tc=tennisCache.get(g.id);
     if(tc){const sk2=surf==='clay'?'clay':surf==='grass'?'grass':'hard';const awSv=tc.awSurf?.[sk2],hmSv=tc.hmSurf?.[sk2];if(awSv?.tot>=3||hmSv?.tot>=3){ctx+=`${surf} record (2023-24): `;if(awSv?.tot>=3)ctx+=`${g.aw.nm.split(' ').pop()} ${awSv.w}-${awSv.l} (${Math.round(awSv.w/awSv.tot*100)}%) `;if(hmSv?.tot>=3)ctx+=`${g.hm.nm.split(' ').pop()} ${hmSv.w}-${hmSv.l} (${Math.round(hmSv.w/hmSv.tot*100)}%)`;ctx+='\n'}if(tc.total>0)ctx+=`H2H: ${g.aw.nm.split(' ').pop()} ${tc.awW}-${tc.hmW}\n`;const _h2hRA=(tennisForm.get(String(g.aw.id))||[]).filter(m=>m.oppId===String(g.hm.id)&&(g.tm-m.dt)<365*864e5);if(_h2hRA.length){const _rWA=_h2hRA.filter(m=>m.W).length;ctx+=`Recent H2H (12mo): ${g.aw.nm.split(' ').pop()} ${_rWA}-${_h2hRA.length-_rWA} — ${_h2hRA.slice().sort((a,b)=>b.dt-a.dt).slice(0,3).map(m=>`${m.W?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop()} ${m.score||'?'}${m.tn?' ('+getSurface(m.tn)+', '+m.tn+')':''}`).join(', ')}\n`}const awSrv=tc.awServe?.[sk2],hmSrv=tc.hmServe?.[sk2];if(awSrv?.m>=3||hmSrv?.m>=3)ctx+=`Serve stats (${surf} 2023-24): ${g.aw.nm.split(' ').pop()} 1stIn=${awSrv?.first_pct||'N/A'}% BPsave=${awSrv?.bp_save_pct||'N/A'}% | ${g.hm.nm.split(' ').pop()} 1stIn=${hmSrv?.first_pct||'N/A'}% BPsave=${hmSrv?.bp_save_pct||'N/A'}%\n`}
     const tng=tnGameCache.get(g.id);
     if(tng?.awData||tng?.hmData){const skT=surf==='clay'?'clay':surf==='grass'?'grass':'hard';const _getTNCtxA=(d,nm)=>{if(!d)return null;const sfArr=Array.isArray(d.surface)?d.surface:(d.surface?[d.surface]:[]);const sfR=sfArr.find(x=>{const sn=(x.surface||x.surfaceType||'').toLowerCase();return skT==='clay'?sn.includes('clay'):skT==='grass'?sn.includes('grass'):sn.includes('hard')||sn===''});const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};let out=nm+':';if(sfR){const w=parseInt(sfR.wins??sfR.w??0)||0,l=parseInt(sfR.losses??sfR.l??0)||0;if(w+l>0)out+=` 2025-${surf}=${w}-${l}(${Math.round(w/(w+l)*100)}%)`}const bp1=parseInt(st.breakPointSavedGm||0),bp2=parseInt(st.breakPointFacedGm||0);if(bp2>0)out+=` BPsave=${Math.round(bp1/bp2*100)}%`;const bpc=parseInt(st.breakPointConvertedGm||0),bpo=parseInt(st.breakPointOpportunitiesGm||0);if(bpo>0)out+=` BPconv=${Math.round(bpc/bpo*100)}%`;const f1=parseInt(st.firstServeGm||0),f1of=parseInt(st.firstServeOfGm||0);if(f1of>0)out+=` 1stIn=${Math.round(f1/f1of*100)}%`;const rw=parseInt(st.returnPointsWonGm||st.receivingPointsWonGm||0),rof=parseInt(st.returnPointsTotalGm||st.returnPointsOfGm||st.returnGamesGm||0);if(rof>0)out+=` RetWon=${Math.round(rw/rof*100)}%`;return out};const awCtxA=_getTNCtxA(tng.awData,g.aw.nm.split(' ').pop()),hmCtxA=_getTNCtxA(tng.hmData,g.hm.nm.split(' ').pop());if(awCtxA||hmCtxA)ctx+=`Live stats (matchstat.com): ${[awCtxA,hmCtxA].filter(Boolean).join(' | ')}\n`}
     const _awHasDbA=!!(tc?.awSurf||tng?.awData||(tennisForm.get(String(g.aw.id))?.length));
     const _hmHasDbA=!!(tc?.hmSurf||tng?.hmData||(tennisForm.get(String(g.hm.id))?.length));
     if(!_awHasDbA||!_hmHasDbA){const _spA=[!_awHasDbA?g.aw.nm:null,!_hmHasDbA?g.hm.nm:null].filter(Boolean);ctx+=`\n[LIMITED DATA — ${_spA.join(', ')}: not in stats DB. Use ranking position and market pricing as primary signals only. Do not speculate about surface record, playing style, or results not confirmed in the data above.]\n`}
+    } // end else(!g.isDoubles)
   }
   if(g.odds?.bookmakers?.length){const{sp,to,ml}=xMkts(g.odds.bookmakers[0]);if(ml)ctx+=`ML: ${ml.outcomes.map(o=>o.name+' '+fp(o.price)).join(' / ')}\n`;if(sp)ctx+=`Spread: ${sp.outcomes.map(o=>o.name+' '+fp(o.point)+' ('+fp(o.price)+')').join(' / ')}\n`;if(to)ctx+=`Total: O/U ${to.outcomes.find(o=>o.name==='Over')?.point}\n`}
   const ge=allE.filter(e=>e.g.id===g.id);if(ge.length)ctx+=`Book edges: ${ge.map(e=>e.ml+' '+e.side+' '+e.ep.toFixed(1)+'% @ '+e.bb).join(', ')}\n`;
