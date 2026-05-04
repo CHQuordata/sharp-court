@@ -1338,6 +1338,9 @@ async function refreshAll(forceOdds=false){
     g.hm.rank=tennisRankMap.get(String(g.hm.id))||nr(g.hm.nm)||null;
   });
 
+  // Fix tour tags before odds ingestion so x.sp===lg checks succeed
+  validateTennisTours();
+
   // ── ODDS API (if key present) ──
   if(AK){
     // Tennis odds — cache the sports list for 1hr, individual keys use ODDS_TTL
@@ -1391,7 +1394,8 @@ async function refreshAll(forceOdds=false){
   validateTennisTours();
 
   // Deduplicate — ESPN returns MMA/tennis fights across multiple event objects
-  {const seen=new Map();allG.forEach(g=>{const k=g.isTeam?g.id:g.cat+'_'+[g.aw.nm,g.hm.nm].sort().join('|');if(!seen.has(k)||(g.odds&&!seen.get(k).odds))seen.set(k,g)});allG=[...seen.values()]}
+  // Normalize names word-order-agnostically so "Zheng Qinwen" and "Qinwen Zheng" share a key
+  {const _nk=nm=>_normName(nm).split(' ').sort().join(' ');const seen=new Map();allG.forEach(g=>{const k=g.isTeam?g.id:g.cat+'_'+[_nk(g.aw.nm),_nk(g.hm.nm)].sort().join('|');if(!seen.has(k)||(g.odds&&!seen.get(k).odds))seen.set(k,g)});allG=[...seen.values()]}
   allG.sort((a,b)=>{const al=a.st==='STATUS_IN_PROGRESS'?0:a.st==='STATUS_SCHEDULED'||a.st==='pre'?1:2;const bl=b.st==='STATUS_IN_PROGRESS'?0:b.st==='STATUS_SCHEDULED'||b.st==='pre'?1:2;return al!==bl?al-bl:a.tm-b.tm});
   // Save line snapshot + opening lines (opening = first time we ever see a game's odds)
   {const snap={};const openUpd={..._openSnap};allG.forEach(g=>{if(!g.odds?.bookmakers?.length)return;const bk=g.odds.bookmakers[0];const{sp,to,ml}=xMkts(bk);const curSp=sp?.outcomes?.find(o=>o.point<0)?.point??null;const curTo=to?.outcomes?.find(o=>o.name==='Over')?.point??null;snap[g.id]={sp:curSp,to:curTo,ml:ml?.outcomes?.map(o=>({n:o.name,pr:o.price}))||[],ts:Date.now()};if(!openUpd[g.id]&&(curSp!=null||ml?.outcomes?.length))openUpd[g.id]={sp:curSp,to:curTo,ml:ml?.outcomes?.map(o=>({n:o.name,pr:o.price}))||[],ts:Date.now()}});localStorage.setItem('ln_snap',JSON.stringify(snap));localStorage.setItem('ln_open',JSON.stringify(openUpd))}
