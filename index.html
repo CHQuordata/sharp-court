@@ -5310,8 +5310,18 @@ async function aiAnalyzeGame(gid){
   const g=typeof gid==='string'?allG.find(x=>x.id===gid):fG[gid];
   if(!g||!CLAUDE_KEY)return;
   const btn=$('aiAnalyzeBtn');if(btn){btn.disabled=true;btn.textContent='ANALYZING...'}
-  // Ensure stats/form/pitcher cache is warm for this game before building context
-  if(!gameFormCache.has(g.id))await prefetchStatsForPicks();
+  // Ensure stats/form/pitcher cache is warm for this game before building context.
+  // prefetchStatsForPicks is currently tennis-only, so skip the call entirely for
+  // other sports. For tennis, fire it only when at least one of the caches it
+  // populates (Sackmann H2H or matchstat pair) is actually missing for this game.
+  // Earlier guard used gameFormCache.has(g.id) but that map is keyed by player
+  // id, not game id — meaning the guard always missed and prefetch ran on every
+  // click, including for cached games and for sports that don't use it.
+  if(g.cat==='tennis'){
+    const _needH2H=!tennisCache.has(g.id);
+    const _needPair=typeof TN_API_KEY!=='undefined'&&TN_API_KEY&&!tnGameCache.has(g.id);
+    if(_needH2H||_needPair)await prefetchStatsForPicks();
+  }
   let ctx=`Analyze this specific matchup for betting value:\n\n`;
   ctx+=`[${g.spL}${g.isDoubles?' DOUBLES':''}] ${g.aw.nm} vs ${g.hm.nm}\n`;
   if(g.isDoubles)ctx+=`⚠️ DOUBLES MATCH — Only ML available. No individual serve/return stats. Focus on pair partnership history, odds, surface, and tournament context.\n`;
