@@ -1166,6 +1166,8 @@ async function init(){
   if(BANKROLL>0){const btn=$('bankrollBtn');if(btn)btn.textContent='$'+BANKROLL.toLocaleString()}
   // Pull bets + rules from KV so desktop-logged bets appear on mobile (and vice versa)
   syncFromKV();
+  // RESCUE: detect picks in local storage that predate KV — show banner + auto-push
+  _rescueLocalPicks();
   // Surface-specific Elo — fire-and-forget, populates _seloData for fair-price
   // calculations. 24h cache so subsequent loads hit localStorage.
   loadSElo();
@@ -4462,6 +4464,41 @@ function scrubLearnedRules(){
       }
     }
   });
+}
+
+async function _rescueLocalPicks(){
+  try{
+    const raw=localStorage.getItem('et_picks_history');
+    if(!raw)return;
+    const local=JSON.parse(raw)||[];
+    if(!local.length)return;
+    // Find slates newer than what KV has
+    const kvRaw=await fetch(`${WORKER_URL}/kv/et_picks_history`,{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).catch(()=>null);
+    const kvSlates=kvRaw?.value?JSON.parse(kvRaw.value):[];
+    const kvDates=new Set((kvSlates).map(s=>s.date));
+    const newSlates=local.filter(s=>s.date&&!kvDates.has(s.date)&&(s.picks||[]).length>0);
+    if(!newSlates.length)return;
+    // Show rescue banner
+    const dates=newSlates.map(s=>`${s.date} (${s.picks.length} picks)`).join(', ');
+    const banner=document.createElement('div');
+    banner.id='rescue-banner';
+    banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#e6a817;color:#000;font-size:11px;font-family:monospace;font-weight:700;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;';
+    banner.innerHTML=`<span>📡 RESCUING LOCAL PICKS: ${dates}</span><span id="rescue-status">pushing...</span>`;
+    document.body.prepend(banner);
+    // Merge with KV and push
+    const merged=new Map();
+    [...kvSlates,...local].forEach(s=>{if(!s?.date)return;const ex=merged.get(s.date);if(!ex||(s.picks||[]).length>(ex.picks||[]).length)merged.set(s.date,s);});
+    const sorted=[...merged.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
+    localStorage.setItem('et_picks_history',JSON.stringify(sorted));
+    const res=await fetch(`${WORKER_URL}/kv/et_picks_history`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:JSON.stringify(sorted)}),signal:AbortSignal.timeout(8000)});
+    const statusEl=document.getElementById('rescue-status');
+    if(res.ok){
+      if(statusEl)statusEl.textContent='✅ SAVED TO KV';
+      setTimeout(()=>banner.remove(),5000);
+    }else{
+      if(statusEl)statusEl.textContent='❌ PUSH FAILED — screenshot this page';
+    }
+  }catch(e){console.warn('rescue failed',e);}
 }
 
 async function syncFromKV(){
