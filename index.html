@@ -605,7 +605,7 @@ let pendingPicksData=null,_rgApprovals={};
 let trackedIds=new Set(JSON.parse(localStorage.getItem('et_tracked')||'[]'));
 let _oddsEverOk=false; // true once any successful API call confirms the key works
 const _oddsCache=new Map(),ODDS_TTL=5*60*1000;
-const WORKER_URL=localStorage.getItem('et_worker_url')||'';
+const WORKER_URL='https://sportsedge-proxy.chuynh.workers.dev';
 const ODDS_BOOKS='pinnacle,draftkings,betmgm,fanduel,caesars,betonlineag';
 const BOOK_ORDER=['Pinnacle','DraftKings','BetMGM','FanDuel','Caesars','BetOnline.ag'];
 const SPORT_MARKETS={_tennis:'h2h,spreads,totals'};
@@ -4483,6 +4483,22 @@ async function syncFromKV(){
           const merged=[...local,...remote.filter(b=>!seen.has(b.logged))];
           merged.sort((a,b)=>new Date(b.logged)-new Date(a.logged));
           localStorage.setItem('et_manual_bets',JSON.stringify(merged.slice(0,200)));
+        }catch(_){}
+      }else if(k==='et_picks_history'){
+        // Merge remote pick history with local — never blindly overwrite.
+        // For each date-slate, keep whichever version has more picks.
+        // This means picks generated on any device survive even if KV is behind.
+        try{
+          const remote=JSON.parse(r.value.value)||[];
+          const local=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
+          const merged=new Map();
+          [...remote,...local].forEach(s=>{
+            if(!s?.date)return;
+            const ex=merged.get(s.date);
+            if(!ex||(s.picks||[]).length>(ex.picks||[]).length)merged.set(s.date,s);
+          });
+          const sorted=[...merged.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
+          localStorage.setItem('et_picks_history',JSON.stringify(sorted));
         }catch(_){}
       }else{
         localStorage.setItem(k,r.value.value);
