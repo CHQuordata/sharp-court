@@ -1,7 +1,7 @@
 const ALLOWED_ORIGIN = 'https://chquordata.github.io';
 const PINNACLE_MMA_SPORT = 7;
 const PINNACLE_TENNIS_SPORT = 33;
-const CRON_SPORTS = ['basketball_nba', 'icehockey_nhl', 'baseball_mlb'];
+// Tennis sport keys are discovered dynamically via the Odds API sports list.
 
 // Rolling-window durations used across grading, signal performance, and the
 // learning agent. Centralised here so tuning one threshold changes all callers.
@@ -360,7 +360,7 @@ async function runLearningAgent(env, history) {
 
   // Collect picks from the last 7 days with confirmed results
   const cutoff = Date.now() - MS_7D;
-  const recentBySport = { tennis: [], nba: [], mlb: [], nhl: [] };
+  const recentBySport = { tennis: [] };
   history.forEach(slate => {
     if (new Date(slate.date).getTime() < cutoff) return;
     (slate.picks || []).forEach(pick => {
@@ -370,27 +370,23 @@ async function runLearningAgent(env, history) {
     });
   });
 
-  const totalRecent = Object.values(recentBySport).reduce((s, a) => s + a.length, 0);
+  const totalRecent = recentBySport.tennis.length;
   if (totalRecent < 5) return; // not enough data for meaningful lessons
 
-  // Read existing sport-specific rules
-  const sports = ['tennis', 'nba', 'mlb', 'nhl'];
+  // Read existing tennis rules
+  const sports = ['tennis'];
   const existingRules = await Promise.all(
     sports.map(s => env.LEARNING_STORE.get(`et_learned_rules_${s}`))
   );
   const rulesMap = Object.fromEntries(sports.map((s, i) => [s, existingRules[i] || '']));
 
-  // Build picks block grouped by sport
-  let picksBlock = '';
-  for (const [sport, picks] of Object.entries(recentBySport)) {
-    if (!picks.length) continue;
-    picksBlock += `\n${sport.toUpperCase()} (${picks.length} picks, last 7d):\n`;
-    picks.forEach(p => {
-      const tags = (p.filters || []).join(', ') || 'no signal tags';
-      const conf = p.confidence || '?';
-      picksBlock += `  ${p.result} | ${conf} | ${p.matchup || ''} | ${p.pick || ''} | signals: ${tags}\n`;
-    });
-  }
+  // Build picks block for tennis
+  let picksBlock = `\nTENNIS (${recentBySport.tennis.length} picks, last 7d):\n`;
+  recentBySport.tennis.forEach(p => {
+    const tags = (p.filters || []).join(', ') || 'no signal tags';
+    const conf = p.confidence || '?';
+    picksBlock += `  ${p.result} | ${conf} | ${p.matchup || ''} | ${p.pick || ''} | signals: ${tags}\n`;
+  });
 
   // Build signal performance summary for context. Includes Wilson 95% CI
   // bounds + a SIGNIFICANCE TAG so Claude can correctly distinguish noise
@@ -419,34 +415,34 @@ async function runLearningAgent(env, history) {
     .join('\n\n');
 
   const userMsg =
-`GRADED PICKS — last 7 days:
+`GRADED TENNIS PICKS — last 7 days:
 ${picksBlock}
 
-SIGNAL PERFORMANCE — last 30 days (all graded picks):
+SIGNAL PERFORMANCE — last 30 days (all graded tennis picks):
 ${perfSummary || '(insufficient data yet)'}
 
 EXISTING LEARNED RULES:
 ${existingRulesBlock || '(none yet)'}
 
 Instructions:
-- Analyze the pick results above by sport.
-- For each sport that has graded picks: identify what's working and what isn't.
+- Analyze the tennis pick results above.
+- Identify what signals are working and what isn't.
 
 DECAY POLICY — apply to EVERY existing rule before considering preservation:
-- DROP any rule whose referenced signal has FEWER THAN 3 picks in the last 30 days. Stale signals that don't appear in recent data must not persist — they were either learned from a different season, a tournament that's no longer running, or a pattern the system has stopped triggering on. A rule with no current evidence is noise.
-- DROP any rule whose referenced signal has win rate ≤40% with sample ≥10 in the last 30 days. The signal is actively losing money; preserving the rule is worse than having no rule.
-- DROP any rule that depends on a player, team, or tournament-specific name that doesn't appear in any pick from the last 14 days. Roster moves, retirements, and tournament substitutions invalidate name-specific rules quickly.
-- DOWN-PROMOTE (rewrite as softer "context only" guidance, max 15 words) any rule whose signal has 41-49% WR with sample ≥10. It's not a clear edge, just a weak lean.
+- DROP any rule whose referenced signal has FEWER THAN 3 picks in the last 30 days. Stale signals that don't appear in recent data must not persist — they were either learned from a different tournament or a pattern the system has stopped triggering on.
+- DROP any rule whose referenced signal has win rate ≤40% with sample ≥10 in the last 30 days. The signal is actively losing money.
+- DROP any rule that depends on a player-specific name that doesn't appear in any pick from the last 14 days. Retirements and tournament substitutions invalidate name-specific rules quickly.
+- DOWN-PROMOTE (rewrite as softer "context only" guidance, max 15 words) any rule whose signal has 41-49% WR with sample ≥10.
 
 PRESERVATION CRITERIA — a rule survives only if ALL hold:
 - Referenced signal has ≥3 picks in last 30d
-- Referenced signal has ≥50% WR (or strict policy rule from CLAUDE.md that does not depend on win rate, e.g. "never use SH%")
+- Referenced signal has ≥50% WR
 - Rule is still consistent with the pick reasoning patterns in the last 7 days
 
 ADDITION CRITERIA — only add new rules when:
 - Sample ≥5 picks for the new pattern in last 30d
 - Win rate ≥55% on that pattern
-- The pattern is reproducible (not just one hot streak with the same pick)
+- The pattern is reproducible (not just one hot streak)
 
 STATISTICAL SIGNIFICANCE GATE (HARD REQUIREMENT):
 - Each signal in the SIGNAL PERFORMANCE block above is tagged [EDGE], [FADE], or [NOISE].
@@ -456,18 +452,15 @@ STATISTICAL SIGNIFICANCE GATE (HARD REQUIREMENT):
 - ONLY generate "favors X" rules from [EDGE]-tagged signals.
 - ONLY generate "fade X" rules from [FADE]-tagged signals.
 - NEVER generate a rule from a [NOISE]-tagged signal regardless of raw WR.
-- This prevents 4-1 (80% WR) hot streaks from minting confident-looking rules
-  that are actually statistical noise.
 
 OUTPUT REQUIREMENTS:
-- Max 10 rules per sport (down from 12 — be aggressive about pruning)
+- Max 10 rules total — be aggressive about pruning
 - Each rule max 20 words, name the exact signal/condition/outcome
-- It is BETTER to have 3 strong rules than 10 weak ones — if a sport has no signals meeting preservation criteria, return an empty string for that sport's rules rather than preserving stale ones
-- If a sport has 0 graded picks in the last 30d, return its existing rules unchanged (no data = can't decay)
+- It is BETTER to have 3 strong rules than 10 weak ones — if no signals meet preservation criteria, return an empty string
 - Output raw JSON only. No markdown fences.
 
-Output format (all 4 sport fields required even if unchanged):
-{"tennis_rules":"rule1\\nrule2\\n...","nba_rules":"...","mlb_rules":"...","nhl_rules":"..."}`;
+Output format:
+{"tennis_rules":"rule1\\nrule2\\n..."}`;
 
   // Log learning agent failures to KV so they're queryable via
   // /kv/et_learning_agent_err. Silences the outer try-catch without
@@ -508,9 +501,6 @@ Output format (all 4 sport fields required even if unchanged):
 
     const ruleKeyMap = {
       tennis_rules: 'et_learned_rules_tennis',
-      nba_rules:    'et_learned_rules_nba',
-      mlb_rules:    'et_learned_rules_mlb',
-      nhl_rules:    'et_learned_rules_nhl'
     };
 
     // null/undefined = field absent from response → keep existing KV rules unchanged
@@ -529,12 +519,9 @@ Output format (all 4 sport fields required even if unchanged):
 
 // ── Score fetching ────────────────────────────────────────────────────────────
 
-// ESPN sport key map. Tennis needs both ATP and WTA leagues.
+// ESPN sport key map — tennis only (ATP + WTA leagues).
 const ESPN_LEAGUES = {
   tennis: ['tennis/atp', 'tennis/wta'],
-  nba:    ['basketball/nba'],
-  nhl:    ['hockey/nhl'],
-  mlb:    ['baseball/mlb'],
 };
 
 // Fetch ESPN scores for every pending pick by exact date+sport.
@@ -631,7 +618,7 @@ async function fetchESPNScoresForPendingPicks(history) {
 }
 
 async function fetchAllCompletedScores(apiKey) {
-  const sports = [...CRON_SPORTS];
+  const sports = [];
 
   // Discover active tennis sport keys
   let sportsListErr = null;
@@ -1317,13 +1304,9 @@ function buildBacktestReport(history, perf) {
 // we can later compute Closing Line Value when grading. Stores per-game with
 // a 4-day TTL (long enough to survive grading + a few backfill retries).
 
-const _CRON_SPORTS_ALL = [
-  'basketball_nba', 'icehockey_nhl', 'baseball_mlb', 'americanfootball_nfl'
-];
-
 async function snapshotClosingOdds(env) {
   if (!env.ODDS_API_KEY) return { error: 'no API key' };
-  const sports = [..._CRON_SPORTS_ALL];
+  const sports = [];
   // Discover active tennis sport keys
   try {
     const r = await fetch(`https://api.the-odds-api.com/v4/sports/?apiKey=${env.ODDS_API_KEY}`);
