@@ -1045,10 +1045,18 @@ function computeMatchEdges(g,fp){
 }
 
 // Quant desk classification per match. Returns one of:
-//   AUTOPICK    — math edge ≥ 3% on best market; pick is mandated
-//   BORDERLINE  — math edge 1–3%; LLM judgment decides pick vs lean
-//   QUANT_PASS  — math edge < 1%; LLM can still surface qualitative signals
+//   AUTOPICK    — math edge ≥ 5% AND fair win prob ≥ 20% AND book odds ≤ +400
+//   BORDERLINE  — math edge 1–5%; LLM judgment decides pick vs lean
+//   QUANT_PASS  — math edge < 1%, OR longshot noise (fair prob < 20%, book > +400)
 //   NO_QUANT    — fair price unavailable (unranked player); LLM-only call
+//
+// Longshot filter: below 20% fair probability, sElo model uncertainty (±50 Elo)
+// swamps the edge entirely — a 8% edge at 15% fair prob is indistinguishable
+// from noise and will never produce a usable sample size. Cap at +400 book odds
+// for the same reason. These downgrade to QUANT_PASS, not AUTOPICK.
+const AUTOPICK_MIN_EDGE   = 0.05;  // 5% minimum edge (raised from 3%)
+const AUTOPICK_MIN_PROB   = 0.20;  // 20% minimum fair win probability
+const AUTOPICK_MAX_ODDS   = 400;   // +400 max book price (American)
 function quantClassify(g){
   const fp=fairPrice(g);
   if(!fp)return{match:g,classification:'NO_QUANT',reason:'no fair price'};
@@ -1057,11 +1065,22 @@ function quantClassify(g){
   if(!edges.length)return{match:g,classification:'NO_QUANT',reason:'no book lines',fp};
   edges.sort((a,b)=>b.edge-a.edge);
   const best=edges[0];
-  let classification;
-  if(best.edge>=0.03)classification='AUTOPICK';
-  else if(best.edge>=0.01)classification='BORDERLINE';
-  else classification='QUANT_PASS';
-  return{match:g,classification,fp,edges,bestEdge:best};
+  let classification,noiseReason=null;
+  // Longshot noise gate — check before edge threshold
+  if(best.fairProb<AUTOPICK_MIN_PROB){
+    classification='QUANT_PASS';
+    noiseReason=`longshot: fair prob ${(best.fairProb*100).toFixed(1)}% < 20% floor`;
+  } else if(best.bookOdds!=null&&best.bookOdds>AUTOPICK_MAX_ODDS){
+    classification='QUANT_PASS';
+    noiseReason=`longshot: book odds +${best.bookOdds} > +400 cap`;
+  } else if(best.edge>=AUTOPICK_MIN_EDGE){
+    classification='AUTOPICK';
+  } else if(best.edge>=0.01){
+    classification='BORDERLINE';
+  } else {
+    classification='QUANT_PASS';
+  }
+  return{match:g,classification,fp,edges,bestEdge:best,noiseReason};
 }
 
 // Compact human-readable line for a single edge — used in synthesizer prompt
@@ -3238,8 +3257,8 @@ function renderPicksLeaderboard(){
         // Critical for reading the QUANT VALIDATION panel: lets you see at a
         // glance which W/Ls feed which CLV bucket.
         p.quant_injected?`<span title="Math-injected: synthesizer dropped this AUTOPICK; quant-enforce backstop reinstated it. ${p.quant_edge?(p.quant_edge*100).toFixed(2)+'% edge':''}" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--cyn);background:rgba(0,229,255,.12)">📐 QUANT INJ</span>`:
-        p.quant_classification==='AUTOPICK'?`<span title="Math AUTOPICK (≥3% edge) — LLM agreed and included. ${p.quant_best_edge?(p.quant_best_edge*100).toFixed(2)+'% edge':''}" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--cyn);background:rgba(0,229,255,.08)">📐 QUANT</span>`:
-        p.quant_classification==='BORDERLINE'?`<span title="Math BORDERLINE (1–3% edge) — LLM tiebreak picked it. ${p.quant_best_edge?(p.quant_best_edge*100).toFixed(2)+'% edge':''}" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--amb);background:var(--amb-bg)">📐 BORDER</span>`:''
+        p.quant_classification==='AUTOPICK'?`<span title="Math AUTOPICK (≥5% edge, fair prob ≥20%, book ≤+400) — LLM agreed and included. ${p.quant_best_edge?(p.quant_best_edge*100).toFixed(2)+'% edge':''}" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--cyn);background:rgba(0,229,255,.08)">📐 QUANT</span>`:
+        p.quant_classification==='BORDERLINE'?`<span title="Math BORDERLINE (1–5% edge) — LLM tiebreak picked it. ${p.quant_best_edge?(p.quant_best_edge*100).toFixed(2)+'% edge':''}" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--amb);background:var(--amb-bg)">📐 BORDER</span>`:''
       }${p.is_manual&&p.wager?`<span style="font-size:9px;color:var(--t4);margin-left:6px">$${p.wager.toFixed(2)}${p.result==='W'&&p.payout?` → +$${(p.payout-p.wager).toFixed(2)}`:p.result==='L'?` → -$${p.wager.toFixed(2)}`:' pending'}</span>`:''}</div>
     </div>`;
   });
@@ -4144,7 +4163,7 @@ function buildUserMsg(gamesCtx,yesterdayPicks,completedGames,tennisAnalysis,agen
   if(quantClassifications?.length){
     const buckets={AUTOPICK:[],BORDERLINE:[],QUANT_PASS:[],NO_QUANT:[]};
     quantClassifications.forEach(qc=>buckets[qc.classification].push(qc));
-    msg+=`\n## QUANT DESK FAIR-PRICE TABLE — PRIMARY SIGNAL (math-model derived)\nThis table is the OUTPUT of a closed-form sElo + Monte Carlo simulator. Math derives the fair price; book lines are compared. Edges below are post-vig.\n\nSYNTHESIS RULES (enforce strictly):\n  1. Every AUTOPICK match (edge ≥3%) MUST be a graded pick. Confidence: HIGH if edge ≥5%, MEDIUM otherwise. Reasoning must cite the math edge as primary justification.\n  2. BORDERLINE matches (edge 1–3%) become graded picks ONLY if the matching subagent signal report agrees with the math (same edge_side or same vehicle). Otherwise downgrade to lean.\n  3. QUANT_PASS matches (edge <1%) are skipped UNLESS a subagent surfaces a strong unstructured signal (injury news, coaching change, weather) that the math doesn't capture.\n  4. NO_QUANT matches (unranked players, no fair price) fall back to standard subagent-driven LLM analysis.\n  5. Do NOT invent picks for matches not classified above. Do NOT override a math AUTOPICK with LLM gut.\n\n`;
+    msg+=`\n## QUANT DESK FAIR-PRICE TABLE — PRIMARY SIGNAL (math-model derived)\nThis table is the OUTPUT of a closed-form sElo + Monte Carlo simulator. Math derives the fair price; book lines are compared. Edges below are post-vig.\n\nSYNTHESIS RULES (enforce strictly):\n  1. Every AUTOPICK match (edge ≥5%, fair prob ≥20%, book ≤+400) MUST be a graded pick. Confidence: HIGH if edge ≥8%, MEDIUM otherwise. Reasoning must cite the math edge as primary justification.\n  2. BORDERLINE matches (edge 1–5%) become graded picks ONLY if the matching subagent signal report agrees with the math (same edge_side or same vehicle). Otherwise downgrade to lean.\n  3. QUANT_PASS matches — includes longshots (fair prob <20% or book odds >+400) and low-edge (<1%) matches. NEVER make a graded pick from a QUANT_PASS based on math alone. These are either model noise or not worth the variance. Skip unless a subagent surfaces a strong unstructured signal.\n  4. NO_QUANT matches (unranked players, no fair price) fall back to standard subagent-driven LLM analysis.\n  5. Do NOT invent picks for matches not classified above. Do NOT override a math AUTOPICK with LLM gut.\n  6. LONGSHOT RULE: Never generate a graded pick for a player priced above +400 based solely on quant math. The sElo model uncertainty at extreme odds is larger than the edge itself — it is noise, not signal.\n\n`;
     if(buckets.AUTOPICK.length){
       msg+=`### AUTOPICK (${buckets.AUTOPICK.length}) — math edge ≥3%, mandatory graded picks\n`;
       buckets.AUTOPICK.forEach(qc=>{
