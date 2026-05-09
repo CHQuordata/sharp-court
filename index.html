@@ -612,6 +612,12 @@ const BOOK_ORDER=['Pinnacle','DraftKings','BetMGM','FanDuel','Caesars','BetOnlin
 const SPORT_MARKETS={_tennis:'h2h,spreads,totals'};
 // ── Book tiers — see lib/signals.js
 function getSportMarkets(sk){if(SPORT_MARKETS[sk])return SPORT_MARKETS[sk];if(sk.startsWith('tennis_'))return SPORT_MARKETS._tennis;return'h2h'}
+// HTML-escape any string before interpolating into innerHTML / template literal
+// HTML. Use whenever the source isn't a hardcoded internal string — e.g. model
+// output, API responses, error messages, or any field that ultimately came
+// from network. Sufficient for text-content contexts; for attribute values
+// pass through quotes-included variant if added later.
+function escHTML(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 let _tennisKeys=null,_tennisKeysTs=0;
 let TN_API_KEY=localStorage.getItem('tn_api_key')||'';
 const tnPlayerCache=new Map(),tnGameCache=new Map(),_tnFixCache=new Map();
@@ -2055,7 +2061,7 @@ async function selGame(idx){
     // Show first 5 stack frames inline so the line number is visible without
     // opening DevTools. Escape HTML so error text containing < > doesn't break
     // the panel rendering itself.
-    const _esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const _esc=escHTML;
     const _stk=(e?.stack||'').split('\n').slice(0,6).map(_esc).join('<br>');
     el.innerHTML=`<div class="detail-empty" style="color:var(--red);text-align:left;padding:16px">
       <div style="margin-bottom:8px;font-weight:700">Error loading matchup. Try clicking again.</div>
@@ -5500,7 +5506,7 @@ Skip any pick you cannot score 2.5+. The structured block lets your verdicts be 
     if(verdicts.length)_saveAIAnalyzeVerdicts(g,verdicts);
     // Build the rendered analysis: free-form text + ensemble badge + saved-pick confirmation
     const visibleText=(txt.replace(/```(?:json)?\s*\{[\s\S]*?\}\s*```/g,'').replace(/\n---\s*$/,'').trim())||txt;
-    const safeTxt=visibleText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const safeTxt=escHTML(visibleText);
     const existing=$('aiGameAnalysis');
     const div=existing||document.createElement('div');
     div.id='aiGameAnalysis';
@@ -5517,7 +5523,10 @@ Skip any pick you cannot score 2.5+. The structured block lets your verdicts be 
         const eBadge=v.secondary_verdict==='AGREE'?'<span style="font-size:8px;color:var(--grn);background:rgba(0,230,118,.1);padding:1px 4px;border-radius:2px;margin-left:4px">✓ HAIKU AGREES</span>':
           v.secondary_verdict==='DISAGREE'?'<span style="font-size:8px;color:var(--red);background:rgba(255,71,87,.1);padding:1px 4px;border-radius:2px;margin-left:4px">⚠ HAIKU DISAGREES</span>':
           v.secondary_verdict==='UNSURE'?'<span style="font-size:8px;color:var(--t3);background:var(--bg3);padding:1px 4px;border-radius:2px;margin-left:4px">◐ HAIKU UNSURE</span>':'';
-        vH+=`<div style="background:var(--bg2);border-left:3px solid ${vClr};padding:6px 10px;border-radius:3px;flex:1;min-width:240px"><div style="font-size:9px;color:${vClr};font-weight:700;letter-spacing:.5px">${v.my_verdict}${eBadge}</div><div style="font-size:11px;color:var(--t1);margin-top:2px">${v.my_pick||v.algo_pick||''}</div><div style="font-size:9px;color:${cClr};margin-top:2px">${v.confidence||'?'} · score ${v.score||'?'}</div></div>`;
+        // v.* fields come from JSON.parse of model output — escape every
+        // text interpolation. vClr/cClr/eBadge are derived from fixed-value
+        // matches above so they're trusted HTML.
+        vH+=`<div style="background:var(--bg2);border-left:3px solid ${vClr};padding:6px 10px;border-radius:3px;flex:1;min-width:240px"><div style="font-size:9px;color:${vClr};font-weight:700;letter-spacing:.5px">${escHTML(v.my_verdict)}${eBadge}</div><div style="font-size:11px;color:var(--t1);margin-top:2px">${escHTML(v.my_pick||v.algo_pick||'')}</div><div style="font-size:9px;color:${cClr};margin-top:2px">${escHTML(v.confidence||'?')} · score ${escHTML(v.score==null?'?':v.score)}</div></div>`;
       });
       vH+='</div><div style="font-size:9px;color:var(--t4);margin-bottom:6px">↓ verdicts saved to history · will grade overnight · source: ai_analyze</div>';
     }
