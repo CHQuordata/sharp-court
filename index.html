@@ -4004,7 +4004,22 @@ function saveTodayToHistory(){
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
   const today=new Date().toISOString().split('T')[0];
   const idx=history.findIndex(s=>s.date===today);
-  const entry={date:today,picks:todayPicksData?.picks||[]};
+  // Dedup picks by matchup — keep the highest-confidence version when the
+  // same matchup appears more than once (e.g. Blockx/Cina logged twice).
+  const _confRank={HIGH:3,MEDIUM:2,LOW:1};
+  const _dedupPicks=picks=>{
+    const seen=new Map();
+    (picks||[]).forEach(p=>{
+      const key=(p.matchup||'').toLowerCase().replace(/[^a-z]/g,' ').trim();
+      if(!key)return;
+      const existing=seen.get(key);
+      const rank=_confRank[(p.confidence||'').toUpperCase()]||0;
+      const exRank=_confRank[(existing?.confidence||'').toUpperCase()]||0;
+      if(!existing||rank>exRank)seen.set(key,p);
+    });
+    return [...seen.values()];
+  };
+  const entry={date:today,picks:_dedupPicks(todayPicksData?.picks)};
   if(idx>=0)history[idx]=entry;else history.unshift(entry);
   localStorage.setItem('et_picks_history',JSON.stringify(history.slice(0,30)));
 }
@@ -4026,6 +4041,10 @@ ${bySp?'By Surface/Tour: '+bySp:''}
 
 ## LEARNED RULES (max 12 rules — enforce every slate)
 ${learnedRules}
+
+## OUTPUT RULES — HARD CONSTRAINTS
+- ONE PICK PER MATCHUP. If the same two players appear more than once in the slate data (different sources, different IDs), treat them as a single match and output exactly one pick. Never emit two picks for the same matchup under any circumstances.
+- Never duplicate a matchup across picks[], parlays[], or any other output field.
 
 ## SIGNALS — minimum for a graded pick (is_lean:false)
 Tennis singles: surface form, H2H on surface, ranking-form divergence, tournament momentum, market pricing vs ranking gap, serve/return stats. ≥1 clear signal qualifies.
@@ -5045,7 +5064,13 @@ async function generatePicks(force=false){
     // Use a time-from-now window instead of calendar day so tournament-TZ
     // matches (e.g. Rome qualifiers at 03:00 user-local) aren't dropped.
     const _winNow=Date.now(),_winStart=_winNow-2*60*60*1000,_winEnd=_winNow+30*60*60*1000;
+    // Dedup by normalized matchup — same two players from different sources
+    // (ESPN + Odds API) produce two game objects that confuse the AI into
+    // generating two picks for the same match.
+    const _normMatchup=g=>[g.aw.nm,g.hm.nm].map(n=>n.toLowerCase().replace(/[^a-z]/g,' ').trim()).sort().join('|');
+    const _seenMatchups=new Set();
     const _todayMatches=allG.filter(g=>g.cat==='tennis'&&g.tm.getTime()>=_winStart&&g.tm.getTime()<=_winEnd)
+                            .filter(g=>{const k=_normMatchup(g);if(_seenMatchups.has(k))return false;_seenMatchups.add(k);return true;})
                             .sort((a,b)=>(a.id||'').localeCompare(b.id||'')); // stable ordering
     // ── Slate fingerprint check: skip pipeline entirely if nothing material changed ──
     const _slateFP=_slateFingerprint(_todayMatches);
