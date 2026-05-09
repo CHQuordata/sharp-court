@@ -4413,16 +4413,28 @@ function _repairJSON(raw){
     if(inStr&&(c==='\n'||c==='\r'||c==='\t')){out+=c==='\n'?'\\n':c==='\r'?'\\r':'\\t';continue}
     out+=c;
   }
-  // If we escaped a high number of inner quotes, the input was likely badly
-  // mangled — flag it loudly. A normal pick response should have at most a
-  // handful (player names with quotes, e.g. "Carreño"). Double-digit counts
-  // suggest the model emitted malformed JSON wholesale, and the recovered
-  // output may be semantically wrong even if it parses.
-  if(innerQuotesEscaped>=10&&typeof console!=='undefined'&&console.warn){
-    try{console.warn('[_repairJSON] WARNING — escaped',innerQuotesEscaped,'inner quotes; recovered JSON may be semantically wrong; consider re-running pick generation')}catch(_){}
+  // Telemetry side-channel — callers in high-stakes paths (pick generation,
+  // judge verdicts) read _repairJSON.last after parse to decide whether to
+  // reject the result entirely. Suspect = above threshold, meaning the model
+  // emitted malformed JSON wholesale and the recovered output may be
+  // semantically wrong even if it parses. Normal responses escape 0-2 inner
+  // quotes (player names with apostrophes / accented characters).
+  _repairJSON.last={
+    inputLen: raw?.length||0,
+    innerQuotesEscaped,
+    suspect: innerQuotesEscaped>=REPAIR_SUSPECT_THRESHOLD,
+    ts: Date.now(),
+  };
+  if(_repairJSON.last.suspect&&typeof console!=='undefined'&&console.warn){
+    try{console.warn('[_repairJSON] SUSPECT — escaped',innerQuotesEscaped,'inner quotes (threshold',REPAIR_SUSPECT_THRESHOLD,'); high-stakes callers should reject and re-run')}catch(_){}
   }
   return out;
 }
+// Inner-quote-escape count above which recovered JSON is treated as
+// untrustworthy. Picked at 10 because well-formed pick responses for a 12-game
+// slate emit at most 4-5 inner quotes (player names + reasoning fields with
+// apostrophes); double-digit counts indicate the model went off-spec wholesale.
+const REPAIR_SUSPECT_THRESHOLD=10;
 
 // ── Phase 1: Tennis signal analysis ──────────────────────────────────────────
 function buildTennisAnalysisPrompt(){
@@ -4982,6 +4994,10 @@ ${gamesCtx.slice(0,5500)}`;
     const m=txt.match(/\{[\s\S]+\}/);if(!m)return;
     let verdicts;try{verdicts=JSON.parse(_repairJSON(m[0]))?.verdicts}catch(e){return;}
     if(!Array.isArray(verdicts))return;
+    // If the judge response triggered suspect repair, drop it — we'd rather
+    // ship picks with no judge decoration than ship picks decorated with
+    // verdicts that may have been recovered from corrupted JSON.
+    if(_repairJSON.last?.suspect){console.warn('[judge] dropping suspect verdicts — escaped',_repairJSON.last.innerQuotesEscaped,'inner quotes');return}
     verdicts.forEach(v=>{
       const idx=v.i-1;if(idx<0||idx>=picks.length)return;
       picks[idx].judge_verdict=v.v;
@@ -5250,6 +5266,12 @@ async function generatePicks(force=false){
       }catch(e){return null}
     }
     const repaired=_repairJSON(raw);
+    // Capture suspect flag from the main repair pass — _tryParse / _partialExtract
+    // calls below will overwrite _repairJSON.last with their own (smaller) inputs,
+    // and we want to gate on whether the FULL response triggered the threshold,
+    // not whether a sub-extract recovered a few clean picks.
+    const _mainRepairSuspect=!!_repairJSON.last?.suspect;
+    const _mainRepairCount=_repairJSON.last?.innerQuotesEscaped||0;
     let result=_tryParse(raw)||_tryParse(repaired)||_tryParse(_stripFilters(repaired))||_tryParse(_stripFilters(raw))||_partialExtract(repaired)||_partialExtract(raw);
     if(!result){
       let pe;try{JSON.parse(repaired)}catch(e){pe=e}
@@ -5257,6 +5279,15 @@ async function generatePicks(force=false){
       const snip=repaired.slice(Math.max(0,pos-60),pos+80);
       localStorage.setItem('et_last_parse_error',JSON.stringify({ts:new Date().toISOString(),msg:pe?.message,near:snip,raw:raw.slice(0,500)}));
       throw new Error(`JSON: ${pe?.message} — near: ...${snip}...`)
+    }
+    // Reject suspect parses outright — semantically corrupted picks would
+    // otherwise land in et_picks_history and get graded as if they were real,
+    // polluting CLV / calibration metrics. Better to fail loud and let the
+    // user re-run than to ship picks where the model's intended pick string
+    // may have been mangled by the inner-quote-escape recovery.
+    if(_mainRepairSuspect){
+      localStorage.setItem('et_last_parse_error',JSON.stringify({ts:new Date().toISOString(),msg:`SUSPECT REPAIR — escaped ${_mainRepairCount} inner quotes (threshold ${REPAIR_SUSPECT_THRESHOLD})`,raw:raw.slice(0,500)}));
+      throw new Error(`Model output was malformed (escaped ${_mainRepairCount} inner quotes — above the ${REPAIR_SUSPECT_THRESHOLD} threshold). Recovered JSON may be semantically wrong; rejecting to avoid polluting picks history. Click GENERATE PICKS again.`);
     }
     if(result.analyst_note==='(partial parse — some response data recovered)'){
       let pe;try{JSON.parse(repaired)}catch(e){pe=e}
