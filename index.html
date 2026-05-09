@@ -5329,7 +5329,42 @@ async function aiAnalyzeGame(gid){
   if(g.cat==='tennis'){
     const surf=( g.surf || getSurface(g.ven) );ctx+=`Surface: ${surf}\n`;
     if(g.round)ctx+=`Round: ${g.round}\n`;if(g.tnName)ctx+=`Tournament: ${g.tnName}\n`;
-    if(!g.isDoubles)[g.aw,g.hm].forEach(pl=>{const _allFmA=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt);const fm=_allFmA.slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+(m.score?' '+m.score:'')+' vs '+m.opp+(m.tn?' ('+m.tn+')':'')+(m.round?' '+m.round:'')).join(', ')}\n`;const _tnWA=(g.tnName||'').toLowerCase().split(/\s+/).filter(t=>t.length>3);if(_tnWA.length){const tnMsA=_allFmA.filter(m=>m.tn&&_tnWA.some(t=>m.tn.toLowerCase().includes(t))).sort((a,b)=>a.dt-b.dt);if(tnMsA.length){const has3SA=tnMsA.some(m=>m.score&&m.score.split(' ').filter(x=>x.includes('-')).length>=3);const hasTBA=tnMsA.some(m=>m.score&&m.score.split(' ').some(s=>s.startsWith('7-6')||s.startsWith('6-7')));ctx+=`${pl.nm} this tournament: ${tnMsA.map(m=>`${m.W?'W':'L'} ${m.score||'?'}${m.ret?' (ret/WO)':''} vs ${m.opp}${m.oppId&&tennisRankings.get(String(m.oppId))?' #'+tennisRankings.get(String(m.oppId)):''} (${m.round||'?'})`).join(', ')}${has3SA?' ⚠️ has dropped a set':''}${hasTBA?' ⚠️ tiebreak in draw':''}\n`}}}});
+    if(!g.isDoubles){
+      // Canonical match key (player-pair + ymd) — symmetric, so the same
+      // meeting from either side maps to one key. Used to dedup matches
+      // across L5 / this-tournament / Recent H2H so the same fact isn't
+      // restated 3-5 times in the prompt with different framings.
+      const _mKey=(plId,m)=>{const a=String(plId),b=String(m.oppId||'?');const lo=a<b?a:b,hi=a<b?b:a;const ymd=m.dt?new Date(m.dt).toISOString().slice(0,10):'?';return `${lo}|${hi}|${ymd}`};
+      // Pre-compute keys for prior aw-vs-hm meetings — those belong in the
+      // Recent H2H line below, so exclude them from the L5 listings.
+      const _h2hKeys=new Set();
+      [g.aw,g.hm].forEach(pl=>{const otherId=pl===g.aw?String(g.hm.id):String(g.aw.id);(tennisForm.get(String(pl.id))||[]).forEach(m=>{if(m.oppId===otherId)_h2hKeys.add(_mKey(pl.id,m))})});
+      // L5 form per player, H2H meetings filtered out
+      [g.aw,g.hm].forEach(pl=>{const _allFmA=(tennisForm.get(String(pl.id))||[]).slice().sort((a,b)=>b.dt-a.dt);const fm=_allFmA.filter(m=>!_h2hKeys.has(_mKey(pl.id,m))).slice(0,5);if(fm.length){const w=fm.filter(m=>m.W).length;ctx+=`${pl.nm} L5: ${w}-${fm.length-w} — ${fm.map(m=>(m.W?'W':'L')+(m.score?' '+m.score:'')+' vs '+m.opp+(m.tn?' ('+m.tn+')':'')+(m.round?' '+m.round:'')).join(', ')}\n`}});
+      // Single unified "this tournament" block — each match listed once,
+      // even if both players are in the draw. Earlier code emitted this
+      // block twice (once per player), which double-counted shared matches.
+      const _tnWA=(g.tnName||'').toLowerCase().split(/\s+/).filter(t=>t.length>3);
+      if(_tnWA.length){
+        const _seen=new Set();const _tnRows=[];
+        [g.aw,g.hm].forEach(pl=>{
+          (tennisForm.get(String(pl.id))||[]).filter(m=>m.tn&&_tnWA.some(t=>m.tn.toLowerCase().includes(t))).forEach(m=>{
+            const k=_mKey(pl.id,m);if(_seen.has(k))return;_seen.add(k);
+            const winNm=(m.W?pl.nm:m.opp).split(' ').pop();
+            const losNm=(m.W?m.opp:pl.nm).split(' ').pop();
+            const oppRk=m.oppId&&tennisRankings.get(String(m.oppId));
+            const oppTag=m.W?(oppRk?' #'+oppRk:''):'';
+            _tnRows.push({dt:m.dt,txt:`${m.round||'?'}: ${winNm} d. ${losNm}${oppTag} ${m.score||'?'}${m.ret?' (ret/WO)':''}`});
+          });
+        });
+        if(_tnRows.length){
+          _tnRows.sort((a,b)=>a.dt-b.dt);
+          const has3S=_tnRows.some(r=>r.txt.split(' ').filter(x=>/^\d-\d/.test(x)).length>=3);
+          const hasTB=_tnRows.some(r=>/(7-6|6-7)/.test(r.txt));
+          ctx+=`This tournament: ${_tnRows.map(r=>r.txt).join(', ')}${has3S?' ⚠️ 3-set match in draw':''}${hasTB?' ⚠️ tiebreak in draw':''}\n`;
+        }
+      }
+    }
     if(g.isDoubles){/* no individual player stats for doubles */}
     else{const tc=tennisCache.get(g.id);
     if(tc){const sk2=surf==='clay'?'clay':surf==='grass'?'grass':'hard';const awSv=tc.awSurf?.[sk2],hmSv=tc.hmSurf?.[sk2];if(awSv?.tot>=3||hmSv?.tot>=3){ctx+=`${surf} record (2023-24): `;if(awSv?.tot>=3)ctx+=`${g.aw.nm.split(' ').pop()} ${awSv.w}-${awSv.l} (${Math.round(awSv.w/awSv.tot*100)}%) `;if(hmSv?.tot>=3)ctx+=`${g.hm.nm.split(' ').pop()} ${hmSv.w}-${hmSv.l} (${Math.round(hmSv.w/hmSv.tot*100)}%)`;ctx+='\n'}if(tc.total>0)ctx+=`H2H: ${g.aw.nm.split(' ').pop()} ${tc.awW}-${tc.hmW}\n`;const _h2hRA=(tennisForm.get(String(g.aw.id))||[]).filter(m=>m.oppId===String(g.hm.id)&&(g.tm-m.dt)<365*864e5);if(_h2hRA.length){const _rWA=_h2hRA.filter(m=>m.W).length;ctx+=`Recent H2H (12mo): ${g.aw.nm.split(' ').pop()} ${_rWA}-${_h2hRA.length-_rWA} — ${_h2hRA.slice().sort((a,b)=>b.dt-a.dt).slice(0,3).map(m=>`${m.W?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop()} ${m.score||'?'}${m.tn?' ('+getSurface(m.tn)+', '+m.tn+')':''}`).join(', ')}\n`}const awSrv=tc.awServe?.[sk2],hmSrv=tc.hmServe?.[sk2];if(awSrv?.m>=3||hmSrv?.m>=3)ctx+=`Serve stats (${surf} 2023-24): ${g.aw.nm.split(' ').pop()} 1stIn=${awSrv?.first_pct||'N/A'}% BPsave=${awSrv?.bp_save_pct||'N/A'}% | ${g.hm.nm.split(' ').pop()} 1stIn=${hmSrv?.first_pct||'N/A'}% BPsave=${hmSrv?.bp_save_pct||'N/A'}%\n`}
