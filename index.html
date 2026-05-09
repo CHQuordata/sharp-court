@@ -3186,6 +3186,7 @@ function renderPicksLeaderboard(){
   const allGraded=todayPicksData.picks.filter(p=>!p.is_lean);
   const leans=todayPicksData.leans||[];
   const graded=cConfFilter==='all'?allGraded:cConfFilter==='picked'?allGraded:allGraded.filter(p=>p.confidence===cConfFilter);
+  graded.sort((a,b)=>(b.score??0)-(a.score??0));
   // On mobile, show a compact regenerate button at top of picks list
   const mobRegen=window.innerWidth<=768?`<div style="padding:8px 12px;border-bottom:1px solid var(--bdr)"><button class="gen-btn${isGenerating?' pulse':''}" style="width:100%;font-size:12px;padding:10px" onclick="generatePicks()" ${isGenerating?'disabled':''}>${isGenerating?(genStatus||'ANALYZING...'):'↻ REGENERATE PICKS'}</button></div>`:'';
   let h=mobRegen+`<div class="sport-group-hdr">⚡ PICKS (${graded.length}${cConfFilter!=='all'?' · '+cConfFilter:''})</div>`;
