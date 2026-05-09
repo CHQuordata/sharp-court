@@ -1533,7 +1533,7 @@ function _updateConfFilterAvailability(){
     else{el.style.opacity='0.4';el.style.cursor='not-allowed';el.title='Generate AI picks first to enable confidence filtering'}
   });
 }
-function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport==='atp'?allG.filter(g=>g.sp==='atp'&&!g.isDoubles):cSport==='wta'?allG.filter(g=>g.sp==='wta'&&!g.isDoubles):cSport==='doubles'?allG.filter(g=>g.isDoubles):[...allG];if(cDateFilter!=='all'){const ref=new Date();if(cDateFilter==='tomorrow')ref.setDate(ref.getDate()+1);const ds=ref.toDateString();g=g.filter(x=>x.tm.toDateString()===ds)}
+function applyFilters(){if(cView==='picks')return;_loadTodayPicks();let g=cSport==='atp'?allG.filter(g=>g.sp==='atp'&&!g.isDoubles):cSport==='wta'?allG.filter(g=>g.sp==='wta'&&!g.isDoubles):cSport==='doubles'?allG.filter(g=>g.isDoubles):[...allG];if(cDateFilter!=='all'){const now=new Date();const todayStr=now.toDateString();const dayAfter=new Date(now.getTime()+48*3600e3);if(cDateFilter==='today')g=g.filter(x=>x.tm.toDateString()===todayStr||x.st==='STATUS_IN_PROGRESS');else g=g.filter(x=>x.tm.toDateString()!==todayStr&&x.tm>now&&x.tm<=dayAfter)}
 // Show all tennis matches — user decides what's bettable on their book
 // Confidence filter — only applies when AI picks have been generated
 if(cConfFilter!=='all'&&todayPicksData?.picks?.length){
