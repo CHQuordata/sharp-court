@@ -5466,6 +5466,28 @@ async function aiAnalyzeGame(gid){
           const hasTB=_tnRows.some(r=>/(7-6|6-7)/.test(r.txt));
           ctx+=`This tournament: ${_tnRows.map(r=>r.txt).join(', ')}${has3S?' ⚠️ 3-set match in draw':''}${hasTB?' ⚠️ tiebreak in draw':''}\n`;
         }
+        // Tournament load asymmetry — total matches/sets/games per player
+        // in the current draw. Surfaces fatigue gaps the model otherwise has
+        // to derive by eyeballing scores. Flag when the gap is meaningful.
+        const _loadFor=pl=>{
+          const ms=(tennisForm.get(String(pl.id))||[]).filter(m=>m.tn&&_tnWA.some(t=>m.tn.toLowerCase().includes(t)));
+          let games=0,sets=0;
+          ms.forEach(m=>{
+            (m.score||'').split(/\s+/).forEach(s=>{
+              const p=s.split('-').map(Number);
+              if(p.length===2&&!isNaN(p[0])&&!isNaN(p[1])){sets++;games+=p[0]+p[1]}
+            });
+          });
+          return{matches:ms.length,sets,games};
+        };
+        const _awL=_loadFor(g.aw),_hmL=_loadFor(g.hm);
+        if(_awL.matches||_hmL.matches){
+          const _fmt=(nm,L)=>`${nm.split(' ').pop()} ${L.matches}m/${L.sets}s/${L.games}g`;
+          const _gap=_awL.games-_hmL.games;
+          const _heavier=_gap>0?g.aw.nm.split(' ').pop():g.hm.nm.split(' ').pop();
+          const _flag=Math.abs(_gap)>=20?` ⚠️ ${_heavier} +${Math.abs(_gap)}g heavier load — fatigue edge to opponent`:'';
+          ctx+=`Tournament load: ${_fmt(g.aw.nm,_awL)} | ${_fmt(g.hm.nm,_hmL)}${_flag}\n`;
+        }
       }
     }
     if(g.isDoubles){/* no individual player stats for doubles */}
