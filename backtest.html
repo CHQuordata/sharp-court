@@ -348,22 +348,58 @@ function drawChart(results){
 
 const WORKER_URL='https://sportsedge-proxy.chuynh.workers.dev/kv/et_picks_history';
 
+// Normalise a matchup string to a stable key (case + punctuation + word order
+// independent) so "Bencic vs Andreescu" and "Andreescu vs Bencic" collapse.
+function matchupKey(date, m){
+  const norm=(m||'').toLowerCase().replace(/[^a-z\s]/g,' ').replace(/\s+/g,' ').trim();
+  const parts=norm.split(/\s+vs\s+/);
+  if(parts.length!==2)return date+'|'+norm;
+  const a=parts[0].split(' ').pop(), b=parts[1].split(' ').pop();
+  return date+'|'+[a,b].sort().join('_');
+}
+
+// Dedupe to ONE pick per (date, matchup). Real-world betting is one bet per
+// match — counting both Bencic ML and Andreescu ML on the same game inflates
+// stake count and distorts the simulated bankroll. Tie-breaks by score, then
+// HIGH > MEDIUM > LOW, then non-lean over lean. is_lean=true rows are dropped
+// outright since leans are explicitly monitoring, not bets.
+function dedupeOnePerMatchup(picks){
+  const confRank={HIGH:3,MEDIUM:2,LOW:1};
+  const byKey=new Map();
+  let dropped=0;
+  picks.forEach(p=>{
+    if(p.is_lean===true){dropped++;return}
+    const k=matchupKey(p.date, p.matchup);
+    const existing=byKey.get(k);
+    if(!existing){byKey.set(k,p);return}
+    // Prefer higher score; break ties on confidence rank; then prefer non-lean.
+    const sNew=parseFloat(p.score)||0, sOld=parseFloat(existing.score)||0;
+    if(sNew>sOld){byKey.set(k,p);dropped++;return}
+    if(sNew<sOld){dropped++;return}
+    const cNew=confRank[p.confidence]||0, cOld=confRank[existing.confidence]||0;
+    if(cNew>cOld){byKey.set(k,p);dropped++;return}
+    dropped++;
+  });
+  return {picks:[...byKey.values()], dropped};
+}
+
 function runWithHistory(history){
   const status=document.getElementById('status');
-  const picks=[];
+  const raw=[];
   history.forEach(s=>(s.picks||[]).forEach(p=>{
     if((p.sport||'').toLowerCase()!=='tennis')return;
     if(!p.result||p.result==='?'||p.result==='PENDING')return;
-    picks.push({...p, date:s.date});
+    raw.push({...p, date:s.date});
   }));
-  picks.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  raw.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const {picks, dropped}=dedupeOnePerMatchup(raw);
   if(!picks.length){status.textContent='No graded tennis picks in history.';status.classList.add('err');return}
-  status.textContent=`Replaying ${picks.length} graded picks…`;
+  status.textContent=`Replaying ${picks.length} graded picks (deduped from ${raw.length} — ${dropped} same-matchup duplicates / leans dropped)…`;
   const startBank=parseFloat(document.getElementById('startBank').value)||1000;
   const results=POLICIES.map(policy=>({policy, ...simulate(picks,policy,startBank)}));
   renderResults(picks,results);
   document.getElementById('results').style.display='block';
-  status.textContent=`${picks.length} picks replayed across ${POLICIES.length} policies. Compounded ¼-Kelly staking.`;
+  status.textContent=`${picks.length} unique-matchup picks replayed across ${POLICIES.length} policies (${dropped} duplicates/leans dropped from ${raw.length} raw). Compounded ¼-Kelly staking.`;
 }
 
 window.runBacktest=async function(){
