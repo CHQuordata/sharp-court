@@ -5297,10 +5297,47 @@ async function generatePicks(force=false){
     // (ESPN + Odds API) produce two game objects that confuse the AI into
     // generating two picks for the same match.
     const _normMatchup=g=>[g.aw.nm,g.hm.nm].map(n=>n.toLowerCase().replace(/[^a-z]/g,' ').trim()).sort().join('|');
+    // Already-picked matchups in today's slate. If we regenerate after some
+    // matches have been picked or started, we MUST NOT generate new picks
+    // for them — would produce contradictory in-play picks (model sees moved
+    // lines, picks the other side) that pollute history and inflate stake
+    // count. Real-world betting is one bet per match, locked at pre-match.
+    const _existingPickKeys=new Set();
+    (todayPicksData?.picks||[]).forEach(p=>{
+      const mu=(p.matchup||'').toLowerCase();
+      const parts=mu.split(/\s+vs\s+/);
+      if(parts.length===2){
+        const a=parts[0].replace(/[^a-z\s]/g,' ').trim().split(/\s+/).pop();
+        const b=parts[1].replace(/[^a-z\s]/g,' ').trim().split(/\s+/).pop();
+        if(a&&b)_existingPickKeys.add([a,b].sort().join('|'));
+      }
+    });
+    const _matchupLast=g=>{
+      const a=g.aw.nm.toLowerCase().replace(/[^a-z\s]/g,' ').trim().split(/\s+/).pop();
+      const b=g.hm.nm.toLowerCase().replace(/[^a-z\s]/g,' ').trim().split(/\s+/).pop();
+      return [a,b].sort().join('|');
+    };
     const _seenMatchups=new Set();
+    let _skippedInProgress=0,_skippedAlreadyPicked=0;
     const _todayMatches=allG.filter(g=>g.cat==='tennis'&&g.tm.getTime()>=_winStart&&g.tm.getTime()<=_winEnd)
+                            .filter(g=>{
+                              // Skip in-progress / completed matches — generating picks on these
+                              // produces "live picks" against moved lines that contradict pre-match
+                              // picks for the same game. You cannot bet a pre-match line on a game
+                              // that's already started.
+                              if(g.st==='STATUS_IN_PROGRESS'||g.st==='STATUS_FINAL'||g.st==='STATUS_RETIRED'||g.st==='STATUS_WALKOVER'||g.st==='STATUS_FORFEIT'){
+                                _skippedInProgress++;return false;
+                              }
+                              // Skip matchups already picked today — never regenerate against
+                              // existing picks. One bet per match, locked at first generation.
+                              if(_existingPickKeys.has(_matchupLast(g))){
+                                _skippedAlreadyPicked++;return false;
+                              }
+                              return true;
+                            })
                             .filter(g=>{const k=_normMatchup(g);if(_seenMatchups.has(k))return false;_seenMatchups.add(k);return true;})
                             .sort((a,b)=>(a.id||'').localeCompare(b.id||'')); // stable ordering
+    if(_skippedInProgress||_skippedAlreadyPicked)console.log(`[gen-filter] skipped ${_skippedInProgress} in-progress/final + ${_skippedAlreadyPicked} already-picked matchups`);
     // ── Slate fingerprint check: skip pipeline entirely if nothing material changed ──
     const _slateFP=_slateFingerprint(_todayMatches);
     const _lastFP=localStorage.getItem('et_picks_fingerprint')||'';
