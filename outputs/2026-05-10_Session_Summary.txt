@@ -1,0 +1,60 @@
+# Session Summary — May 10, 2026
+
+## Changes Shipped (3 PRs merged to main)
+
+---
+
+### PR #15 — Fix picks leaderboard sort order by score
+
+**Problem:** Picks in the ⚡ PICKS tab were rendering in AI response order, not score order.
+A pick scoring 11+ could appear 5th in the list while lower-scored picks ranked above it.
+
+**Fix:** Added `graded.sort((a,b)=>(b.score??0)-(a.score??0))` in `renderPicksLeaderboard()`
+after the confidence filter and before the forEach render loop.
+
+**File:** index.html ~line 3188
+
+---
+
+### PR #16 — Highlight top picks and normalize score display to /10
+
+**Problem 1:** Raw algorithm score (open-ended, no cap) was bleeding into the UI.
+Scores like 46 were displaying — confusing since the expected scale is 1–10.
+
+**Problem 2:** No visual distinction between the #1 pick and the rest of the list.
+
+**Fix:**
+- Score capped at 10 for display and shown as `X.X/10` for clarity
+- #1 pick gets green left border, subtle green background tint, and ★ BEST BET badge
+- #2 pick gets cyan left border and background tint
+- Rank label now always uses sort position (i+1) — removed stale AI-assigned p.rank field
+
+**File:** index.html ~line 3216
+
+---
+
+### PR #17 — Fix selPick navigating to wrong matchup after sort
+
+**Problem:** Clicking a pick in the leaderboard opened the wrong detail panel.
+Root cause: `_getDisplayedPicks()` (the lookup function used by selPick) returned picks
+in the original AI response order, while `renderPicksLeaderboard()` rendered them sorted
+by score. Index mismatch caused click on #1 to open details for whatever was originally
+first in the raw array.
+
+**Fix:** Applied the same score sort inside `_getDisplayedPicks()` so both the render
+path and the lookup path agree on order.
+
+**File:** index.html — `_getDisplayedPicks()` function ~line 3744
+
+---
+
+## Key Concepts Discussed
+
+- ATP/WTA official sites have no public API — Sharp Court correctly uses ESPN (free),
+  Tennis Abstract/Sackmann Elo (free), and Matchstat via RapidAPI (~$10/mo)
+- Jeff Sackmann's data is already in the stack indirectly via Tennis Abstract
+- Video analysis (Tennis TV frame extraction via ffmpeg) is buildable but marginal
+  vs existing data pipeline — only worth it for injury/fatigue signals
+- QUANT INJ picks = math-forced picks the AI dropped; treat as core, not noise
+- Conflict flags (⚡ CONFLICT, ⚡ SHARP CONFLICT) = reduce or skip regardless of score
+- Sort order by score is the primary signal; confidence tier is secondary label only
