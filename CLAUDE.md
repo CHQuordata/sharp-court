@@ -77,7 +77,7 @@ aimp(odds) => odds > 0 ? 100/(odds+100) : |odds|/(|odds|+100)
 
 ## SHARP FRAMEWORK (live as of 2026-05-10)
 
-The pick framework was redesigned to align with how professional bettors actually decide. Diagram: `outputs/2026-05-10_SharpRedesign_PatchSet.html`.
+The pick framework was redesigned to align with how professional bettors actually decide. Diagram: `outputs/2026-05-10_Workflow.html` (latest), prior set at `outputs/2026-05-09_AIAnalyze_FixSummary.html`.
 
 **Stake size is the bet. Confidence tag is for visual grouping only.** Every pick has a `recommended_stake_pct` field (¼-Kelly, 2% cap) shown as the headline pill on the leaderboard. Tooltip shows the source (`quant` vs `confidence`-derived).
 
