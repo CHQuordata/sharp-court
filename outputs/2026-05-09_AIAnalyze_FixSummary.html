@@ -31,7 +31,7 @@ h3{font-size:11px;letter-spacing:.5px;color:var(--t2);margin-bottom:6px;text-tra
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* KPI strip */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
 .kpi{background:var(--bg1);border:1px solid var(--bdr);border-left:3px solid var(--amb);padding:14px}
 .kpi .v{font-size:28px;font-weight:700;color:var(--t1);line-height:1}
 .kpi .l{font-size:9px;letter-spacing:1px;color:var(--t3);margin-top:6px;text-transform:uppercase}
@@ -99,18 +99,19 @@ footer{margin-top:32px;padding-top:14px;border-top:1px solid var(--bdr);font-siz
     <div style="color:var(--t3);font-size:10px;margin-top:6px;letter-spacing:1px">Diagnosis · Fixes · Current State · Open Work</div>
   </div>
   <div class="hdr-meta">
-    <div><b>2026-05-09</b> · session report</div>
+    <div><b>2026-05-09</b> · session report · <span style="color:var(--grn)">updated PM</span></div>
     <div>repo · <b>chquordata/sharp-court</b> · branch <b>main</b></div>
-    <div>4 commits shipped · live on GitHub Pages</div>
+    <div>8 fixes · 7 commits shipped · live on GitHub Pages</div>
   </div>
 </div>
 
 <!-- KPI strip -->
 <div class="kpis">
-  <div class="kpi grn"><div class="v">4</div><div class="l">FIXES SHIPPED</div></div>
+  <div class="kpi grn"><div class="v">8</div><div class="l">FIXES SHIPPED</div></div>
   <div class="kpi"><div class="v">5×→1×</div><div class="l">H2H DEDUP RATIO</div></div>
   <div class="kpi blu"><div class="v">+10 days</div><div class="l">FORM HISTORY WINDOW</div></div>
   <div class="kpi prp"><div class="v">2</div><div class="l">SCOPED MISSING-DATA FLAGS</div></div>
+  <div class="kpi grn"><div class="v">+1</div><div class="l">FATIGUE SIGNAL <span style="color:var(--grn)">NEW</span></div></div>
 </div>
 
 <!-- Workflow diagram -->
@@ -178,14 +179,16 @@ footer{margin-top:32px;padding-top:14px;border-top:1px solid var(--bdr);font-siz
     <text class="sub" x="440" y="246" text-anchor="middle">Odds API · Pinnacle</text>
 
     <!-- Prompt builder -->
-    <rect class="box box-amb" x="570" y="115" width="200" height="120" rx="3"/>
-    <text class="lbl" x="670" y="138" text-anchor="middle">PROMPT BUILDER</text>
-    <text class="sub" x="670" y="155" text-anchor="middle">L5 · this-tournament</text>
-    <text class="sub" x="670" y="168" text-anchor="middle">Recent H2H · surface DB</text>
-    <text class="sub" x="670" y="181" text-anchor="middle">live stats · odds · edges</text>
-    <text class="tag" x="670" y="200" text-anchor="middle" fill="#00e676">FIX #1 + #2</text>
-    <text class="sub" x="670" y="214" text-anchor="middle" fill="#00e676">canonical match-key dedup</text>
-    <text class="sub" x="670" y="227" text-anchor="middle" fill="#00e676">unified tournament block</text>
+    <rect class="box box-amb" x="570" y="100" width="200" height="140" rx="3"/>
+    <text class="lbl" x="670" y="122" text-anchor="middle">PROMPT BUILDER</text>
+    <text class="sub" x="670" y="138" text-anchor="middle">L5 · this-tournament</text>
+    <text class="sub" x="670" y="151" text-anchor="middle">Recent H2H · surface DB</text>
+    <text class="sub" x="670" y="164" text-anchor="middle">live stats · odds · edges</text>
+    <text class="tag" x="670" y="182" text-anchor="middle" fill="#00e676">FIX #1 + #2</text>
+    <text class="sub" x="670" y="196" text-anchor="middle" fill="#00e676">canonical match-key dedup</text>
+    <text class="sub" x="670" y="209" text-anchor="middle" fill="#00e676">unified tournament block</text>
+    <text class="tag" x="670" y="225" text-anchor="middle" fill="#42a5f5">FIX #8 · NEW</text>
+    <text class="sub" x="670" y="237" text-anchor="middle" fill="#42a5f5">tournament load asymmetry</text>
 
     <!-- Flag -->
     <rect class="box box-blu" x="570" y="248" width="200" height="50" rx="3"/>
@@ -395,6 +398,108 @@ serve %, or playing style.]</span></pre></div>
   </div>
 </div>
 
+<div class="fix" style="border-left-color:var(--blu)">
+  <div class="fix-hdr">
+    <div>
+      <div class="fix-num">FIX #6 · ROUND 2</div>
+      <div class="fix-title">TODAY/TMW filter — rolling 48h window + cross-midnight live rescue</div>
+      <div class="fix-sub">Symptom: TMW silently dropped 8 of 20 games whose ESPN start times bucketed into "May 11" local; live matches that crossed midnight vanished from TODAY</div>
+    </div>
+    <div><span class="tag tag-grn">SHIPPED</span> <span class="fix-meta">commit <a href="https://github.com/CHQuordata/sharp-court/commit/999249d">999249d</a></span></div>
+  </div>
+  <div class="ba">
+    <div class="ba-col before"><h4>BEFORE — strict calendar match</h4><pre><span class="k-red">if(cDateFilter==='tomorrow')
+  ref.setDate(ref.getDate()+1);
+const ds=ref.toDateString();
+g=g.filter(x=>
+  x.tm.toDateString()===ds);</span>
+
+<span class="k-red">// today + tmrw counted only 12 of 20
+// — 8 placeholder-midnight games for
+// Rome's Day-2 session vanished
+// because their tm bucketed to May 11</span></pre></div>
+    <div class="ba-col after"><h4>AFTER — rolling window + live rescue</h4><pre><span class="k-grn">const now=new Date();
+const todayStr=now.toDateString();
+const dayAfter=new Date(
+  now.getTime()+48*3600e3);
+
+if(cDateFilter==='today')
+  g=g.filter(x=>
+    x.tm.toDateString()===todayStr
+    || x.st==='STATUS_IN_PROGRESS');
+else
+  g=g.filter(x=>
+    x.tm.toDateString()!==todayStr
+    && x.tm>now && x.tm<=dayAfter);</span>
+
+<span class="k-grn">// TMW now captures 16/20 — the 8
+// previously-orphaned games appear
+// + late-night live matches survive</span></pre></div>
+  </div>
+</div>
+
+<div class="fix" style="border-left-color:var(--blu)">
+  <div class="fix-hdr">
+    <div>
+      <div class="fix-num">FIX #7 · ROUND 2</div>
+      <div class="fix-title">Hide date/confidence chips in PICKS view</div>
+      <div class="fix-sub">Symptom: filter chips were interactive in picks view but applyFilters early-returned — clicks changed the header without changing content</div>
+    </div>
+    <div><span class="tag tag-grn">SHIPPED</span> <span class="fix-meta">commit <a href="https://github.com/CHQuordata/sharp-court/commit/6a36bdb">6a36bdb</a></span></div>
+  </div>
+  <div class="ba">
+    <div class="ba-col before"><h4>BEFORE</h4><pre><span class="k-red">user clicks PICKS tab →
+chips remain visible →
+user clicks TMW →
+header changes to "Tomorrow's Slate" →
+content does not change →
+chips look broken</span></pre></div>
+    <div class="ba-col after"><h4>AFTER</h4><pre><span class="k-grn">switchToPicksView():
+  …hide .date-toggle, #confFilterRow
+
+setSport('atp'/'wta'/'doubles'):
+  …restore display:flex on both</span>
+
+<span class="k-grn">// chips only appear when they
+// actually filter the visible list</span></pre></div>
+  </div>
+</div>
+
+<div class="fix" style="border-left-color:var(--grn)">
+  <div class="fix-hdr">
+    <div>
+      <div class="fix-num">FIX #8 · ROUND 2 · NEW SIGNAL</div>
+      <div class="fix-title">Tournament-load asymmetry signal in AI Analyze prompt</div>
+      <div class="fix-sub">User question: "does the model factor in tournament progress?" — Round labels yes; cumulative load no. Fixed.</div>
+    </div>
+    <div><span class="tag tag-grn">SHIPPED</span> <span class="fix-meta">commit <a href="https://github.com/CHQuordata/sharp-court/commit/1fa6cf7">1fa6cf7</a></span></div>
+  </div>
+  <div class="ba">
+    <div class="ba-col before"><h4>BEFORE — model had to derive</h4><pre>Prompt included:
+  Round: Round of 16
+  This tournament: R128: …, R64: …
+  ⚠️ 3-set match in draw
+  ⚠️ tiebreak in draw
+
+<span class="k-red">// Model had to eyeball scores
+// to compare court time. No
+// asymmetric-load summary.
+// "X has played 50 more games"
+// invisible until manually counted</span></pre></div>
+    <div class="ba-col after"><h4>AFTER — explicit asymmetry</h4><pre><span class="k-grn">Tournament load:
+  Tiafoe 2m/5s/51g
+  | Buse 1m/2s/15g
+  ⚠️ Tiafoe +36g heavier load
+   — fatigue edge to opponent</span>
+
+<span class="k-grn">// per-player matches/sets/games
+// in the current draw
+// flag fires when |gap| ≥ 20g
+// surfaces bye / quick-win
+// asymmetry deep in 7-round draws</span></pre></div>
+  </div>
+</div>
+
 </div>
 
 <!-- Pipeline steps -->
@@ -402,7 +507,7 @@ serve %, or playing style.]</span></pre></div>
 <div class="pipe">
   <div class="pipe-step"><div class="n">STEP 1</div><div class="t">CACHE GUARD</div><div class="d">tennis-only · check Sackmann + matchstat hits</div></div>
   <div class="pipe-step"><div class="n">STEP 2</div><div class="t">PREFETCH</div><div class="d">backfill 10d form · H2H · serve stats · matchstat pair · TA fallback</div></div>
-  <div class="pipe-step"><div class="n">STEP 3</div><div class="t">PROMPT BUILD</div><div class="d">deduped facts · scoped gap flags · algo picks · learned rules</div></div>
+  <div class="pipe-step"><div class="n">STEP 3</div><div class="t">PROMPT BUILD</div><div class="d">deduped facts · scoped gap flags · <span style="color:var(--grn)">tournament load</span> · algo picks · learned rules</div></div>
   <div class="pipe-step"><div class="n">STEP 4</div><div class="t">CLAUDE CALL</div><div class="d">sonnet-4-6 free-form + structured JSON · haiku verifier</div></div>
   <div class="pipe-step"><div class="n">STEP 5</div><div class="t">PERSIST</div><div class="d">verdicts → picks_history · graded overnight · CLV tracked</div></div>
 </div>
@@ -434,6 +539,9 @@ serve %, or playing style.]</span></pre></div>
         <li><b>Unwarranted confidence drops</b> — only the affected signal class triggers a hedge instruction now.</li>
         <li><b>Re-click latency</b> — cached games skip the 15s prefetch race entirely.</li>
         <li><b>Non-tennis AI Analyze</b> — no longer fires no-op tennis prefetch.</li>
+        <li style="color:var(--grn)"><b>Date filtering</b> — TMW captures next-session games regardless of TZ-bucket placement; live cross-midnight matches stay in TODAY.</li>
+        <li style="color:var(--grn)"><b>Picks-view chrome</b> — no more dead-end filter chips in views where they don't apply.</li>
+        <li style="color:var(--grn)"><b>Fatigue asymmetry</b> — first explicit cumulative-load signal in the prompt. Targets late-round Masters draws where bye/quick-win advantage matters.</li>
       </ul>
     </div>
   </div>
@@ -453,9 +561,13 @@ serve %, or playing style.]</span></pre></div>
 <footer>
   SHARP COURT v1 · single-file dashboard · zero build step · GitHub Pages
   <br>
-  patch set: <a href="https://github.com/CHQuordata/sharp-court/commit/811c100" style="color:var(--blu)">811c100</a> ·
+  AM patch set: <a href="https://github.com/CHQuordata/sharp-court/commit/811c100" style="color:var(--blu)">811c100</a> ·
   <a href="https://github.com/CHQuordata/sharp-court/commit/794baf0" style="color:var(--blu)">794baf0</a> ·
   <a href="https://github.com/CHQuordata/sharp-court/commit/be7e285" style="color:var(--blu)">be7e285</a>
+  <br>
+  PM round 2: <a href="https://github.com/CHQuordata/sharp-court/commit/999249d" style="color:var(--grn)">999249d</a> ·
+  <a href="https://github.com/CHQuordata/sharp-court/commit/6a36bdb" style="color:var(--grn)">6a36bdb</a> ·
+  <a href="https://github.com/CHQuordata/sharp-court/commit/1fa6cf7" style="color:var(--grn)">1fa6cf7</a>
 </footer>
 
 </body>
