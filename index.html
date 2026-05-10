@@ -1243,9 +1243,20 @@ async function oddsFetch(sk,force=false){
 //   localStorage.removeItem('et_pinnacle_disabled')
 // then reload.
 let _pinnacleWorkerDown=localStorage.getItem('et_pinnacle_disabled')==='1';
+let _pinnacleWorkerDownAt=0;
+const _PINNACLE_RECOVERY_MS=5*60*1000;
 let _pinnacleLastError=localStorage.getItem('et_pinnacle_last_error')||'';
 async function injectPinnacleOdds(){
-  if(!WORKER_URL||_pinnacleWorkerDown)return;
+  if(!WORKER_URL)return;
+  // Auto-recovery: if breaker tripped >5min ago AND it's session-only (not the
+  // permanent creds-missing flag in localStorage), clear it and retry. Sharp
+  // odds reliability matters for edge detection; transient 500s shouldn't
+  // disable the source for the rest of the session.
+  if(_pinnacleWorkerDown){
+    if(localStorage.getItem('et_pinnacle_disabled')==='1')return; // permanent
+    if(Date.now()-_pinnacleWorkerDownAt<_PINNACLE_RECOVERY_MS)return;
+    _pinnacleWorkerDown=false;console.info('[Pinnacle] auto-recovery: retrying after 5min cooldown');
+  }
   const spMap={tennis_atp:'atp',tennis_wta:'wta'};
   await Promise.allSettled(Object.keys(spMap).map(async sk=>{
     try{
@@ -1256,6 +1267,7 @@ async function injectPinnacleOdds(){
       // (auth rejected after being set, upstream issues), session-only.
       if(r.status>=500){
         _pinnacleWorkerDown=true;
+        _pinnacleWorkerDownAt=Date.now();
         try{const errBody=await r.json();_pinnacleLastError=errBody?.error||`Worker returned ${r.status}`}catch(_){_pinnacleLastError=`Worker returned ${r.status}`}
         const credsMissing=/creds missing|PINNACLE_USER|PINNACLE_PWD/i.test(_pinnacleLastError);
         if(credsMissing){
@@ -4141,6 +4153,9 @@ Every pick needs ≥1 signal. Pure rankings with no surface/form confirmation = 
 - TRUE SIGNALS in priority order: (1) RetWon% ≥42% = dominant returner — highest predictive value, SCORED; (2) BPconv% gap ≥10pts = one player breaking serve reliably, SCORED; (3) 1stIn% gap ≥8pts = first serve consistency edge, SCORED; (4) Surface win% current season, SCORED; (5) Days rest gap ≥2 days = fatigue/freshness edge, SCORED; (6) BPsave% gap ≥10pts = one player cracking under pressure, SCORED.
 - RetWon% (return points won) is the single most predictive tennis stat. When available it anchors confidence more than any other signal. ≥42% = dominant returner; gap ≥5pp between players = clear edge.
 
+## CLAY-FAVORITE GUARDRAIL — ENFORCE STRICTLY ON CLAY SLATES
+On clay surface, never assign HIGH confidence to a moneyline favorite priced -200 or worse without ALL of: (a) explicit current-year clay W-L for the favorite of ≥3 matches with positive record (≥60%), (b) opponent has materially worse clay record OR fewer than 3 clay matches this year, (c) no flagged ⚠ tournament-load disadvantage for the favorite. If any of those is missing, cap confidence at MEDIUM and prefer -1.5 games or a lean over ML. Recent slates have shown repeated upsets of heavy clay favorites (Sabalenka, Paolini, A-A, Bencic) — surface specialists, rust factors, and tournament-load asymmetry compress the edge that ranking alone implies. Do NOT back a heavy favorite on ranking + market price alone when the surface is clay.
+
 ## INJURY POLICY — READ CAREFULLY
 Injury data is background context ONLY. Follow these rules strictly:
 - NEVER downgrade confidence (HIGH→MEDIUM or MEDIUM→lean) solely because of an injury mention.
@@ -4209,6 +4224,7 @@ Games tagged [DOUBLES] in the slate have no individual player stats. For doubles
   "date":"YYYY-MM-DD",
   "learned_rules_update":"ONLY include if adding/changing a rule — output full updated list, max 12 rules, each max 20 words. Omit this field entirely if no changes.",
   "picks":[{"rank":1,"sport":"tennis","matchup":"Player A vs Player B","pick":"Player A -1.5 games (-115)","confidence":"HIGH","score":8.2,"odds":-115,"reasoning":"Multi-sentence analysis covering key edges","filters":["surface_record","ranking_gap"],"is_lean":false}],
+  // SCORE RULE: score is a number 1.0–10.0 only. NEVER above 10. NEVER below 1. NEVER an integer above 10 (no 11, 12, 46). Use one decimal place. The system rejects any pick with score outside [1,10].
   "parlays":[{"type":"2-Leg Conservative","legs":["leg1","leg2"],"note":"why these combine"}],
   "leans":[{"matchup":"...","lean":"side and why","trigger":"what would promote to graded pick"}],
   "analyst_note":"1-2 sentence slate quality note — describe today's tennis slate (surface, depth, odds confidence). NO system alerts, grading complaints, or data warnings"
@@ -5020,6 +5036,19 @@ ${gamesCtx.slice(0,5500)}`;
 
 // HUMAN REVIEW GATE: renders per-pick approval UI before publishing
 function showReviewGate(result){
+  // Score sanity clamp: model spec says 1.0-10.0 but we've seen raw scores
+  // hit 46+. Clamp at the single chokepoint before persistence so display,
+  // sort, and history all see bounded data. Invalid scores get nulled so
+  // they sort to the bottom rather than silently passing through.
+  if(Array.isArray(result?.picks)){
+    result.picks.forEach(p=>{
+      const n=parseFloat(p.score);
+      if(!isFinite(n)){p.score=null;p._score_invalid='non-numeric';return}
+      if(n>10){p._score_clamped_from=n;p.score=10}
+      else if(n<1){p._score_clamped_from=n;p.score=1}
+      else{p.score=Math.round(n*10)/10}
+    });
+  }
   pendingPicksData=result;
   _rgApprovals={};
   const picks=(result.picks||[]).filter(p=>!p.is_lean);
@@ -5528,7 +5557,7 @@ async function aiAnalyzeGame(gid){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(60000),
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-sonnet-4-6',temperature:0,max_tokens:4000,
-        system:`You are a sharp sports betting analyst acting as a second opinion on algo-generated picks. ALL data provided in the user message (records, odds, stats, line moves) is live current-season data pulled directly from ESPN and sportsbooks — treat it as ground truth. NEVER question, caveat, or second-guess the provided records or stats based on your training data; your training cutoff means you do not know this season's standings. If the game is marked as a PLAYOFF GAME, apply playoff-specific reasoning only — seeding is irrelevant, load management does not exist, ignore pace and rest signals that apply in regular season. Your job: validate, challenge, or add nuance to algo picks using only the numbers given. Agree with specific reasons, flag what the algo missed, or flip the pick if the data warrants it. Be concise, cite actual numbers. CONFIDENCE RULE: Only assign a confidence score if it is 2.5 or higher — if your honest score for a pick is below 2.5, do not include that pick in your output at all. If MISSING DATA is flagged in the input, explicitly state what data would change your analysis and reduce your overall confidence score accordingly. INJURY POLICY: Injury data is context only — NEVER reduce confidence or challenge a pick solely due to injury. Injury is already priced into the market line. For tennis specifically, if a match is on the slate both players are healthy enough to compete — never cite injury absence as a data gap or confidence reducer for tennis. NHL POLICY: SH% is high-variance noise — never cite it as an offensive edge. Real NHL edges are PP%/PK% gaps, GAA, GF/G. NBA POLICY: Season-average PPG/FG% are already priced in. Net rating is NOT provided separately — the L10 margin in the context IS the net rating equivalent and is the primary defensive efficiency signal. Never flag net rating as missing if L10 margin data is present. Real edges: L10 margin divergence ≥4pts, fatigue (B2B/3-in-4), pace mismatch ≥4 poss/48. TENNIS POLICY: Seeds and season W-L records are noise. True signals in order: RetWon% ≥42%, BPconv% gap, 2ndWon% <50% vulnerability, surface win%, days rest gap ≥2, BPsave% gap.${rules?'\n\nLEARNED RULES:\n'+rules:''}${bySp?(bySp.w||0)+(bySp.l||0)>0?'\n\nYour record in '+g.cat.toUpperCase()+': '+(bySp.w||0)+'-'+(bySp.l||0):'':''}`,
+        system:`You are a sharp sports betting analyst acting as a second opinion on algo-generated picks. ALL data provided in the user message (records, odds, stats, line moves) is live current-season data pulled directly from ESPN and sportsbooks — treat it as ground truth. NEVER question, caveat, or second-guess the provided records or stats based on your training data; your training cutoff means you do not know this season's standings. If the game is marked as a PLAYOFF GAME, apply playoff-specific reasoning only — seeding is irrelevant, load management does not exist, ignore pace and rest signals that apply in regular season. Your job: validate, challenge, or add nuance to algo picks using only the numbers given. Agree with specific reasons, flag what the algo missed, or flip the pick if the data warrants it. Be concise, cite actual numbers. CONFIDENCE RULE: Only assign a confidence score if it is 2.5 or higher — if your honest score for a pick is below 2.5, do not include that pick in your output at all. If MISSING DATA is flagged in the input, explicitly state what data would change your analysis and reduce your overall confidence score accordingly. INJURY POLICY: Injury data is context only — NEVER reduce confidence or challenge a pick solely due to injury. Injury is already priced into the market line. For tennis specifically, if a match is on the slate both players are healthy enough to compete — never cite injury absence as a data gap or confidence reducer for tennis. NHL POLICY: SH% is high-variance noise — never cite it as an offensive edge. Real NHL edges are PP%/PK% gaps, GAA, GF/G. NBA POLICY: Season-average PPG/FG% are already priced in. Net rating is NOT provided separately — the L10 margin in the context IS the net rating equivalent and is the primary defensive efficiency signal. Never flag net rating as missing if L10 margin data is present. Real edges: L10 margin divergence ≥4pts, fatigue (B2B/3-in-4), pace mismatch ≥4 poss/48. TENNIS POLICY: Seeds and season W-L records are noise. True signals in order: RetWon% ≥42%, BPconv% gap, 2ndWon% <50% vulnerability, surface win%, days rest gap ≥2, BPsave% gap. CLAY-FAVORITE GUARDRAIL: on clay, never give HIGH confidence to a -200+ moneyline favorite unless the favorite has explicit current-year clay W-L (≥3 matches, ≥60%) AND the opponent's clay record is materially worse or sparse AND no tournament-load disadvantage flagged for the favorite. Otherwise cap at MEDIUM. Recent clay slates have shown repeated heavy-favorite upsets — ranking alone is not enough.${rules?'\n\nLEARNED RULES:\n'+rules:''}${bySp?(bySp.w||0)+(bySp.l||0)>0?'\n\nYour record in '+g.cat.toUpperCase()+': '+(bySp.w||0)+'-'+(bySp.l||0):'':''}`,
         messages:[{role:'user',content:ctx+`
 
 Provide BOTH:
@@ -5541,7 +5570,7 @@ PART 1 — Free-form analysis:
 PART 2 — Structured output (REQUIRED, append at end after a line of three dashes "---"):
 
 \`\`\`json
-{"verdicts":[{"algo_pick":"<the algo's original pick string>","my_verdict":"AGREE|CHALLENGE|FLIP","my_pick":"<your final pick string with side+line+price>","confidence":"HIGH|MEDIUM|LOW","score":<1-10>,"reasoning":"<one sentence>"}]}
+{"verdicts":[{"algo_pick":"<the algo's original pick string>","my_verdict":"AGREE|CHALLENGE|FLIP","my_pick":"<your final pick string with side+line+price>","confidence":"HIGH|MEDIUM|LOW","score":<1.0-10.0 — STRICT, never above 10, never below 1, one decimal>,"reasoning":"<one sentence>"}]}
 \`\`\`
 
 Skip any pick you cannot score 2.5+. The structured block lets your verdicts be tracked over time so the system can measure whether your AI ANALYZE deep-dives are actually adding value vs. the algo alone.`}]})});
@@ -5606,7 +5635,23 @@ function _parseAIAnalyzeVerdicts(txt){
   // Fallback: any JSON-looking object after a "---" separator
   if(!raw){const sep=txt.split(/\n---/);if(sep.length>=2){const m=sep[1].match(/(\{[\s\S]+\})/);if(m)raw=m[1]}}
   if(!raw)return[];
-  try{const j=JSON.parse(raw);return Array.isArray(j.verdicts)?j.verdicts:[]}catch(_){return[]}
+  try{
+    const j=JSON.parse(raw);
+    const verdicts=Array.isArray(j.verdicts)?j.verdicts:[];
+    // Score sanity: model spec says 1.0-10.0, but we've seen 46s leak through.
+    // Clamp at parse so downstream (display, sort, history) gets bounded data.
+    // If score is invalid/missing/out-of-range we keep the verdict but null
+    // the score so it sorts to the bottom and shows "?" rather than masking
+    // the issue silently.
+    verdicts.forEach(v=>{
+      const n=parseFloat(v.score);
+      if(!isFinite(n)){v.score=null;v._score_invalid='non-numeric';return}
+      if(n>10){v._score_clamped_from=n;v.score=10}
+      else if(n<1){v._score_clamped_from=n;v.score=1}
+      else{v.score=Math.round(n*10)/10}
+    });
+    return verdicts;
+  }catch(_){return[]}
 }
 
 // Save AI ANALYZE verdicts as tracked picks under et_picks_history with
