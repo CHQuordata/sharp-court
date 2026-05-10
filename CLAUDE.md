@@ -12,9 +12,23 @@ Single-file Bloomberg Terminal-style tennis betting dashboard. Most logic lives 
 
 ## CODE WORKFLOW
 
-**Always: edit → `git add` → `git commit` → `git push origin main`**
+**Always: edit → parse-validate → `git add` → `git commit` → `git push origin main`**
 
 Never stop at commit. The live site only updates on push (GitHub Pages).
+
+**Parse-validate after any non-trivial JS edit to `index.html`:**
+
+```bash
+node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const m=h.match(/<script>\s*\n([\s\S]*?)<\/script>\s*\n*<\/div>/);try{new Function(m[1]);console.log('PARSE OK')}catch(e){console.log('PARSE ERROR:',e.message)}"
+```
+
+Skipping this once cost 5 commits of a broken site (duplicate `let injected` halted the entire main `<script>` block, killing the PIN gate's `checkPin` along with everything else). The check takes 1 second and catches the entire class of bug.
+
+**Worker changes need a separate deploy** — git push only updates GitHub Pages (frontend). For `worker/index.js`:
+
+```bash
+cd worker && npx wrangler deploy
+```
 
 ---
 
@@ -45,9 +59,62 @@ SQUARE_BOOKS = ['FanDuel', 'DraftKings', 'BetMGM', 'Caesars', ...rest]
 
 EDGE_THRESHOLDS = { HIGH: 8, MEDIUM: 5, LOW: 3 }  // % deviation from consensus
 
+TN_BAN_LIST = ['nakashima','tsitsipas','bublik','haddad maia','rublev',
+               'kyrgios','fognini','shapovalov','kokkinakis','garin']
+// House-policy variance bans. Never picked under ANY path (algo, LLM, quant
+// injection, AI ANALYZE save). Honored at 5+ enforcement points.
+
 // Implied probability
 aimp(odds) => odds > 0 ? 100/(odds+100) : |odds|/(|odds|+100)
+
+// Quarter-Kelly stake (% of bankroll) — the headline metric for every pick.
+// Derived from p = bookImplied + edgeByConf where edgeByConf is
+// HIGH=4pp, MEDIUM=1.5pp, LOW=0.3pp. Hard-capped at 2% per bet for
+// ruin protection. See lib/odds.js:kellyPct.
 ```
+
+---
+
+## SHARP FRAMEWORK (live as of 2026-05-10)
+
+The pick framework was redesigned to align with how professional bettors actually decide. Diagram: `outputs/2026-05-10_SharpRedesign_PatchSet.html`.
+
+**Stake size is the bet. Confidence tag is for visual grouping only.** Every pick has a `recommended_stake_pct` field (¼-Kelly, 2% cap) shown as the headline pill on the leaderboard. Tooltip shows the source (`quant` vs `confidence`-derived).
+
+**Tennis HIGH requires dual confirmation.** LLM agreement is implicit; quant must also confirm via AUTOPICK classification or BORDERLINE with ≥5% edge. Otherwise HIGH downgrades to MEDIUM with `dual_confirm_failed` filter.
+
+**Pinnacle is the sharp reference.** Pick cards show `✓ PIN` or `⚡ PIN ✗` based on whether Pinnacle's current price implies our side has value (≥2pp gap). `~CLV +X.Xpp` shows forward-looking closing line value vs Pinnacle no-vig fair.
+
+**CLV is the only honest skill metric.** Win rate is variance. CLV (`closing_implied − entry_implied` in pp) is computed at grade time and survives sample-size noise. Track it long-term; ignore W/L over short windows.
+
+**One bet per match, locked at first generation.** Pick gen filters out in-progress matches and matchups that already have a pick in today's slate. Click ✕ on a pick to deliberately remove it; next regenerate fills the gap.
+
+**Clay-favorite guardrail.** On clay, never assign HIGH to a -200+ ML favorite without explicit current-year clay W-L AND no fatigue gap. Enforced in algo path, LLM prompt, quant injection, AND AI ANALYZE post-parse re-validation.
+
+**Quant injection → leans for tennis.** When the LLM drops a quant AUTOPICK on tennis, route to leans for review instead of force-injecting. Other sports keep "math wins on conflicts." Tennis upset variance + qualitative-heavy edge sources mean LLM drops carry real signal.
+
+---
+
+## BACKTEST TOOL
+
+`backtest.html` — replays graded picks under each rule policy. Pulls `et_picks_history` from the worker KV (CORS allowed only from deployed GH Pages origin) or accepts pasted JSON for local testing. Runs 6 policies side-by-side from a $1,000 starting bankroll: baseline (old kellyPct), new stake (post-fix), + HIGH price cap, + dual confirmation, + skip negative CLV, + expanded ban list.
+
+Dedupes to one pick per matchup (drops same-matchup duplicates and leans) so the simulator reflects real-world one-bet-per-match behavior.
+
+---
+
+## CRON & WORKER MONITORING
+
+Cloudflare Worker runs nightly at **6 AM UTC** (configured in `worker/wrangler.toml`). Phases: selo_refresh → closing_snapshot → odds_api_scores → kv_write_completed → kv_read_history → espn_scores → grading_loop → clv_compute → kv_write_history → learning_agent. Each wrapped in try/catch — one phase failing won't abort the rest. Phase log + counts persisted to `et_cron_diagnostic` KV.
+
+**To inspect manually:**
+
+```bash
+curl -s https://sportsedge-proxy.chuynh.workers.dev/kv/et_cron_diagnostic
+curl -X POST https://sportsedge-proxy.chuynh.workers.dev/admin/run-cron
+```
+
+Look for `phases:[]` array with `ok:false` entries and the `gradedThisRun` / `ungradedAfter` counts to see whether grading actually progressed.
 
 ---
 
