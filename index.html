@@ -3290,12 +3290,15 @@ function renderPicksLeaderboard(){
         }
       }
     }
-    h+=`<div class="pick-item${selPickIdx===i?' sel':''}" onclick="selPick(${i})">
+    const _isTop=i===0,_is2nd=i===1;
+    const _dispScore=p.score!=null?Math.min(parseFloat(p.score),10).toFixed(1):null;
+    h+=`<div class="pick-item${selPickIdx===i?' sel':''}" onclick="selPick(${i})" style="${_isTop?'border-left:3px solid var(--grn);background:rgba(0,230,118,.04)':_is2nd?'border-left:3px solid var(--cyn);background:rgba(0,229,255,.03)':'border-left:3px solid transparent'}">
       <div class="pick-item-top">
-        <span class="pick-item-rank">#${p.rank||i+1}</span>
+        <span class="pick-item-rank" style="${_isTop?'color:var(--grn);font-weight:900':_is2nd?'color:var(--cyn);font-weight:800':''}">#${i+1}</span>
         <span>${ic}</span>
         <span class="pick-item-match">${p.matchup}</span>
-        ${res?`<span class="pib pib-${res}">${res}</span>`:`<span class="pib pib-${p.confidence}">${p.confidence}${p.score!=null?`<span style="opacity:.55;font-weight:500;margin-left:4px">${parseFloat(p.score).toFixed(1)}</span>`:''}</span>`}
+        ${_isTop?`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-right:4px;color:var(--grn);background:rgba(0,230,118,.15)">★ BEST BET</span>`:''}
+        ${res?`<span class="pib pib-${res}">${res}</span>`:`<span class="pib pib-${p.confidence}">${p.confidence}${_dispScore!=null?`<span style="opacity:.55;font-weight:500;margin-left:4px">${_dispScore}/10</span>`:''}</span>`}
       </div>
       <div class="pick-item-pick">${p.pick}${_aTag}${
         // Ensemble consensus badge — green ✓ when both models agree, amber ⚠
