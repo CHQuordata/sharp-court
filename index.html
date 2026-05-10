@@ -5446,6 +5446,10 @@ async function generatePicks(force=false){
         if(qc){
           p.quant_classification=qc.classification;
           p.quant_best_edge=qc.bestEdge?qc.bestEdge.edge:null;
+          // Capture kelly_q from quant when the LLM picked the same side
+          // quant identified — lets the stake-calc step below treat
+          // quant-confirmed and quant-injected picks identically.
+          if(qc.bestEdge?.kelly_q!=null)p.quant_kelly_q=qc.bestEdge.kelly_q;
           p.selo_a=qc.fp?.eloA;
           p.selo_b=qc.fp?.eloB;
         }
@@ -5468,6 +5472,26 @@ async function generatePicks(force=false){
           if(!p.filters)p.filters=[];
           if(!p.filters.includes('dual_confirm_failed'))p.filters.push('dual_confirm_failed');
         }
+      });
+    }
+    // ── Universal stake recommendation (¼-Kelly) ──────────────────────────────
+    // Sharp framework: stake size IS the confidence. Every pick gets a single
+    // canonical recommended_stake_pct (% of bankroll, ¼-Kelly). Quant picks
+    // use the math-derived kelly_q directly; LLM-only picks fall back to the
+    // confidence/price-implied estimate. One field, one source of truth — the
+    // UI surfaces this as the headline metric, not HIGH/MEDIUM/LOW.
+    if(result.picks){
+      result.picks.forEach(p=>{
+        let qk=null;
+        if(typeof p.quant_kelly_q==='number')qk=p.quant_kelly_q*100; // already ¼-Kelly fraction
+        else{
+          const fullK=kellyPct(p.confidence,p.pick,null);
+          qk=fullK/4;
+        }
+        // Cap at 2% of bankroll regardless of edge — variance/ruin protection
+        // pros apply universally. Even with 50% edge, no single bet > 2%.
+        p.recommended_stake_pct=Math.min(qk||0,2);
+        p.stake_source=typeof p.quant_kelly_q==='number'?'quant':'confidence';
       });
     }
     // ── Enrich picks with CLV fields (entry odds, game id, timestamp) ──────────
