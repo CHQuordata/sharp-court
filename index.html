@@ -4019,11 +4019,21 @@ function buildGamesContext(todayOnly=false,gameFilter=null){
       const _hmHasDb=!!(tc?.hmSurf||tnGameCache.get(g.id)?.hmData||(tennisForm.get(String(g.hm.id))?.length));
       if(!_awHasDb||!_hmHasDb){const _sp=[!_awHasDb?g.aw.nm:null,!_hmHasDb?g.hm.nm:null].filter(Boolean);ctx+=`  [LIMITED DATA — ${_sp.join(', ')}: not in stats DB. Use ranking position and market pricing as primary signals only. Do not speculate about surface record, playing style, or results not present in the data above.]\n`}
       // Critical data check: per CLAUDE.md, RetWon% / BPconv% are top-priority tennis signals.
-      // If matchstat live stats are blank for either player, flag loudly so the LLM downgrades
-      // confidence and does NOT silently drop the pick under the algo threshold floor.
+      // Fires only when BOTH matchstat live AND Sackmann-derived return stats
+      // are absent for a player. Earlier version only checked matchstat, so
+      // it produced false-positive "DATA MISSING" warnings whenever Sackmann
+      // had the data — confusing the LLM into doubting stats that were right
+      // there in the prompt.
       {const _tng=tnGameCache.get(g.id);
-        const _hasRet=d=>{if(!d)return false;const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};return (parseInt(st.breakPointOpportunitiesGm||0)>0)||(parseInt(st.returnPointsTotalGm||st.returnPointsOfGm||st.returnGamesGm||0)>0)};
-        const _awHasRet=_hasRet(_tng?.awData),_hmHasRet=_hasRet(_tng?.hmData);
+        const _sk=surf==='clay'?'clay':surf==='grass'?'grass':'hard';
+        const _sackAwSv=tc?.awServe?.[_sk],_sackHmSv=tc?.hmServe?.[_sk];
+        const _hasMatchstat=d=>{if(!d)return false;const stArr=Array.isArray(d.stats)?d.stats:(d.stats?[d.stats]:[]);const st=stArr[0]||{};return (parseInt(st.breakPointOpportunitiesGm||0)>0)||(parseInt(st.returnPointsTotalGm||st.returnPointsOfGm||st.returnGamesGm||0)>0)};
+        // Sackmann derives RetWon% for player X from the OPPONENT's serve data
+        // (opp_ret_pct + bp_save_pct), so the data source for awHasRet is hmSv.
+        const _hasSackForAw=(_sackHmSv?.m>=3)&&(_sackHmSv.opp_ret_pct!=null||_sackHmSv.bp_save_pct!=null);
+        const _hasSackForHm=(_sackAwSv?.m>=3)&&(_sackAwSv.opp_ret_pct!=null||_sackAwSv.bp_save_pct!=null);
+        const _awHasRet=_hasMatchstat(_tng?.awData)||_hasSackForAw;
+        const _hmHasRet=_hasMatchstat(_tng?.hmData)||_hasSackForHm;
         if(!_awHasRet||!_hmHasRet){const _miss=[!_awHasRet?g.aw.nm:null,!_hmHasRet?g.hm.nm:null].filter(Boolean);
           ctx+=`  [CRITICAL DATA MISSING — RetWon%/BPconv% blank for: ${_miss.join(', ')}. These are top-priority tennis signals per house policy. DO NOT silently drop this match. If algo confidence is borderline, route to MANUAL REVIEW with an explicit "missing return-game data" note rather than producing a low-confidence pick or dropping below threshold.]\n`}
       }}
