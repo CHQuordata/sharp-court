@@ -5230,7 +5230,17 @@ async function generatePicks(force=false){
     // becomes the PRIMARY signal for graded picks. LLM is downstream advisory.
     _setGenStatus('QUANT DESK: COMPUTING FAIR PRICES...');
     if(!_seloData)await loadSElo();
-    const quantClassifications=_agentTargets.map(quantClassify);
+    const _quantClassificationsRaw=_agentTargets.map(quantClassify);
+    // Strip banned-player matchups before any downstream consumer sees them.
+    // Without this guard, the AUTOPICK injection backstop below will force-add
+    // a graded pick on a banned player even though both the algo path and the
+    // LLM context honor the ban.
+    const quantClassifications=_quantClassificationsRaw.filter(qc=>{
+      if(qc.match.cat!=='tennis')return true;
+      const banned=TN_BAN_LIST.some(b=>[qc.match.aw.nm,qc.match.hm.nm].some(n=>n.toLowerCase().includes(b)));
+      if(banned)console.warn(`[quant-ban] dropping ${qc.match.aw.nm} vs ${qc.match.hm.nm} — banned player`);
+      return !banned;
+    });
     const _qBuckets={AUTOPICK:[],BORDERLINE:[],QUANT_PASS:[],NO_QUANT:[]};
     quantClassifications.forEach(qc=>_qBuckets[qc.classification].push(qc));
     console.log(`[quant] AUTOPICK=${_qBuckets.AUTOPICK.length} BORDERLINE=${_qBuckets.BORDERLINE.length} PASS=${_qBuckets.QUANT_PASS.length} NO_QUANT=${_qBuckets.NO_QUANT.length}`);
