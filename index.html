@@ -3388,6 +3388,7 @@ function renderPicksLeaderboard(){
         ${_isTop?`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-right:4px;color:var(--grn);background:rgba(0,230,118,.15)">★ BEST BET</span>`:''}
         ${_stakeBadge}
         ${res?`<span class="pib pib-${res}">${res}</span>`:`<span class="pib pib-${p.confidence}">${p.confidence}${_dispScore!=null?`<span style="opacity:.55;font-weight:500;margin-left:4px">${_dispScore}/10</span>`:''}</span>`}
+        ${res?'':`<button onclick="event.stopPropagation();removePickAt(${i})" title="Remove this pick. Regenerate will then re-pick this matchup with current data." style="background:none;border:none;color:var(--t4);cursor:pointer;font-size:14px;padding:0 4px;margin-left:2px">✕</button>`}
       </div>
       <div class="pick-item-pick">${p.pick}${_aTag}${_pinTag}${_clvExpTag}${
         // Ensemble consensus badge — green ✓ when both models agree, amber ⚠
@@ -3970,6 +3971,28 @@ function selPick(idx){
   }
   if(ge.length)h+=`<div class="sec"><div class="sec-title"><div class="ind" style="background:var(--grn)"></div>EDGE DETECTION</div>${ge.map(e=>{const pt2=p.pick.toLowerCase();const mk2=pt2.includes('over')||pt2.includes('under')?'totals':pt2.match(/[+-]\d+\.5/)?'spreads':'h2h';const isRel=e.mk===mk2;const eC=isRel?'var(--grn)':'var(--t2)';return`<div class="edge-card${isRel?'':' edge-card-dim'}"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;font-weight:600;color:${eC}">${e.ml}: ${e.side}</span><span style="font-size:13px;font-weight:700;color:${eC}">${e.ep.toFixed(1)}%</span></div><div style="font-size:9px;color:var(--t2)">Best: ${e.bb} ${fp(e.bp)}</div></div>`}).join('')}</div>`;
   el.innerHTML=h;el.scrollTop=0;
+}
+
+// Remove a pick from today's slate. Used to override the
+// one-bet-per-match lock — after removal, the next regenerate will
+// re-pick this matchup with current data. Doesn't touch graded picks
+// (the X button is hidden when a result exists).
+function removePickAt(idx){
+  const picks=_getDisplayedPicks();
+  const target=picks[idx];
+  if(!target)return;
+  if(!confirm(`Remove this pick?\n\n${target.matchup}\n${target.pick}\n\nNext regenerate will re-pick this matchup. This cannot be undone (you'd have to regenerate to get a new pick).`))return;
+  if(!todayPicksData?.picks)return;
+  // Find by reference identity (matchup+pick string is unique enough today).
+  const realIdx=todayPicksData.picks.findIndex(p=>p.matchup===target.matchup&&p.pick===target.pick&&p.entry_at===target.entry_at);
+  if(realIdx<0)return;
+  todayPicksData.picks.splice(realIdx,1);
+  localStorage.setItem('et_picks_today',JSON.stringify(todayPicksData));
+  // Reset slate fingerprint so next generate sees this matchup as eligible
+  // (without this, the fingerprint-unchanged short-circuit would skip it).
+  localStorage.removeItem('et_picks_fingerprint');
+  selPickIdx=-1;
+  renderPicksLeaderboard();renderPicksOverview();
 }
 
 function selLean(idx){
