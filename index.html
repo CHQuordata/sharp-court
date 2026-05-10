@@ -3743,8 +3743,8 @@ function renderPicksOverview(){
 // got Detroit Pistons HIGH pick instead.)
 function _getDisplayedPicks(){
   const all=todayPicksData?.picks?.filter(p=>!p.is_lean)||[];
-  if(cConfFilter==='all'||cConfFilter==='picked')return all;
-  return all.filter(p=>p.confidence===cConfFilter);
+  const filtered=cConfFilter==='all'||cConfFilter==='picked'?all:all.filter(p=>p.confidence===cConfFilter);
+  return filtered.slice().sort((a,b)=>(b.score??0)-(a.score??0));
 }
 function selPick(idx){
   selPickIdx=idx;renderPicksLeaderboard();
