@@ -3302,29 +3302,33 @@ function renderPicksLeaderboard(){
         }
       }
     }
-    // Pinnacle agreement badge — shows whether the world's sharpest book
-    // implies our side is more or less likely than the entry price. Skips
-    // the neutral case to keep the row uncluttered. Compared against
-    // entry_odds when present, else parsed from pick string.
-    let _pinTag='';
+    // Pinnacle reference: pull our-side price AND the opposite-side price so
+    // we can compute (a) raw Pinnacle agreement vs entry and (b) no-vig fair
+    // probability for forward-looking CLV. Pinnacle is the sharpest book;
+    // its no-vig fair is the closest pre-grade proxy for closing line value.
+    let _pinTag='',_clvExpTag='';
     if(_lg?.odds?.bookmakers?.length&&!res){
       const pinBk=_lg.odds.bookmakers.find(b=>b.key==='pinnacle');
       if(pinBk){
         const pt=(p.pick||'').toLowerCase();
         const mk=pt.includes('over')||pt.includes('under')?'totals':pt.match(/[+-]\d+\.5/)?'spreads':'h2h';
         const pinMkt=pinBk.markets?.find(m=>m.key===mk);
-        let pinPrice=null;
+        let pinPrice=null,pinOtherPrice=null;
         if(pinMkt){
           if(mk==='totals'){
             const want=pt.includes('over')?'over':'under';
+            const other=want==='over'?'under':'over';
             const o=pinMkt.outcomes.find(o=>(o.name||'').toLowerCase()===want);
-            if(o)pinPrice=o.price;
+            const o2=pinMkt.outcomes.find(o=>(o.name||'').toLowerCase()===other);
+            if(o)pinPrice=o.price;if(o2)pinOtherPrice=o2.price;
           }else{
             const hmL=_lg.hm.nm.toLowerCase().split(' ').pop();
             const isHome=pt.includes(hmL);
             const wantNm=isHome?_lg.hm.nm:_lg.aw.nm;
+            const otherNm=isHome?_lg.aw.nm:_lg.hm.nm;
             const o=pinMkt.outcomes.find(o=>o.name===wantNm);
-            if(o)pinPrice=o.price;
+            const o2=pinMkt.outcomes.find(o=>o.name===otherNm);
+            if(o)pinPrice=o.price;if(o2)pinOtherPrice=o2.price;
           }
         }
         let entryOdds=p.entry_odds;
@@ -3333,6 +3337,20 @@ function renderPicksLeaderboard(){
           const pinImp=aimp(pinPrice),ourImp=aimp(entryOdds),diff=pinImp-ourImp;
           if(diff>=0.02)_pinTag=`<span title="Pinnacle implies ${(pinImp*100).toFixed(1)}% vs entry ${(ourImp*100).toFixed(1)}% — sharpest book agrees this side has value" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--grn);background:rgba(0,230,118,.08)">✓ PIN</span>`;
           else if(diff<=-0.02)_pinTag=`<span title="Pinnacle implies ${(pinImp*100).toFixed(1)}% vs entry ${(ourImp*100).toFixed(1)}% — sharpest book disagrees with this side" style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:var(--red);background:rgba(255,71,87,.08)">⚡ PIN ✗</span>`;
+          // Pre-grade CLV expectation: compute Pinnacle no-vig fair for our
+          // side and compare to entry. Sharp bettors track CLV as the only
+          // skill metric that's robust to sample variance — pre-grade CLV
+          // means we can see "we're already beating the close" before it
+          // settles. Skips post-grade picks (real CLV from worker takes over).
+          if(pinOtherPrice!=null&&typeof p.clv!=='number'){
+            const otherImp=aimp(pinOtherPrice);
+            const noVigOur=pinImp/(pinImp+otherImp);
+            const expCLV=(noVigOur-ourImp)*100;
+            if(Math.abs(expCLV)>=0.5){
+              const c=expCLV>0?'var(--grn)':'var(--red)';
+              _clvExpTag=`<span title="Expected CLV: entry ${(ourImp*100).toFixed(1)}% vs Pinnacle no-vig fair ${(noVigOur*100).toFixed(1)}%. Positive means you're already beating the sharpest book's fair price — the strongest pre-grade signal of value." style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:5px;color:${c};background:var(--bg3)">~CLV ${expCLV>=0?'+':''}${expCLV.toFixed(1)}pp</span>`;
+            }
+          }
         }
       }
     }
@@ -3363,7 +3381,7 @@ function renderPicksLeaderboard(){
         ${_stakeBadge}
         ${res?`<span class="pib pib-${res}">${res}</span>`:`<span class="pib pib-${p.confidence}">${p.confidence}${_dispScore!=null?`<span style="opacity:.55;font-weight:500;margin-left:4px">${_dispScore}/10</span>`:''}</span>`}
       </div>
-      <div class="pick-item-pick">${p.pick}${_aTag}${_pinTag}${
+      <div class="pick-item-pick">${p.pick}${_aTag}${_pinTag}${_clvExpTag}${
         // Ensemble consensus badge — green ✓ when both models agree, amber ⚠
         // when secondary model disagreed (potential blunder), neutral ◐ for
         // unsure. Only renders when the secondary model actually voted.
