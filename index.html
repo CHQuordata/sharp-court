@@ -5074,7 +5074,6 @@ Output:
     const m=txt.match(/\{[\s\S]+\}/);if(!m)return null;
     const res=JSON.parse(_repairJSON(m[0]));
     res.game_id=g.id;
-    res.is_deep=!!(tn||h2h);
     return res;
   }catch(e){return null;}
 }
