@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>SHARP COURT — AI Analyze Fix Summary · 2026-05-09</title>
+<title>SHARP COURT — Picks Pipelines Patch Set · 2026-05-09</title>
 <style>
 :root{
   --bg0:#0a0a0a;--bg1:#111;--bg2:#1a1a1a;--bg3:#222;
@@ -95,32 +95,41 @@ footer{margin-top:32px;padding-top:14px;border-top:1px solid var(--bdr);font-siz
 
 <div class="hdr">
   <div>
-    <h1><span class="tick"></span>SHARP COURT — AI ANALYZE PIPELINE PATCH SET</h1>
-    <div style="color:var(--t3);font-size:10px;margin-top:6px;letter-spacing:1px">Diagnosis · Fixes · Current State · Open Work</div>
+    <h1><span class="tick"></span>SHARP COURT — PICKS PIPELINES PATCH SET</h1>
+    <div style="color:var(--t3);font-size:10px;margin-top:6px;letter-spacing:1px">Two pipelines · shared infra · 11 patches · honest about what wasn't measured</div>
   </div>
   <div class="hdr-meta">
-    <div><b>2026-05-09 → 05-10</b> · session report · <span style="color:var(--grn)">round 3 added</span></div>
+    <div><b>2026-05-09</b> · session report · <span style="color:var(--amb)">v3 honest revision</span></div>
     <div>repo · <b>chquordata/sharp-court</b> · branch <b>main</b></div>
-    <div>11 fixes · 10 commits shipped · live on GitHub Pages</div>
+    <div>11 patches · 10 commits shipped · <span style="color:var(--amb)">no pick-accuracy A/B yet</span></div>
   </div>
 </div>
 
-<!-- KPI strip -->
+<!-- KPI strip - honest category breakdown -->
 <div class="kpis">
-  <div class="kpi grn"><div class="v">11</div><div class="l">FIXES SHIPPED</div></div>
-  <div class="kpi"><div class="v">5×→1×</div><div class="l">H2H DEDUP RATIO</div></div>
-  <div class="kpi blu"><div class="v">+10 days</div><div class="l">FORM HISTORY WINDOW</div></div>
-  <div class="kpi grn"><div class="v">+1</div><div class="l">FATIGUE SIGNAL</div></div>
-  <div class="kpi grn"><div class="v">★ #1</div><div class="l">LEADERBOARD SORT <span style="color:var(--grn)">NEW</span></div></div>
+  <div class="kpi"><div class="v">5</div><div class="l">PROMPT-QUALITY <span style="color:var(--t4)">#1 #2 #4 #5 #8</span></div></div>
+  <div class="kpi blu"><div class="v">3</div><div class="l">CORRECTNESS <span style="color:var(--t4)">#6 #11 + XSS</span></div></div>
+  <div class="kpi prp"><div class="v">2</div><div class="l">UI / CHROME <span style="color:var(--t4)">#7 #10</span></div></div>
+  <div class="kpi"><div class="v">3</div><div class="l">PLUMBING <span style="color:var(--t4)">#3 #9 + Sackmann</span></div></div>
+  <div class="kpi" style="border-left-color:var(--amb)"><div class="v" style="color:var(--amb)">0</div><div class="l">PICK-WIN-RATE A/B</div></div>
+</div>
+<div style="font-size:10px;color:var(--amb);margin:-12px 0 24px;padding:8px 14px;background:rgba(255,179,0,.06);border:1px dashed rgba(255,179,0,.3);border-radius:3px">
+  <b>⚠️ HONEST CALLOUT:</b> 11 patches shipped — but zero before/after measurement of pick win-rate. Categories above are inputs, not outcomes. The 05-09 user-reported "we got fucked today" (Sabalenka, Paolini, Bencic upsets) post-dates the prompt-quality fixes. We do not know if any prompt change moved the needle.
 </div>
 
-<!-- Workflow diagram -->
-<h2>▎ AI ANALYZE — DATA PIPELINE (current)</h2>
+<!-- Workflow diagram - two pipelines -->
+<h2>▎ TWO PICKS PIPELINES — shared infra, separate outputs</h2>
+<div style="font-size:10px;color:var(--t3);margin-bottom:8px;line-height:1.6">
+  Per-game <span class="code">aiAnalyzeGame()</span> (line 5405, ⚡ AI ANALYZE button) and batch <span class="code">generatePicks()</span> (line 5145, 🤖 GENERATE button) are <b>distinct flows</b> that share prompt-builder helpers and learned-rules state but produce separate outputs (verdict cards vs leaderboard). Earlier versions of this diagram conflated them — corrected below.
+</div>
 <div class="flow">
-  <svg class="flow-svg" viewBox="0 0 1100 380" xmlns="http://www.w3.org/2000/svg">
+  <svg class="flow-svg" viewBox="0 0 1240 540" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
         <path d="M0,0 L10,5 L0,10 z" fill="#ffb300"/>
+      </marker>
+      <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#42a5f5"/>
       </marker>
       <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
         <path d="M0,0 L10,5 L0,10 z" fill="#00e676"/>
@@ -131,135 +140,201 @@ footer{margin-top:32px;padding-top:14px;border-top:1px solid var(--bdr);font-siz
       .box-amb{stroke:#ffb300;stroke-width:1.5}
       .box-grn{stroke:#00e676;stroke-width:1.5}
       .box-blu{stroke:#42a5f5;stroke-width:1.5}
+      .box-prp{stroke:#ab47bc;stroke-width:1.5}
       .box-red{stroke:#ff4757;stroke-width:1.5}
+      .lane-bg{fill:#0d0d0d;stroke:#1a1a1a}
       .lbl{font:bold 11px monospace;fill:#e8e8e8}
       .sub{font:9px monospace;fill:#888}
       .tag{font:bold 8px monospace;letter-spacing:.5px}
+      .lane-lbl{font:bold 10px monospace;letter-spacing:2px}
       .ln{stroke:#ffb300;stroke-width:1.2;fill:none}
+      .lnB{stroke:#42a5f5;stroke-width:1.2;fill:none}
       .lnG{stroke:#00e676;stroke-width:1.2;fill:none;stroke-dasharray:3 2}
+      .lnShare{stroke:#ab47bc;stroke-width:1;stroke-dasharray:2 3;fill:none}
     </style>
 
-    <!-- User click -->
-    <rect class="box box-amb" x="10" y="135" width="120" height="50" rx="3"/>
-    <text class="lbl" x="70" y="158" text-anchor="middle">USER CLICK</text>
-    <text class="sub" x="70" y="172" text-anchor="middle">⚡ AI ANALYZE</text>
+    <!-- ============= LANE A: AI ANALYZE (per-game) ============= -->
+    <rect class="lane-bg" x="0" y="10" width="1240" height="160"/>
+    <text class="lane-lbl" x="14" y="28" fill="#ffb300">▶ LANE A — AI ANALYZE  (per-match deep dive · ⚡ button on detail panel)</text>
 
-    <!-- Cache check -->
-    <rect class="box box-grn" x="160" y="135" width="160" height="50" rx="3"/>
-    <text class="lbl" x="240" y="155" text-anchor="middle">CACHE GUARD</text>
-    <text class="sub" x="240" y="170" text-anchor="middle">tennisCache.has(g.id)</text>
-    <text class="tag" x="240" y="182" text-anchor="middle" fill="#00e676">FIX #3</text>
+    <rect class="box box-amb" x="20" y="60" width="120" height="70" rx="3"/>
+    <text class="lbl" x="80" y="86" text-anchor="middle">USER CLICK</text>
+    <text class="sub" x="80" y="100" text-anchor="middle">⚡ AI ANALYZE</text>
+    <text class="sub" x="80" y="112" text-anchor="middle">aiAnalyzeGame(gid)</text>
+    <text class="sub" x="80" y="124" text-anchor="middle" fill="#666">index.html:5405</text>
 
-    <!-- Prefetch -->
-    <rect class="box box-grn" x="350" y="20" width="180" height="80" rx="3"/>
-    <text class="lbl" x="440" y="42" text-anchor="middle">prefetchStatsForPicks</text>
-    <text class="sub" x="440" y="58" text-anchor="middle">+ backfillTennisForm(10)</text>
-    <text class="sub" x="440" y="72" text-anchor="middle">past-10d ESPN scoreboards</text>
-    <text class="tag" x="440" y="90" text-anchor="middle" fill="#00e676">FIX #4 · NEW</text>
+    <rect class="box box-grn" x="170" y="60" width="140" height="70" rx="3"/>
+    <text class="lbl" x="240" y="84" text-anchor="middle">CACHE GUARD</text>
+    <text class="sub" x="240" y="98" text-anchor="middle">tennisCache.has(g.id)</text>
+    <text class="tag" x="240" y="116" text-anchor="middle" fill="#00e676">FIX #3</text>
 
-    <!-- Sources -->
-    <rect class="box" x="350" y="115" width="85" height="40" rx="3"/>
-    <text class="lbl" x="392" y="132" text-anchor="middle" font-size="10">ESPN form</text>
-    <text class="sub" x="392" y="146" text-anchor="middle">tennisForm</text>
+    <rect class="box box-grn" x="340" y="60" width="170" height="70" rx="3"/>
+    <text class="lbl" x="425" y="82" text-anchor="middle">PREFETCH + SOURCES</text>
+    <text class="sub" x="425" y="96" text-anchor="middle">backfill 10d · Sackmann</text>
+    <text class="sub" x="425" y="108" text-anchor="middle">matchstat · TA · odds</text>
+    <text class="tag" x="425" y="124" text-anchor="middle" fill="#00e676">FIX #4</text>
 
-    <rect class="box" x="445" y="115" width="85" height="40" rx="3"/>
-    <text class="lbl" x="487" y="132" text-anchor="middle" font-size="10">Sackmann</text>
-    <text class="sub" x="487" y="146" text-anchor="middle">tennisCache</text>
+    <rect class="box box-amb" x="540" y="60" width="160" height="70" rx="3"/>
+    <text class="lbl" x="620" y="84" text-anchor="middle">SINGLE-MATCH PROMPT</text>
+    <text class="sub" x="620" y="98" text-anchor="middle">one game · ALGO PICKS</text>
+    <text class="sub" x="620" y="112" text-anchor="middle">"validate or challenge"</text>
+    <text class="sub" x="620" y="124" text-anchor="middle" fill="#666">→ shares helpers ↓</text>
 
-    <rect class="box" x="350" y="165" width="85" height="40" rx="3"/>
-    <text class="lbl" x="392" y="182" text-anchor="middle" font-size="10">matchstat</text>
-    <text class="sub" x="392" y="196" text-anchor="middle">tnGameCache</text>
+    <rect class="box box-amb" x="730" y="60" width="140" height="70" rx="3"/>
+    <text class="lbl" x="800" y="84" text-anchor="middle">claude-sonnet-4-6</text>
+    <text class="sub" x="800" y="98" text-anchor="middle">temp 0 · 4k tokens</text>
+    <text class="sub" x="800" y="112" text-anchor="middle">+ haiku ensemble</text>
+    <text class="sub" x="800" y="124" text-anchor="middle" fill="#666">_runAIAnalyzeEnsemble()</text>
 
-    <rect class="box" x="445" y="165" width="85" height="40" rx="3"/>
-    <text class="lbl" x="487" y="182" text-anchor="middle" font-size="10">Tn Abstract</text>
-    <text class="sub" x="487" y="196" text-anchor="middle">via CF Worker</text>
+    <rect class="box box-grn" x="900" y="60" width="160" height="70" rx="3"/>
+    <text class="lbl" x="980" y="84" text-anchor="middle">VERDICT CARD</text>
+    <text class="sub" x="980" y="98" text-anchor="middle">AGREE / CHALLENGE / FLIP</text>
+    <text class="sub" x="980" y="112" text-anchor="middle">renders in detailPanel</text>
+    <text class="sub" x="980" y="124" text-anchor="middle" fill="#666">XSS escape · suspect-reject</text>
 
-    <rect class="box" x="350" y="215" width="180" height="40" rx="3"/>
-    <text class="lbl" x="440" y="232" text-anchor="middle" font-size="10">live odds + line move</text>
-    <text class="sub" x="440" y="246" text-anchor="middle">Odds API · Pinnacle</text>
+    <rect class="box" x="1090" y="60" width="130" height="70" rx="3"/>
+    <text class="lbl" x="1155" y="84" text-anchor="middle" font-size="10">picks_history</text>
+    <text class="sub" x="1155" y="100" text-anchor="middle">source: ai_analyze</text>
+    <text class="sub" x="1155" y="114" text-anchor="middle">graded overnight</text>
 
-    <!-- Prompt builder -->
-    <rect class="box box-amb" x="570" y="100" width="200" height="140" rx="3"/>
-    <text class="lbl" x="670" y="122" text-anchor="middle">PROMPT BUILDER</text>
-    <text class="sub" x="670" y="138" text-anchor="middle">L5 · this-tournament</text>
-    <text class="sub" x="670" y="151" text-anchor="middle">Recent H2H · surface DB</text>
-    <text class="sub" x="670" y="164" text-anchor="middle">live stats · odds · edges</text>
-    <text class="tag" x="670" y="182" text-anchor="middle" fill="#00e676">FIX #1 + #2</text>
-    <text class="sub" x="670" y="196" text-anchor="middle" fill="#00e676">canonical match-key dedup</text>
-    <text class="sub" x="670" y="209" text-anchor="middle" fill="#00e676">unified tournament block</text>
-    <text class="tag" x="670" y="225" text-anchor="middle" fill="#42a5f5">FIX #8 · NEW</text>
-    <text class="sub" x="670" y="237" text-anchor="middle" fill="#42a5f5">tournament load asymmetry</text>
+    <!-- Lane A arrows -->
+    <line class="ln" x1="140" y1="95" x2="168" y2="95" marker-end="url(#arr)"/>
+    <line class="ln" x1="310" y1="95" x2="338" y2="95" marker-end="url(#arr)"/>
+    <line class="ln" x1="510" y1="95" x2="538" y2="95" marker-end="url(#arr)"/>
+    <line class="ln" x1="700" y1="95" x2="728" y2="95" marker-end="url(#arr)"/>
+    <line class="ln" x1="870" y1="95" x2="898" y2="95" marker-end="url(#arr)"/>
+    <line class="lnG" x1="1060" y1="95" x2="1088" y2="95" marker-end="url(#arrG)"/>
 
-    <!-- Flag -->
-    <rect class="box box-blu" x="570" y="248" width="200" height="50" rx="3"/>
-    <text class="lbl" x="670" y="266" text-anchor="middle" font-size="10">SCOPED GAP FLAGS</text>
-    <text class="sub" x="670" y="278" text-anchor="middle">[NO RECENT FORM]</text>
-    <text class="sub" x="670" y="290" text-anchor="middle">[NO SURFACE DB]</text>
+    <!-- ============= SHARED INFRA BAND ============= -->
+    <rect class="lane-bg" x="0" y="190" width="1240" height="150" style="fill:#120c14"/>
+    <text class="lane-lbl" x="14" y="210" fill="#ab47bc">◆ SHARED INFRASTRUCTURE — prompt-builder helpers, gap flags, learned rules (used by BOTH lanes)</text>
 
-    <!-- Claude -->
-    <rect class="box box-amb" x="800" y="100" width="140" height="60" rx="3"/>
-    <text class="lbl" x="870" y="125" text-anchor="middle">claude-sonnet-4-6</text>
-    <text class="sub" x="870" y="140" text-anchor="middle">temp 0 · 4k tokens</text>
-    <text class="sub" x="870" y="153" text-anchor="middle">free-form + JSON</text>
+    <rect class="box box-prp" x="20" y="230" width="280" height="100" rx="3"/>
+    <text class="lbl" x="160" y="252" text-anchor="middle">PROMPT-BUILDER HELPERS</text>
+    <text class="sub" x="160" y="268" text-anchor="middle">L5 form · this-tournament block</text>
+    <text class="sub" x="160" y="280" text-anchor="middle">Recent H2H · surface DB · serve %</text>
+    <text class="tag" x="160" y="298" text-anchor="middle" fill="#00e676">FIX #1 #2 — canonical match-key dedup</text>
+    <text class="tag" x="160" y="312" text-anchor="middle" fill="#42a5f5">FIX #8 · NEW — tournament load asymmetry</text>
+    <text class="sub" x="160" y="324" text-anchor="middle" fill="#666">index.html:5430-5490</text>
 
-    <!-- Haiku ensemble -->
-    <rect class="box" x="800" y="175" width="140" height="40" rx="3"/>
-    <text class="lbl" x="870" y="192" text-anchor="middle" font-size="10">claude-haiku-4-5</text>
-    <text class="sub" x="870" y="205" text-anchor="middle">ensemble verifier</text>
+    <rect class="box box-grn" x="320" y="230" width="240" height="100" rx="3"/>
+    <text class="lbl" x="440" y="252" text-anchor="middle">SCOPED GAP FLAGS</text>
+    <text class="sub" x="440" y="270" text-anchor="middle">[NO RECENT FORM — player X]</text>
+    <text class="sub" x="440" y="284" text-anchor="middle">[NO SURFACE DB — player Y]</text>
+    <text class="tag" x="440" y="302" text-anchor="middle" fill="#00e676">FIX #5 — split limited-data flag</text>
+    <text class="sub" x="440" y="318" text-anchor="middle" fill="#666">prevents blanket confidence drop</text>
 
-    <!-- Verdict + persistence -->
-    <rect class="box box-grn" x="970" y="100" width="120" height="60" rx="3"/>
-    <text class="lbl" x="1030" y="122" text-anchor="middle">VERDICT</text>
-    <text class="sub" x="1030" y="138" text-anchor="middle">AGREE/CHALLENGE</text>
-    <text class="sub" x="1030" y="151" text-anchor="middle">/FLIP + score</text>
+    <rect class="box" x="580" y="230" width="200" height="100" rx="3"/>
+    <text class="lbl" x="680" y="252" text-anchor="middle">LEARNED RULES</text>
+    <text class="sub" x="680" y="268" text-anchor="middle">et_learned_rules · et_cumulative</text>
+    <text class="sub" x="680" y="282" text-anchor="middle">injected into system prompt</text>
+    <text class="sub" x="680" y="296" text-anchor="middle">overnight grading writes back</text>
+    <text class="sub" x="680" y="318" text-anchor="middle" fill="#666">⚠ no fatigue-aware rules yet</text>
 
-    <rect class="box" x="970" y="175" width="120" height="50" rx="3"/>
-    <text class="lbl" x="1030" y="194" text-anchor="middle" font-size="10">picks_history</text>
-    <text class="sub" x="1030" y="208" text-anchor="middle">graded overnight</text>
-    <text class="sub" x="1030" y="220" text-anchor="middle">source: ai_analyze</text>
+    <rect class="box" x="800" y="230" width="200" height="100" rx="3"/>
+    <text class="lbl" x="900" y="252" text-anchor="middle">DATA SOURCES</text>
+    <text class="sub" x="900" y="268" text-anchor="middle">ESPN · Sackmann · matchstat</text>
+    <text class="sub" x="900" y="282" text-anchor="middle">Tennis Abstract · Odds API</text>
+    <text class="sub" x="900" y="296" text-anchor="middle">Pinnacle (CF Worker)</text>
+    <text class="sub" x="900" y="318" text-anchor="middle" fill="#666">+ rankings, form, line-move</text>
 
-    <!-- Leaderboard render (round 3) -->
-    <rect class="box box-grn" x="800" y="245" width="290" height="110" rx="3"/>
-    <text class="lbl" x="945" y="266" text-anchor="middle">LEADERBOARD RENDER</text>
-    <text class="sub" x="945" y="282" text-anchor="middle">renderPicksLeaderboard() · _getDisplayedPicks()</text>
-    <text class="tag" x="945" y="302" text-anchor="middle" fill="#00e676">FIX #9 · #10 · #11</text>
-    <text class="sub" x="945" y="316" text-anchor="middle" fill="#00e676">score-desc sort (render + lookup aligned)</text>
-    <text class="sub" x="945" y="329" text-anchor="middle" fill="#00e676">cap raw score → X.X/10 display</text>
-    <text class="sub" x="945" y="342" text-anchor="middle" fill="#00e676">★ BEST BET on #1 · cyan accent on #2</text>
+    <rect class="box box-blu" x="1020" y="230" width="200" height="100" rx="3"/>
+    <text class="lbl" x="1120" y="252" text-anchor="middle">JSON-REPAIR + TRUST</text>
+    <text class="sub" x="1120" y="268" text-anchor="middle">_repairJSON() with</text>
+    <text class="sub" x="1120" y="282" text-anchor="middle">REPAIR_SUSPECT_THRESHOLD</text>
+    <text class="tag" x="1120" y="302" text-anchor="middle" fill="#42a5f5">H4 — suspect output rejected</text>
+    <text class="sub" x="1120" y="318" text-anchor="middle" fill="#666">picks ship without verdict</text>
 
-    <!-- arrows -->
-    <line class="ln" x1="130" y1="160" x2="158" y2="160" marker-end="url(#arr)"/>
-    <line class="ln" x1="320" y1="150" x2="350" y2="135" marker-end="url(#arr)"/>
-    <line class="ln" x1="320" y1="170" x2="350" y2="185" marker-end="url(#arr)"/>
-    <line class="ln" x1="440" y1="100" x2="440" y2="115" marker-end="url(#arr)"/>
-    <line class="ln" x1="530" y1="135" x2="568" y2="155" marker-end="url(#arr)"/>
-    <line class="ln" x1="530" y1="185" x2="568" y2="180" marker-end="url(#arr)"/>
-    <line class="ln" x1="530" y1="235" x2="568" y2="210" marker-end="url(#arr)"/>
-    <line class="ln" x1="770" y1="170" x2="800" y2="135" marker-end="url(#arr)"/>
-    <line class="ln" x1="770" y1="270" x2="800" y2="195" marker-end="url(#arr)"/>
-    <line class="ln" x1="940" y1="130" x2="970" y2="130" marker-end="url(#arr)"/>
-    <line class="lnG" x1="940" y1="200" x2="970" y2="200" marker-end="url(#arrG)"/>
-    <line class="lnG" x1="1030" y1="160" x2="1030" y2="175" marker-end="url(#arrG)"/>
-    <line class="lnG" x1="1030" y1="225" x2="1000" y2="245" marker-end="url(#arrG)"/>
+    <!-- shared dashed connectors from lane A and lane B prompt nodes -->
+    <line class="lnShare" x1="620" y1="130" x2="160" y2="230" marker-end="url(#arrB)"/>
+    <line class="lnShare" x1="640" y1="130" x2="440" y2="230" marker-end="url(#arrB)"/>
+
+    <!-- ============= LANE B: GENERATE PICKS (batch) ============= -->
+    <rect class="lane-bg" x="0" y="360" width="1240" height="170"/>
+    <text class="lane-lbl" x="14" y="378" fill="#42a5f5">▶ LANE B — GENERATE PICKS  (batch slate analysis · 🤖 button on PICKS tab)</text>
+
+    <rect class="box box-blu" x="20" y="410" width="120" height="70" rx="3"/>
+    <text class="lbl" x="80" y="436" text-anchor="middle">USER CLICK</text>
+    <text class="sub" x="80" y="450" text-anchor="middle">🤖 GENERATE</text>
+    <text class="sub" x="80" y="462" text-anchor="middle">generatePicks()</text>
+    <text class="sub" x="80" y="474" text-anchor="middle" fill="#666">index.html:5145</text>
+
+    <rect class="box box-blu" x="170" y="410" width="160" height="70" rx="3"/>
+    <text class="lbl" x="250" y="434" text-anchor="middle">SLATE-WIDE PROMPT</text>
+    <text class="sub" x="250" y="448" text-anchor="middle">all games · buildUserMsg()</text>
+    <text class="sub" x="250" y="462" text-anchor="middle">+ yesterday picks · grading</text>
+    <text class="sub" x="250" y="474" text-anchor="middle">+ priorPicks · quant class</text>
+
+    <rect class="box box-amb" x="360" y="410" width="140" height="70" rx="3"/>
+    <text class="lbl" x="430" y="434" text-anchor="middle">claude-sonnet-4-6</text>
+    <text class="sub" x="430" y="448" text-anchor="middle">temp 0 · larger context</text>
+    <text class="sub" x="430" y="460" text-anchor="middle">JSON: picks[], grading[]</text>
+    <text class="sub" x="430" y="474" text-anchor="middle">+ analyst_note</text>
+
+    <rect class="box" x="530" y="410" width="140" height="70" rx="3"/>
+    <text class="lbl" x="600" y="434" text-anchor="middle" font-size="10">claude-haiku-4-5</text>
+    <text class="sub" x="600" y="448" text-anchor="middle">ensemble verifier</text>
+    <text class="sub" x="600" y="462" text-anchor="middle">approve / flag / reject</text>
+    <text class="sub" x="600" y="474" text-anchor="middle" fill="#666">line 4029, 4951</text>
+
+    <rect class="box box-blu" x="700" y="410" width="160" height="70" rx="3"/>
+    <text class="lbl" x="780" y="434" text-anchor="middle">et_picks_today</text>
+    <text class="sub" x="780" y="448" text-anchor="middle">picks[] · grading[]</text>
+    <text class="sub" x="780" y="460" text-anchor="middle">ensemble verdicts</text>
+    <text class="sub" x="780" y="474" text-anchor="middle" fill="#666">localStorage + KV sync</text>
+
+    <rect class="box box-grn" x="890" y="395" width="330" height="105" rx="3"/>
+    <text class="lbl" x="1055" y="418" text-anchor="middle">LEADERBOARD RENDER</text>
+    <text class="sub" x="1055" y="434" text-anchor="middle">renderPicksLeaderboard() + _getDisplayedPicks()</text>
+    <text class="tag" x="1055" y="454" text-anchor="middle" fill="#00e676">FIX #9 · #10 · #11</text>
+    <text class="sub" x="1055" y="468" text-anchor="middle" fill="#00e676">score-desc sort (render + lookup aligned)</text>
+    <text class="sub" x="1055" y="481" text-anchor="middle" fill="#00e676">cap raw score → X.X/10 · ★ BEST BET on #1</text>
+    <text class="sub" x="1055" y="494" text-anchor="middle" fill="#00e676">click-through opens correct matchup</text>
+
+    <!-- Lane B arrows -->
+    <line class="lnB" x1="140" y1="445" x2="168" y2="445" marker-end="url(#arrB)"/>
+    <line class="lnB" x1="330" y1="445" x2="358" y2="445" marker-end="url(#arrB)"/>
+    <line class="lnB" x1="500" y1="445" x2="528" y2="445" marker-end="url(#arrB)"/>
+    <line class="lnB" x1="670" y1="445" x2="698" y2="445" marker-end="url(#arrB)"/>
+    <line class="lnB" x1="860" y1="445" x2="888" y2="445" marker-end="url(#arrB)"/>
+
+    <!-- shared connectors from lane B prompt to shared band -->
+    <line class="lnShare" x1="250" y1="410" x2="160" y2="330" marker-end="url(#arrB)"/>
+    <line class="lnShare" x1="270" y1="410" x2="440" y2="330" marker-end="url(#arrB)"/>
 
     <!-- legend -->
-    <g transform="translate(10,310)">
-      <rect width="500" height="55" fill="#0a0a0a" stroke="#2a2a2a"/>
-      <text class="sub" x="10" y="16" fill="#e8e8e8">LEGEND</text>
-      <line x1="10" y1="28" x2="40" y2="28" stroke="#ffb300" stroke-width="1.5"/>
-      <text class="sub" x="48" y="32">primary flow</text>
-      <line x1="140" y1="28" x2="170" y2="28" stroke="#00e676" stroke-width="1.5" stroke-dasharray="3 2"/>
-      <text class="sub" x="178" y="32">verification + persist</text>
-      <rect x="300" y="22" width="14" height="10" class="box box-grn"/>
-      <text class="sub" x="320" y="32">touched in this patch set</text>
-      <rect x="10" y="40" width="14" height="10" class="box box-blu"/>
-      <text class="sub" x="30" y="49">round 2 / 3 additions (PM + 05-10)</text>
+    <g transform="translate(14,508)">
+      <rect width="660" height="28" fill="#0a0a0a" stroke="#2a2a2a"/>
+      <text class="sub" x="10" y="13" fill="#e8e8e8">LEGEND</text>
+      <line x1="60" y1="10" x2="86" y2="10" stroke="#ffb300" stroke-width="1.5"/>
+      <text class="sub" x="92" y="13">Lane A flow</text>
+      <line x1="170" y1="10" x2="196" y2="10" stroke="#42a5f5" stroke-width="1.5"/>
+      <text class="sub" x="202" y="13">Lane B flow</text>
+      <line x1="280" y1="10" x2="306" y2="10" stroke="#ab47bc" stroke-width="1" stroke-dasharray="2 3"/>
+      <text class="sub" x="312" y="13">shared-infra reads</text>
+      <line x1="430" y1="10" x2="456" y2="10" stroke="#00e676" stroke-width="1.5" stroke-dasharray="3 2"/>
+      <text class="sub" x="462" y="13">persist + render</text>
+      <rect x="10" y="18" width="14" height="6" class="box box-grn"/>
+      <text class="sub" x="30" y="24">touched in this patch set</text>
     </g>
   </svg>
 </div>
 
+<!-- MEASURED IMPACT - explicitly empty -->
+<h2>▎ MEASURED IMPACT — what we actually verified</h2>
+<div class="todo" style="border-left-color:var(--amb);background:rgba(255,179,0,.04)">
+  <ul>
+    <li><b style="color:var(--grn)">Verified ✓</b> — the bugs we shipped fixes for: H2H repeated 5×; cache guard always missed; prefetch ran for non-tennis; LIMITED DATA flag fired on partial gaps; cross-midnight live matches lost from TODAY; ghost games on TMW; suspect _repairJSON output landing in picks_history; XSS payload in verdict-card model output; #1 click opening a different matchup. All reproduced and fix-verified.</li>
+    <li><b style="color:var(--grn)">Verified ✓</b> — synthetic test of tournament-load logic: 2 matches at 6-3 6-4 / 7-6 4-6 6-3 → correctly counts 2m/5s/51g and emits ⚠ flag at gap≥20.</li>
+    <li><b style="color:var(--amb)">Not measured ⊘</b> — pick win-rate before vs after any prompt-quality patch (#1, #2, #4, #5, #8). No A/B run. No retroactive replay against last 30 days of grading. The "we got fucked today" Sabalenka/Paolini/Bencic upset cluster post-dates the prompt fixes — we cannot say whether the prompt changes were neutral, positive, or negative.</li>
+    <li><b style="color:var(--amb)">Not measured ⊘</b> — whether the model attends to the new <span class="code">Tournament load:</span> line at all. The signal is in the prompt; downstream usage is opaque without per-pick reasoning audits.</li>
+    <li><b style="color:var(--amb)">Not measured ⊘</b> — score calibration. We capped the display at 10 (#10) but raw scores still hit 46+. We don't know what the score-to-win-rate relationship actually is. Sorting picks descending by an uncalibrated score still puts whatever the model labels "highest score" first — that label may not correlate with picks that win.</li>
+    <li><b style="color:var(--red)">Honest gap ⚠</b> — no logging of <i>which</i> prompt blocks the model cited as decisive in its verdicts. Closing the loop between "we added X to the prompt" and "the model used X to make the call" requires a verdict-reasoning capture we don't currently store.</li>
+  </ul>
+</div>
+
 <!-- Fixes -->
-<h2>▎ THE FOUR FIXES</h2>
+<h2>▎ THE 11 PATCHES</h2>
 <div class="fix-grid">
 
 <div class="fix">
@@ -608,62 +683,93 @@ User clicks visual #1 →
 
 </div>
 
-<!-- Pipeline steps -->
-<h2>▎ AI ANALYZE — STEP-BY-STEP (post-patch)</h2>
-<div class="pipe">
-  <div class="pipe-step"><div class="n">STEP 1</div><div class="t">CACHE GUARD</div><div class="d">tennis-only · check Sackmann + matchstat hits</div></div>
-  <div class="pipe-step"><div class="n">STEP 2</div><div class="t">PREFETCH</div><div class="d">backfill 10d form · H2H · serve stats · matchstat pair · TA fallback</div></div>
-  <div class="pipe-step"><div class="n">STEP 3</div><div class="t">PROMPT BUILD</div><div class="d">deduped facts · scoped gap flags · <span style="color:var(--grn)">tournament load</span> · algo picks · learned rules</div></div>
-  <div class="pipe-step"><div class="n">STEP 4</div><div class="t">CLAUDE CALL</div><div class="d">sonnet-4-6 free-form + structured JSON · haiku verifier</div></div>
-  <div class="pipe-step"><div class="n">STEP 5</div><div class="t">PERSIST</div><div class="d">verdicts → picks_history · graded overnight · CLV tracked</div></div>
-  <div class="pipe-step" style="border-color:var(--grn)"><div class="n" style="color:var(--grn)">STEP 6 · NEW</div><div class="t">LEADERBOARD</div><div class="d">score-desc sort · /10 cap · ★ BEST BET on #1 · click-through aligned</div></div>
+<!-- Pipeline steps - two lanes -->
+<h2>▎ STEP-BY-STEP — both pipelines (post-patch)</h2>
+<div style="font-size:10px;color:var(--amb);margin-bottom:6px;letter-spacing:1px">▶ LANE A — AI ANALYZE (per match)</div>
+<div class="pipe" style="grid-template-columns:repeat(5,1fr)">
+  <div class="pipe-step" style="border-left:3px solid var(--amb)"><div class="n">A1</div><div class="t">CACHE GUARD</div><div class="d">tennis-only · check Sackmann + matchstat hits · <span style="color:var(--grn)">FIX #3</span></div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--amb)"><div class="n">A2</div><div class="t">PREFETCH</div><div class="d">backfill 10d form · H2H · serve stats · matchstat pair · <span style="color:var(--grn)">FIX #4</span></div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--amb)"><div class="n">A3</div><div class="t">SINGLE-MATCH PROMPT</div><div class="d">shared helpers · deduped facts · gap flags · <span style="color:var(--grn)">tournament load</span> · algo picks</div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--amb)"><div class="n">A4</div><div class="t">CLAUDE + HAIKU</div><div class="d">sonnet-4-6 verdict + haiku ensemble · suspect-JSON reject</div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--amb)"><div class="n">A5</div><div class="t">VERDICT CARD</div><div class="d">renders in detailPanel · XSS-escaped · → picks_history</div></div>
+</div>
+<div style="font-size:10px;color:var(--blu);margin:18px 0 6px;letter-spacing:1px">▶ LANE B — GENERATE PICKS (batch slate)</div>
+<div class="pipe" style="grid-template-columns:repeat(5,1fr)">
+  <div class="pipe-step" style="border-left:3px solid var(--blu)"><div class="n">B1</div><div class="t">SLATE-WIDE PROMPT</div><div class="d">all games · yesterday picks · grading · prior picks · quant class</div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--blu)"><div class="n">B2</div><div class="t">CLAUDE</div><div class="d">sonnet-4-6 returns picks[] + grading[] + analyst_note JSON</div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--blu)"><div class="n">B3</div><div class="t">HAIKU ENSEMBLE</div><div class="d">approve / flag / reject pass over each pick</div></div>
+  <div class="pipe-step" style="border-left:3px solid var(--blu)"><div class="n">B4</div><div class="t">PERSIST</div><div class="d">et_picks_today + KV sync · grading scaffold for overnight</div></div>
+  <div class="pipe-step" style="border-color:var(--grn);border-left:3px solid var(--grn)"><div class="n" style="color:var(--grn)">B5 · NEW</div><div class="t">LEADERBOARD</div><div class="d">score-desc sort · /10 cap · ★ BEST BET · click-through aligned · <span style="color:var(--grn)">FIX #9 #10 #11</span></div></div>
 </div>
 
 <!-- Data sources -->
-<h2>▎ TENNIS DATA SOURCES — current health</h2>
+<h2>▎ DATA SOURCES — current health (post-patch)</h2>
 <table>
-  <thead><tr><th>Source</th><th>Purpose</th><th>Cache</th><th>Fills</th><th>Status</th></tr></thead>
+  <thead><tr><th>Source</th><th>Purpose</th><th>Cache</th><th>Fills</th><th>Status</th><th>Notes</th></tr></thead>
   <tbody>
-    <tr><td><b>ESPN scoreboard (today)</b></td><td>active matches + form for completed today</td><td>tennisForm</td><td>refreshAll()</td><td><span class="dot dot-grn"></span>OK</td></tr>
-    <tr><td><b>ESPN scoreboard (past 10d)</b></td><td>backfill recent form for off-feed players</td><td>tennisForm</td><td>backfillTennisForm() · NEW</td><td><span class="dot dot-grn"></span>NEW</td></tr>
-    <tr><td><b>ESPN rankings</b></td><td>ATP/WTA ranking positions</td><td>tennisRankings</td><td>fetchTennisRankings()</td><td><span class="dot dot-grn"></span>OK</td></tr>
-    <tr><td><b>Sackmann CSVs</b></td><td>career H2H · surface W-L · serve % (2021-24)</td><td>tennisCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-grn"></span>OK</td></tr>
-    <tr><td><b>matchstat.com (RapidAPI)</b></td><td>current-season surface + serve/return stats</td><td>tnGameCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-amb"></span>name-match flaky</td></tr>
-    <tr><td><b>Tennis Abstract (CF Worker)</b></td><td>3rd-tier surface stats fallback</td><td>tnGameCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-amb"></span>backfill only</td></tr>
-    <tr><td><b>Odds API</b></td><td>live ML / spread / totals across all books</td><td>_oddsCache</td><td>oddsFetch()</td><td><span class="dot dot-grn"></span>OK</td></tr>
-    <tr><td><b>Pinnacle (CF Worker)</b></td><td>sharp reference odds</td><td>—</td><td>worker proxy</td><td><span class="dot dot-grn"></span>OK</td></tr>
+    <tr><td><b>ESPN scoreboard (today)</b></td><td>active matches + form for completed today</td><td>tennisForm</td><td>refreshAll()</td><td><span class="dot dot-grn"></span>OK</td><td>now correctly excludes already-finished matches before reaching slate</td></tr>
+    <tr><td><b>ESPN scoreboard (past 10d)</b></td><td>backfill recent form for off-feed players</td><td>tennisForm</td><td>backfillTennisForm()</td><td><span class="dot dot-grn"></span>OK</td><td>20 parallel fetches · 8s wall race · idempotent dedup</td></tr>
+    <tr><td><b>ESPN rankings</b></td><td>ATP/WTA ranking positions</td><td>tennisRankings</td><td>fetchTennisRankings()</td><td><span class="dot dot-grn"></span>OK</td><td>preloaded before validateTennisTours runs</td></tr>
+    <tr><td><b>Sackmann CSVs</b></td><td>career H2H · surface W-L · serve % (2021-24)</td><td>tennisCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-grn"></span>OK</td><td>parser extracted to lib/sackmann.js · same behavior</td></tr>
+    <tr><td><b>matchstat.com (RapidAPI)</b></td><td>current-season surface + serve/return stats</td><td>tnGameCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-amb"></span>name-match flaky</td><td>diacritic / Jr. / hyphen variants still silently miss · <b>open</b></td></tr>
+    <tr><td><b>Tennis Abstract (CF Worker)</b></td><td>3rd-tier surface stats fallback</td><td>tnGameCache</td><td>prefetchStatsForPicks()</td><td><span class="dot dot-amb"></span>backfill only</td><td>fires only when matchstat misses</td></tr>
+    <tr><td><b>Odds API</b></td><td>live ML / spread / totals across all books</td><td>_oddsCache</td><td>oddsFetch()</td><td><span class="dot dot-grn"></span>OK</td><td>—</td></tr>
+    <tr><td><b>Pinnacle (CF Worker)</b></td><td>sharp reference odds</td><td>—</td><td>worker proxy</td><td><span class="dot dot-grn"></span>OK</td><td><span style="color:var(--amb)">_pinnacleWorkerDown auto-recovery still missing (M1)</span></td></tr>
+    <tr><td colspan="6" style="background:rgba(171,71,188,.05);font-size:10px;color:var(--prp);padding:8px 10px"><b>Prompt-time signals</b> (computed in prompt builder, not fetched):</td></tr>
+    <tr><td><b>Tournament load asymmetry</b> · <span style="color:var(--grn)">NEW</span></td><td>cumulative matches/sets/games in current draw + ⚠ flag at gap≥20</td><td>derived from tennisForm</td><td>buildContextForGame()</td><td><span class="dot dot-grn"></span>EMITTED</td><td>singles only · doesn't credit byes/walkovers received</td></tr>
+    <tr><td><b>Scoped gap flags</b></td><td>[NO RECENT FORM] · [NO SURFACE DB]</td><td>—</td><td>buildContextForGame()</td><td><span class="dot dot-grn"></span>OK</td><td>scopes hedge instruction to one signal class only</td></tr>
+    <tr><td><b>Learned rules</b></td><td>generalized rules from past graded picks</td><td>et_learned_rules</td><td>nightly grading job</td><td><span class="dot dot-amb"></span>untracked</td><td>no telemetry on whether rules actually changed downstream picks</td></tr>
   </tbody>
 </table>
 
-<!-- State + Outstanding -->
+<!-- Inputs vs Outcomes (replaces NET IMPACT) -->
 <div class="row2" style="margin-top:24px">
   <div>
-    <h2>▎ NET IMPACT</h2>
+    <h2>▎ INPUTS CHANGED <span style="color:var(--t4);font-weight:400;letter-spacing:0;font-size:10px">(verified bug fixes — no outcome claim)</span></h2>
     <div class="todo" style="border-left-color:var(--grn)">
       <ul>
-        <li><b>Duplicate H2H facts</b> — eliminated. Same meeting now appears 1× canonically in Recent H2H.</li>
-        <li><b>"Missing player data"</b> — recoverable for any player whose last match was within 10 days.</li>
-        <li><b>Unwarranted confidence drops</b> — only the affected signal class triggers a hedge instruction now.</li>
-        <li><b>Re-click latency</b> — cached games skip the 15s prefetch race entirely.</li>
-        <li><b>Non-tennis AI Analyze</b> — no longer fires no-op tennis prefetch.</li>
-        <li style="color:var(--grn)"><b>Date filtering</b> — TMW captures next-session games regardless of TZ-bucket placement; live cross-midnight matches stay in TODAY.</li>
-        <li style="color:var(--grn)"><b>Picks-view chrome</b> — no more dead-end filter chips in views where they don't apply.</li>
-        <li style="color:var(--grn)"><b>Fatigue asymmetry</b> — first explicit cumulative-load signal in the prompt. Targets late-round Masters draws where bye/quick-win advantage matters.</li>
-        <li style="color:var(--grn)"><b>Leaderboard ranking</b> — picks now render and select in score-desc order; #1 visually distinct (★ BEST BET); raw scores capped to 10 for legibility.</li>
-        <li style="color:var(--grn)"><b>Click-through correctness</b> — render order and click-lookup order share a single sort function. No more "click #1, open #5".</li>
+        <li><b>H2H deduped</b> — same meeting appears 1× canonically. Verified in prompt diff.</li>
+        <li><b>Form recoverable to 10d</b> — players off today's feed get backfill. Verified by counting tennisForm entries pre/post backfill.</li>
+        <li><b>Scoped gap flags emitted</b> — [NO RECENT FORM] vs [NO SURFACE DB] separated. Verified by inspecting prompt output.</li>
+        <li><b>Cache guard correct</b> — re-clicks skip prefetch. Verified by timing.</li>
+        <li><b>Tournament load line emitted</b> — singles only, with ⚠ flag at |gap|≥20. Verified with synthetic 51g vs 15g case.</li>
+        <li><b>Date filter</b> — TMW now captures placeholder-midnight games (16/20 vs 8/20 before). Verified live.</li>
+        <li><b>Picks-view chrome</b> — chips hidden + restored on tab switch. Verified in browser preview.</li>
+        <li><b>Leaderboard order = sort order = lookup order</b> — verified click-through opens correct matchup.</li>
+        <li><b>Display score capped /10</b> — visual fix only; underlying raw score unchanged.</li>
       </ul>
     </div>
   </div>
   <div>
-    <h2>▎ OPEN WORK</h2>
-    <div class="todo">
+    <h2>▎ OUTCOMES NOT MEASURED <span style="color:var(--amb);font-weight:400;letter-spacing:0;font-size:10px">(read this BEFORE you ascribe wins)</span></h2>
+    <div class="todo" style="border-left-color:var(--amb)">
       <ul>
-        <li><b>matchstat name resolver</b> — diacritic / "Jr." / hyphen variants still silently miss. Needs normalize-and-retry.</li>
-        <li><b>Backfill window cost</b> — 20 parallel ESPN fetches per session. Could dedup by tour-week if hot.</li>
-        <li><b>NO SURFACE DB telemetry</b> — track frequency by player to surface chronic gaps in Sackmann coverage.</li>
-        <li><b>Doubles AI Analyze</b> — still bypasses most enrichment by design. No fix needed unless coverage expands.</li>
+        <li><b style="color:var(--amb)">Pick win-rate</b> — no before/after measurement of any prompt change. The prompt is denser and more honest about gaps. Whether picks land more often is unmeasured.</li>
+        <li><b style="color:var(--amb)">Prompt utilization</b> — we added Tournament load + canonical dedup to the input. We do not capture whether the model cited those blocks in its reasoning. Closing this loop needs a verdict-reasoning audit.</li>
+        <li><b style="color:var(--amb)">Score calibration</b> — raw scores still hit 46. Sorting by an uncalibrated score puts the model's most-confident pick at the top, not necessarily the most-likely winner. Today's Sabalenka/Paolini/Bencic upset cluster is consistent with calibration drift on heavy-favorite clay matches.</li>
+        <li><b style="color:var(--amb)">Ensemble agreement</b> — Haiku verifier output stored but not summarized in any KPI. We don't know the disagree-rate trend.</li>
       </ul>
     </div>
+  </div>
+</div>
+
+<!-- Open Work expanded -->
+<div style="margin-top:24px">
+  <h2>▎ OPEN WORK — round-3 priorities (newly surfaced)</h2>
+  <div class="todo" style="border-left-color:var(--blu)">
+    <ul>
+      <li><b style="color:var(--red)">[HIGHEST PRIORITY] Score calibration audit</b> — the score scale is unbounded; capping display masks the issue. Needs: histogram of historical raw scores vs win-rate per bucket; either re-scale at emission, or drop "score" as a sort key in favor of EV-weighted ranking.</li>
+      <li><b style="color:var(--red)">Verdict-reasoning capture</b> — log a structured "decisive_signals" array per pick so we can tell whether new prompt blocks (tournament load, scoped flags) actually shift picks. Without this, every prompt addition is a faith-based change.</li>
+      <li><b>Tournament load: walkover/bye credit</b> — current implementation only counts played matches. A player who got a bye is undercounted for "easy path" — should emit a positive freshness flag, not just absence of load.</li>
+      <li><b>Heavy-favorite clay regime detection</b> — today's losses skew toward favored players on clay. Add a system-prompt rule that requires explicit clay-surface evidence (current-year clay W-L on opponent's tour) before high-confidence on -200+ ML.</li>
+      <li><b>matchstat name resolver</b> — round-1 carryover. Diacritic / Jr. / hyphen variants still silently miss. Needs normalize-and-retry.</li>
+      <li><b>Backfill cost</b> — 20 parallel ESPN fetches per session. Dedup by tour-week if hot path.</li>
+      <li><b>Picks-tab "TODAY'S PICKS" header</b> — still says today even when generated 11pm and viewed 1am next morning.</li>
+      <li><b>Doubles enrichment</b> — tournament load runs in singles branch only. Doubles bypasses by design but should at least emit a "no individual signals" note explicitly.</li>
+      <li><b>_pinnacleWorkerDown auto-recovery</b> — round-1 carryover (M1). 2-line fix.</li>
+      <li><b>et_picks_history size cap</b> — round-1 carryover (M7). Will matter once data accumulates.</li>
+      <li><b>Promise.race fetch failure logging</b> — round-1 carryover (H3). Logging hygiene only.</li>
+    </ul>
   </div>
 </div>
 
