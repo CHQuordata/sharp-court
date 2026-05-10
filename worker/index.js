@@ -164,7 +164,24 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runNightlyCron(env));
+    // Wrap the cron in a top-level catch so a thrown error in any phase
+    // doesn't silently kill the entire run. Persist a 'cron failed' record
+    // to KV so the next /admin/run-cron call can see what went wrong.
+    ctx.waitUntil((async () => {
+      try {
+        await runNightlyCron(env);
+      } catch (e) {
+        try {
+          if (env.LEARNING_STORE) {
+            await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+              ts: Date.now(), iso: new Date().toISOString(),
+              fatal: true, error: e?.message || String(e),
+              stack: (e?.stack || '').slice(0, 1000)
+            }), { expirationTtl: 60 * 60 * 24 * 14 });
+          }
+        } catch (_) {}
+      }
+    })());
   }
 };
 
@@ -192,86 +209,126 @@ async function handleKvPost(key, request, env) {
 async function runNightlyCron(env) {
   if (!env.ODDS_API_KEY || !env.LEARNING_STORE) return;
 
+  // Phase tracking. Each phase records ok/error+ms so a failure in one
+  // step doesn't cause silent skipping of all subsequent steps. Diagnostic
+  // is written at the END so partial failures are visible.
+  const phases = [];
+  const phase = async (name, fn) => {
+    const t0 = Date.now();
+    try {
+      const out = await fn();
+      phases.push({ name, ok: true, ms: Date.now() - t0 });
+      return out;
+    } catch (e) {
+      phases.push({ name, ok: false, ms: Date.now() - t0, error: (e?.message || String(e)).slice(0, 300) });
+      return undefined;
+    }
+  };
+
   // 0a. Refresh surface-specific Elo from Tennis Abstract. Updates daily
   // post-match. This is the canonical baseline rating for sharp-court's
   // fair-price model — far more predictive than ATP/WTA rankings.
-  await refreshSEloKV(env).catch(() => {});
+  await phase('selo_refresh', () => refreshSEloKV(env));
 
   // 0b. Snapshot closing-line odds for upcoming games (next 4 hours). The
   // 2 AM ET cron is too late for tonight's games which already started, but
   // captures any AM games (early MLB, European tennis). Frontend SCAN
   // additionally hits /admin/snapshot-odds so the bulk of capture happens
   // organically as the user refreshes the dashboard pre-game.
-  await snapshotClosingOdds(env).catch(() => {});
+  await phase('closing_snapshot', () => snapshotClosingOdds(env));
 
   // 1. Fetch Odds API scores (primary source for CLV data)
-  const completedGames = await fetchAllCompletedScores(env.ODDS_API_KEY);
+  const oddsRes = await phase('odds_api_scores', () => fetchAllCompletedScores(env.ODDS_API_KEY));
+  const completedGames = oddsRes || [];
   const breakdown = completedGames._breakdown || {};
   const sportsListErr = completedGames._sportsListErr;
-  const games = completedGames.filter(g => g && !g._breakdown);
+  const games = (Array.isArray(completedGames) ? completedGames : []).filter(g => g && !g._breakdown);
 
-  await env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
+  await phase('kv_write_completed', () => env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
     ts: Date.now(), games
-  }), { expirationTtl: 60 * 60 * 24 * 4 });
+  }), { expirationTtl: 60 * 60 * 24 * 4 }));
 
-  await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
-    ts: Date.now(), iso: new Date().toISOString(),
-    sportsListErr, breakdown, totalCompleted: games.length
-  }), { expirationTtl: 60 * 60 * 24 * 14 });
+  // 2. Read pick history (don't abort if KV is empty — still want diagnostic)
+  const historyRaw = await phase('kv_read_history', () => env.LEARNING_STORE.get('et_picks_history'));
+  let history = null;
+  if (historyRaw) {
+    try { history = JSON.parse(historyRaw); } catch (_) {}
+  }
 
-  // 2. Read pick history
-  const historyRaw = await env.LEARNING_STORE.get('et_picks_history');
-  if (!historyRaw) return;
-  let history;
-  try { history = JSON.parse(historyRaw); } catch { return; }
+  let espnGames = [], gradingPool = [], gradedCount = 0, ungradedBefore = 0, ungradedAfter = 0, clvComputed = 0;
 
-  // 3. Fetch ESPN scores for every pending pick, targeted by exact date+sport.
-  //    No fixed lookback window — goes as far back as needed. Covers all sports.
-  const espnGames = await fetchESPNScoresForPendingPicks(history);
-  const gradingPool = [...games, ...espnGames];
+  if (history) {
+    ungradedBefore = history.reduce((n, s) => n + (s.picks || []).filter(p => !p.result || p.result === '?').length, 0);
 
-  // 4. Grade all pending picks against the combined pool
-  let changed = false;
-  const clvTasks = [];
-  history.forEach(slate => {
-    (slate.picks || []).forEach(pick => {
-      if (pick.result && pick.result !== '?') return;
-      const result = gradePickFromScore(pick, gradingPool, slate.date);
-      if (result) {
-        pick.result = result; changed = true;
-        if (pick.clv == null) clvTasks.push(pick);
-      }
+    // 3. Fetch ESPN scores for every pending pick, targeted by exact date+sport.
+    //    No fixed lookback window — goes as far back as needed. Covers all sports.
+    espnGames = (await phase('espn_scores', () => fetchESPNScoresForPendingPicks(history))) || [];
+    gradingPool = [...games, ...espnGames];
+
+    // 4. Grade all pending picks against the combined pool
+    let changed = false;
+    const clvTasks = [];
+    await phase('grading_loop', async () => {
+      history.forEach(slate => {
+        (slate.picks || []).forEach(pick => {
+          if (pick.result && pick.result !== '?') return;
+          const result = gradePickFromScore(pick, gradingPool, slate.date);
+          if (result) {
+            pick.result = result; changed = true; gradedCount++;
+            if (pick.clv == null) clvTasks.push(pick);
+          }
+        });
+        if (slate.grading) {
+          slate.grading.forEach(g => {
+            if (g.result && g.result !== '?') return;
+            const matched = (slate.picks || []).find(p =>
+              p.pick === g.pick ||
+              (p.matchup && g.matchup && p.matchup.toLowerCase() === g.matchup.toLowerCase())
+            );
+            if (matched?.result) { g.result = matched.result; changed = true; }
+          });
+        }
+      });
     });
-    if (slate.grading) {
-      slate.grading.forEach(g => {
-        if (g.result && g.result !== '?') return;
-        const matched = (slate.picks || []).find(p =>
-          p.pick === g.pick ||
-          (p.matchup && g.matchup && p.matchup.toLowerCase() === g.matchup.toLowerCase())
-        );
-        if (matched?.result) { g.result = matched.result; changed = true; }
+
+    // Compute CLV for each newly graded pick — batched after grading loop
+    // since each call is an async KV read. Best-effort: per-pick failures
+    // are silent; the phase wrapper catches a wholesale failure.
+    if (clvTasks.length) {
+      await phase('clv_compute', async () => {
+        await Promise.allSettled(clvTasks.map(async pick => {
+          try {
+            const clvData = await _computeCLV(pick, env);
+            if (clvData) {
+              pick.clv = clvData.clv;
+              pick.clv_data = clvData;
+              changed = true;
+              clvComputed++;
+            }
+          } catch (_) {}
+        }));
       });
     }
-  });
 
-  // Compute CLV for each newly graded pick — batched after grading loop
-  // since each call is an async KV read. Best-effort: failures are silent.
-  if (clvTasks.length) {
-    await Promise.allSettled(clvTasks.map(async pick => {
-      try {
-        const clvData = await _computeCLV(pick, env);
-        if (clvData) {
-          pick.clv = clvData.clv;
-          pick.clv_data = clvData;
-          changed = true;
-        }
-      } catch (_) {}
-    }));
+    if (changed) {
+      await phase('kv_write_history', () => env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30))));
+    }
+
+    ungradedAfter = history.reduce((n, s) => n + (s.picks || []).filter(p => !p.result || p.result === '?').length, 0);
   }
 
-  if (changed) {
-    await env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30)));
-  }
+  // Final diagnostic: persist phase results + counts BEFORE the learning
+  // agent runs so we always have a record of grading-phase outcomes even
+  // if the learning agent fails downstream. Last-write happens after agent.
+  await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+    ts: Date.now(), iso: new Date().toISOString(),
+    phases,
+    sportsListErr, breakdown,
+    totalCompleted: games.length,
+    espnFound: espnGames.length,
+    ungradedBefore, gradedThisRun: gradedCount, ungradedAfter,
+    clvComputed
+  }), { expirationTtl: 60 * 60 * 24 * 14 });
 
   // 4. Learning agent — runs EVERY cron, not just when new picks were graded.
   // computeSignalPerformance is deterministic and cheap (just counts W/L/P
@@ -281,7 +338,28 @@ async function runNightlyCron(env) {
   // there. The Claude rule-rewrite call inside runLearningAgent has its own
   // internal gating (requires ≥5 recent picks and CLAUDE_API_KEY) so it
   // won't fire wastefully when there's nothing new to learn from.
-  await runLearningAgent(env, history);
+  if (history) {
+    const t0 = Date.now();
+    try {
+      await runLearningAgent(env, history);
+      phases.push({ name: 'learning_agent', ok: true, ms: Date.now() - t0 });
+    } catch (e) {
+      phases.push({ name: 'learning_agent', ok: false, ms: Date.now() - t0, error: (e?.message || String(e)).slice(0, 300) });
+    }
+    // Re-write diagnostic with the learning_agent phase included so partial
+    // failures here are also visible.
+    try {
+      await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+        ts: Date.now(), iso: new Date().toISOString(),
+        phases,
+        sportsListErr, breakdown,
+        totalCompleted: games.length,
+        espnFound: espnGames.length,
+        ungradedBefore, gradedThisRun: gradedCount, ungradedAfter,
+        clvComputed
+      }), { expirationTtl: 60 * 60 * 24 * 14 });
+    } catch (_) {}
+  }
 }
 
 // ── Learning agent ────────────────────────────────────────────────────────────
