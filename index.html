@@ -5369,6 +5369,13 @@ async function generatePicks(force=false){
         if(_picksByMatch.has(qc.match.id))return; // synthesizer included this one ✓
         // Synthesizer dropped this AUTOPICK. Inject from math.
         const e=qc.bestEdge;
+        // Doubles guard: house rule is ML-only on doubles. The algo and the
+        // LLM prompt both honor it; the injector must too.
+        if(qc.match.isDoubles&&e.market!=='ML'){console.warn(`[quant-doubles] dropping ${qc.match.aw.nm}/${qc.match.hm.nm} ${e.market} — doubles is ML-only`);return}
+        // 2.5 score floor: matches the render filter and AI ANALYZE threshold
+        // so quant-injected picks can't slip in below the bar.
+        const _score=Math.round(e.edge*100*10)/10;
+        if(_score<2.5){console.warn(`[quant-floor] dropping ${qc.match.aw.nm}/${qc.match.hm.nm} — score ${_score} below 2.5 floor`);return}
         const odd=n=>n==null?'':(n>0?'+':'')+n;
         // Generate pick string from market + side
         let pickStr='';
@@ -5376,14 +5383,18 @@ async function generatePicks(force=false){
         else if(e.market.startsWith('Total '))pickStr=`${e.side} ${e.market.replace('Total ','')} (${odd(e.bookOdds)})`;
         else if(e.market.startsWith('Spread '))pickStr=`${e.side} ${e.market.replace('Spread ','')} (${odd(e.bookOdds)})`;
         else pickStr=`${e.side} ${e.market} (${odd(e.bookOdds)})`;
-        const conf=e.edge>=0.05?'HIGH':'MEDIUM';
+        let conf=e.edge>=0.05?'HIGH':'MEDIUM';
+        // Clay-favorite guardrail: never HIGH on a -200+ ML favorite on clay.
+        // The injector lacks the current-year clay W-L lookup needed to clear
+        // the guardrail, so cap at MEDIUM rather than risk a false HIGH.
+        if(conf==='HIGH'&&qc.fp?.surface==='clay'&&e.market==='ML'&&typeof e.bookOdds==='number'&&e.bookOdds<=-200){console.warn(`[quant-clay-guard] capping ${qc.match.aw.nm}/${qc.match.hm.nm} ML at MEDIUM — clay -200+ favorite`);conf='MEDIUM'}
         result.picks.push({
           rank:result.picks.length+1,
           sport:'tennis',
           matchup:`${qc.match.aw.nm} vs ${qc.match.hm.nm}`,
           pick:pickStr,
           confidence:conf,
-          score:Math.round(e.edge*100*10)/10,
+          score:_score,
           odds:e.bookOdds,
           reasoning:`QUANT AUTOPICK (math-injected). sElo ${qc.fp.eloA} vs ${qc.fp.eloB} on ${qc.fp.surface}. Fair ${(e.fairProb*100).toFixed(1)}% vs book ${(e.bookProb*100).toFixed(1)}% → ${(e.edge*100).toFixed(2)}% edge. Quarter-Kelly sizing: ${(e.kelly_q*100).toFixed(2)}% of bankroll.`,
           filters:['quant_autopick','selo','sim'],
@@ -5679,6 +5690,13 @@ function _parseAIAnalyzeVerdicts(txt){
 // entries; the source flag lets us filter "AI ANALYZE only" stats.
 function _saveAIAnalyzeVerdicts(g,verdicts){
   if(!verdicts.length)return;
+  // Honor TN_BAN_LIST here too — AI ANALYZE runs on a single user-selected
+  // game, so the upstream quant-stage ban filter doesn't catch verdicts on
+  // banned players reached via the AI ANALYZE path.
+  if(g.cat==='tennis'&&TN_BAN_LIST.some(b=>[g.aw.nm,g.hm.nm].some(n=>n.toLowerCase().includes(b)))){
+    console.warn(`[ai-analyze-ban] skipping save for ${g.aw.nm} vs ${g.hm.nm} — banned player`);
+    return;
+  }
   const today=new Date().toISOString().split('T')[0];
   const history=JSON.parse(localStorage.getItem('et_picks_history')||'[]');
   let slate=history.find(s=>s.date===today);
