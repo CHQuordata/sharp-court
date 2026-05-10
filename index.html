@@ -3304,12 +3304,29 @@ function renderPicksLeaderboard(){
     }
     const _isTop=i===0,_is2nd=i===1;
     const _dispScore=p.score!=null?Math.min(parseFloat(p.score),10).toFixed(1):null;
+    // Stake size — the sharp framework's headline metric. Use stored
+    // recommended_stake_pct on new picks; fall back to on-the-fly compute
+    // for legacy picks in history that pre-date that field. Capped at 2%
+    // for ruin protection. Skip for manual picks (they have explicit wager).
+    let _stakeBadge='';
+    if(!p.is_manual&&!res){
+      let sp=typeof p.recommended_stake_pct==='number'?p.recommended_stake_pct:null;
+      if(sp==null){const fk=kellyPct(p.confidence,p.pick,p.evData||null);sp=Math.min(fk/4,2)}
+      if(sp>0){
+        const sDol=BANKROLL>0?'$'+Math.round(BANKROLL*sp/100).toLocaleString():null;
+        const sDisp=sDol||sp.toFixed(2)+'%';
+        const sClr=sp>=1.5?'var(--grn)':sp>=0.5?'var(--cyn)':'var(--t3)';
+        const tt=`Recommended ¼-Kelly stake: ${sp.toFixed(2)}% of bankroll${BANKROLL>0?' ($'+Math.round(BANKROLL*sp/100)+' on $'+BANKROLL.toLocaleString()+')':' (set bankroll for $ amount)'}. Source: ${p.stake_source==='quant'?'quant edge':'confidence/price-implied'}.`;
+        _stakeBadge=`<span title="${tt}" style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:3px;margin-right:4px;color:${sClr};background:var(--bg3);border:1px solid ${sClr}">${sDisp}</span>`;
+      }
+    }
     h+=`<div class="pick-item${selPickIdx===i?' sel':''}" onclick="selPick(${i})" style="${_isTop?'border-left:3px solid var(--grn);background:rgba(0,230,118,.04)':_is2nd?'border-left:3px solid var(--cyn);background:rgba(0,229,255,.03)':'border-left:3px solid transparent'}">
       <div class="pick-item-top">
         <span class="pick-item-rank" style="${_isTop?'color:var(--grn);font-weight:900':_is2nd?'color:var(--cyn);font-weight:800':''}">#${i+1}</span>
         <span>${ic}</span>
         <span class="pick-item-match">${p.matchup}</span>
         ${_isTop?`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;margin-right:4px;color:var(--grn);background:rgba(0,230,118,.15)">★ BEST BET</span>`:''}
+        ${_stakeBadge}
         ${res?`<span class="pib pib-${res}">${res}</span>`:`<span class="pib pib-${p.confidence}">${p.confidence}${_dispScore!=null?`<span style="opacity:.55;font-weight:500;margin-left:4px">${_dispScore}/10</span>`:''}</span>`}
       </div>
       <div class="pick-item-pick">${p.pick}${_aTag}${
