@@ -5612,6 +5612,31 @@ Skip any pick you cannot score 2.5+. The structured block lets your verdicts be 
     // (below) is what gets persisted + graded + tracked. Both come from the
     // same model call so no double-cost.
     const verdicts=_parseAIAnalyzeVerdicts(txt);
+    // Defense-in-depth: Sonnet is told the clay-favorite and doubles guards
+    // in the system prompt but still slips occasionally. Re-validate confidence
+    // post-parse so HIGH never survives a guardrail violation.
+    if(verdicts.length&&g.cat==='tennis'){
+      const _surf=g.surf||getSurface(g.ven);
+      verdicts.forEach(v=>{
+        if((v.confidence||'').toUpperCase()!=='HIGH')return;
+        const pk=(v.my_pick||v.algo_pick||'');
+        const oddsM=pk.match(/\(([+-]?\d{2,4})\)/);
+        const price=oddsM?parseInt(oddsM[1]):null;
+        const isML=/\bML\b/i.test(pk);
+        // Clay-favorite guardrail
+        if(_surf==='clay'&&isML&&price!=null&&price<=-200){
+          console.warn(`[ai-analyze-clay-guard] downgrading HIGH→MEDIUM on ${pk} — clay -200+ favorite`);
+          v.confidence='MEDIUM';
+          v.reasoning=(v.reasoning||'')+' [auto-downgraded: clay-favorite guardrail — -200+ ML on clay caps at MEDIUM]';
+        }
+        // Doubles ML-only guardrail
+        if(g.isDoubles&&!isML){
+          console.warn(`[ai-analyze-doubles] downgrading HIGH→LOW on ${pk} — doubles non-ML`);
+          v.confidence='LOW';
+          v.reasoning=(v.reasoning||'')+' [auto-downgraded: doubles is ML-only per house policy]';
+        }
+      });
+    }
     // Run ensemble verification (Haiku) on the verdicts so AI ANALYZE picks
     // get the same MODEL CONFLICT detection that GENERATE PICKS gets.
     if(verdicts.length){
