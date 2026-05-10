@@ -5622,6 +5622,39 @@ async function generatePicks(force=false){
           if(!p.filters.includes('dual_confirm_failed'))p.filters.push('dual_confirm_failed');
         }
       });
+      // Spread-size + plus-money guard for tennis HIGH:
+      // Backtest across 81 picks showed spread CLV is +3.08pp (model picks
+      // the right side at the right price) BUT W/L on -4.5g+ spreads is
+      // 0-3 and plus-money spreads at HIGH conviction lost both attempts.
+      // Side selection is sound; aggressive line + plus-money is the leak.
+      // Cap HIGH on:
+      //   • spreads -4g or longer (require explicit dominant-blowout signal
+      //     to clear — we don't have a structured way to detect that yet,
+      //     so default to MEDIUM)
+      //   • any plus-money spread (price ≥ +100 implies a hard-to-clear line)
+      result.picks.forEach(p=>{
+        if(p.sport!=='tennis')return;
+        if(p.confidence!=='HIGH')return;
+        const pk=(p.pick||'').toLowerCase();
+        const isSpread=/[+-]\d+\.?\d?\s*g/.test(pk)&&!pk.includes('over')&&!pk.includes('under');
+        if(!isSpread)return;
+        const spM=pk.match(/([+-])(\d+\.?\d?)\s*g/);
+        const spVal=spM?parseFloat(spM[1]+spM[2]):null;
+        const oddsM=pk.match(/\(([+-]?\d{2,4})\)/);
+        const odds=oddsM?parseInt(oddsM[1]):null;
+        const wideSpread=spVal!=null&&spVal<=-4;
+        const plusMoney=odds!=null&&odds>=100;
+        if(wideSpread||plusMoney){
+          const reasons=[];
+          if(wideSpread)reasons.push(`spread ${spVal}g is -4g or wider (0-3 historical)`);
+          if(plusMoney)reasons.push(`plus-money spread (${odds>0?'+':''}${odds}) implies hard-to-clear line`);
+          console.warn(`[spread-cap] ${p.matchup} ${p.pick} HIGH→MEDIUM — ${reasons.join(' AND ')}`);
+          p.confidence='MEDIUM';
+          p.reasoning=(p.reasoning||'')+` [auto-capped: ${reasons.join(' / ')}]`;
+          if(!p.filters)p.filters=[];
+          if(!p.filters.includes('spread_size_capped'))p.filters.push('spread_size_capped');
+        }
+      });
     }
     // ── Universal stake recommendation (¼-Kelly) ──────────────────────────────
     // Sharp framework: stake size IS the confidence. Every pick gets a single
