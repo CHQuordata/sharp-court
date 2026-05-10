@@ -5365,9 +5365,16 @@ async function generatePicks(force=false){
         });
       });
       let injected=0;
+      // Tennis policy shift: when the LLM drops a quant AUTOPICK, that's
+      // information — the qualitative reviewer saw something the math missed
+      // (form collapse, surface transition, fatigue, injury read). Stop
+      // force-injecting; route to leans for human review instead. Other
+      // sports keep "math wins on conflicts" — qualitative signals are weaker
+      // there and quant has a stronger track record.
+      if(!result.leans)result.leans=[];
+      let injected=0,flagged=0;
       _qAutopicks.forEach(qc=>{
         if(_picksByMatch.has(qc.match.id))return; // synthesizer included this one ✓
-        // Synthesizer dropped this AUTOPICK. Inject from math.
         const e=qc.bestEdge;
         // Doubles guard: house rule is ML-only on doubles. The algo and the
         // LLM prompt both honor it; the injector must too.
@@ -5377,7 +5384,6 @@ async function generatePicks(force=false){
         const _score=Math.round(e.edge*100*10)/10;
         if(_score<2.5){console.warn(`[quant-floor] dropping ${qc.match.aw.nm}/${qc.match.hm.nm} — score ${_score} below 2.5 floor`);return}
         const odd=n=>n==null?'':(n>0?'+':'')+n;
-        // Generate pick string from market + side
         let pickStr='';
         if(e.market==='ML')pickStr=`${e.side} ML (${odd(e.bookOdds)})`;
         else if(e.market.startsWith('Total '))pickStr=`${e.side} ${e.market.replace('Total ','')} (${odd(e.bookOdds)})`;
@@ -5385,27 +5391,49 @@ async function generatePicks(force=false){
         else pickStr=`${e.side} ${e.market} (${odd(e.bookOdds)})`;
         let conf=e.edge>=0.05?'HIGH':'MEDIUM';
         // Clay-favorite guardrail: never HIGH on a -200+ ML favorite on clay.
-        // The injector lacks the current-year clay W-L lookup needed to clear
-        // the guardrail, so cap at MEDIUM rather than risk a false HIGH.
         if(conf==='HIGH'&&qc.fp?.surface==='clay'&&e.market==='ML'&&typeof e.bookOdds==='number'&&e.bookOdds<=-200){console.warn(`[quant-clay-guard] capping ${qc.match.aw.nm}/${qc.match.hm.nm} ML at MEDIUM — clay -200+ favorite`);conf='MEDIUM'}
-        result.picks.push({
-          rank:result.picks.length+1,
-          sport:'tennis',
-          matchup:`${qc.match.aw.nm} vs ${qc.match.hm.nm}`,
-          pick:pickStr,
-          confidence:conf,
-          score:_score,
-          odds:e.bookOdds,
-          reasoning:`QUANT AUTOPICK (math-injected). sElo ${qc.fp.eloA} vs ${qc.fp.eloB} on ${qc.fp.surface}. Fair ${(e.fairProb*100).toFixed(1)}% vs book ${(e.bookProb*100).toFixed(1)}% → ${(e.edge*100).toFixed(2)}% edge. Quarter-Kelly sizing: ${(e.kelly_q*100).toFixed(2)}% of bankroll.`,
-          filters:['quant_autopick','selo','sim'],
-          is_lean:false,
-          quant_injected:true,
-          quant_edge:e.edge,
-          quant_kelly_q:e.kelly_q
-        });
-        injected++;
+        const reasoning=`QUANT AUTOPICK (math-injected). sElo ${qc.fp.eloA} vs ${qc.fp.eloB} on ${qc.fp.surface}. Fair ${(e.fairProb*100).toFixed(1)}% vs book ${(e.bookProb*100).toFixed(1)}% → ${(e.edge*100).toFixed(2)}% edge. Quarter-Kelly sizing: ${(e.kelly_q*100).toFixed(2)}% of bankroll.`;
+        const isTennis=qc.match.cat==='tennis';
+        if(isTennis){
+          // Route to leans — flag for review, do not auto-grade
+          result.leans.push({
+            sport:'tennis',
+            matchup:`${qc.match.aw.nm} vs ${qc.match.hm.nm}`,
+            pick:pickStr,
+            confidence:conf,
+            score:_score,
+            odds:e.bookOdds,
+            lean:`QUANT FLAG — LLM declined this AUTOPICK. ${reasoning} Promote only if you can identify what the LLM saw to drop it (form, fatigue, injury, surface transition).`,
+            trigger:`Promote to graded pick if qualitative review confirms no red flag the LLM caught.`,
+            filters:['quant_flag','selo','sim','llm_dropped'],
+            is_lean:true,
+            quant_flagged:true,
+            quant_edge:e.edge,
+            quant_kelly_q:e.kelly_q
+          });
+          flagged++;
+        }else{
+          // Non-tennis: keep "math wins on conflicts" — inject as graded pick
+          result.picks.push({
+            rank:result.picks.length+1,
+            sport:qc.match.cat||'tennis',
+            matchup:`${qc.match.aw.nm} vs ${qc.match.hm.nm}`,
+            pick:pickStr,
+            confidence:conf,
+            score:_score,
+            odds:e.bookOdds,
+            reasoning,
+            filters:['quant_autopick','selo','sim'],
+            is_lean:false,
+            quant_injected:true,
+            quant_edge:e.edge,
+            quant_kelly_q:e.kelly_q
+          });
+          injected++;
+        }
       });
-      if(injected)console.warn(`[quant-enforce] injected ${injected} AUTOPICK pick(s) the LLM dropped`);
+      if(injected)console.warn(`[quant-enforce] injected ${injected} AUTOPICK pick(s) the LLM dropped (non-tennis)`);
+      if(flagged)console.warn(`[quant-enforce] flagged ${flagged} tennis AUTOPICK(s) to leans for review (LLM dropped)`);
       // Tag picks the LLM kept that came from quant signals
       result.picks.forEach(p=>{
         if(p.quant_injected)return;
@@ -5420,6 +5448,25 @@ async function generatePicks(force=false){
           p.quant_best_edge=qc.bestEdge?qc.bestEdge.edge:null;
           p.selo_a=qc.fp?.eloA;
           p.selo_b=qc.fp?.eloB;
+        }
+      });
+      // Tennis dual-confirmation rule: HIGH requires both LLM agreement AND
+      // quant agreement. LLM agreement is implicit (the pick exists and isn't
+      // quant_injected). Quant agreement = AUTOPICK classification, OR
+      // BORDERLINE with a real edge (>=5%). Anything weaker caps at MEDIUM.
+      result.picks.forEach(p=>{
+        if(p.sport!=='tennis')return;
+        if(p.confidence!=='HIGH')return;
+        if(p.quant_injected)return; // already non-tennis only after #1
+        const cls=p.quant_classification;
+        const edge=p.quant_best_edge;
+        const quantAgrees=cls==='AUTOPICK'||(cls==='BORDERLINE'&&typeof edge==='number'&&edge>=0.05);
+        if(!quantAgrees){
+          console.warn(`[dual-confirm] capping ${p.matchup} ${p.pick} HIGH→MEDIUM — quant_classification=${cls||'none'} edge=${edge!=null?(edge*100).toFixed(2)+'%':'n/a'}`);
+          p.confidence='MEDIUM';
+          p.reasoning=(p.reasoning||'')+' [auto-capped: tennis HIGH requires dual confirmation — quant did not agree]';
+          if(!p.filters)p.filters=[];
+          if(!p.filters.includes('dual_confirm_failed'))p.filters.push('dual_confirm_failed');
         }
       });
     }
