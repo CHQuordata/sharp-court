@@ -4331,6 +4331,18 @@ Games tagged [DOUBLES] in the slate have no individual player stats. For doubles
 - Treat doubles with lower default confidence unless the pair is a dominant #1 seed pairing
 - Do NOT fabricate serve/return stats for doubles players — use market price and ranking as the only signals
 
+## TENNIS SPREADS — EXPECTED MARGIN IS MANDATORY
+Backtest finding (81 picks, +3.08pp avg CLV on spreads but 10-15 W/L): the model picks the right side at the right price but picks lines that don't actually clear. Specifically: -4.5g spreads went 0-3, plus-money HIGH spreads went 0-2.
+
+For ANY spread pick (-1.5g / -2.5g / -3.5g / -4.5g / etc.):
+- The "reasoning" string MUST include an explicit "expected margin: +N games" phrase based on your read of the matchup.
+- For HIGH confidence, expected margin must EXCEED the spread by at least 1.5 games. E.g. HIGH on -3.5g requires expected margin ≥ +5g. HIGH on -1.5g requires ≥ +3g. HIGH on -4.5g requires ≥ +6g (rare — only when one player should win essentially every service game).
+- If expected margin only just covers the spread (≤ 1g cushion), use MEDIUM, not HIGH.
+- If expected margin doesn't cover the spread, don't pick that spread vehicle. Drop to ML or take a smaller spread.
+- Never pick a plus-money spread (+100 or longer) at HIGH confidence. The book pricing the spread as a dog is the market telling you the line is hard to clear.
+
+The "expected margin" anchor forces honest calibration. If you can't commit to a specific margin, you don't have the conviction the spread needs.
+
 ## JSON OUTPUT RULES — CRITICAL: violating any rule causes a parse failure
 - Output raw JSON only — NO markdown fences, NO prose, NO text before or after the JSON
 - Start your response with { and end it with } — nothing else
@@ -5653,6 +5665,32 @@ async function generatePicks(force=false){
           p.reasoning=(p.reasoning||'')+` [auto-capped: ${reasons.join(' / ')}]`;
           if(!p.filters)p.filters=[];
           if(!p.filters.includes('spread_size_capped'))p.filters.push('spread_size_capped');
+        }
+      });
+      // Expected-margin guardrail for HIGH spread picks. The prompt now
+      // requires reasoning to commit to a specific "expected margin: +N games"
+      // and that margin must exceed the spread by ≥1.5g for HIGH. We can't
+      // re-validate the analyst's number, but we CAN enforce that the
+      // commitment phrase is present — otherwise it wasn't really anchored.
+      // Same defense-in-depth pattern as clay-favorite / dual-confirm.
+      result.picks.forEach(p=>{
+        if(p.sport!=='tennis')return;
+        if(p.confidence!=='HIGH')return;
+        const pk=(p.pick||'').toLowerCase();
+        const isSpread=/[+-]\d+\.?\d?\s*g/.test(pk)&&!pk.includes('over')&&!pk.includes('under');
+        if(!isSpread)return;
+        const reason=(p.reasoning||'').toLowerCase();
+        // Match phrasing variants: "expected margin: +N", "expected margin of N",
+        // "expect ... by N games", "should win by N", etc. Lenient on the form,
+        // strict on the requirement that a numeric games-margin appears.
+        const hasMarginCommit = /expected\s+margin[^.\n]*\b\d+(\.\d+)?\b/.test(reason)
+                              || /\b(win|cover|beat)[^.\n]{1,40}\bby\s+\d+(\.\d+)?\s*game/.test(reason);
+        if(!hasMarginCommit){
+          console.warn(`[spread-margin] ${p.matchup} ${p.pick} HIGH→MEDIUM — reasoning missing expected margin commitment`);
+          p.confidence='MEDIUM';
+          p.reasoning=(p.reasoning||'')+' [auto-capped: HIGH spread requires explicit expected-margin commitment per house rule]';
+          if(!p.filters)p.filters=[];
+          if(!p.filters.includes('spread_margin_missing'))p.filters.push('spread_margin_missing');
         }
       });
     }
