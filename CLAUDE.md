@@ -93,6 +93,10 @@ The pick framework was redesigned to align with how professional bettors actuall
 
 **Quant injection → leans for tennis.** When the LLM drops a quant AUTOPICK on tennis, route to leans for review instead of force-injecting. Other sports keep "math wins on conflicts." Tennis upset variance + qualitative-heavy edge sources mean LLM drops carry real signal.
 
+**Spread caps (tennis HIGH).** Backtest finding: spread CLV is +3.08pp (right side, right price) but W/L is 10-15 because the model picks lines that don't clear. Three layers of protection: (1) wide-spread cap — HIGH on -4g or longer downgrades to MEDIUM; (2) plus-money spread cap — HIGH on +100 or longer spreads downgrades to MEDIUM; (3) expected-margin commitment — HIGH spread reasoning must include explicit "expected margin: +N games" phrase, with margin exceeding the spread by ≥1.5g. Post-parse validator with `spread_size_capped` / `spread_margin_missing` filter tags catches violations.
+
+**Post-upset letdown detection.** When a player's most recent match (within 5 days) was a W against an opponent ranked ≥10 spots higher, the prompt context emits a `⚠️ POST-UPSET LETDOWN` tag on that player's L5 line. System prompt rule: post-upset favorites get faded or capped at MEDIUM; post-upset dogs cannot be elevated by the upset itself ("the upset isn't repeatable form"). Real tennis pattern — emotional/physical comedown plus motivation drop against the next "lesser" opponent. Backtest hits 20% of historical picks; preferentially catches HIGH plus-money longshot losses.
+
 ---
 
 ## BACKTEST TOOL

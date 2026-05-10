@@ -74,7 +74,7 @@ tr:hover td{background:var(--bg1)}
   </div>
   <div class="hdr-meta">
     <div><b>DATE</b>  2026-05-10</div>
-    <div><b>COMMITS</b>  11 (frontend) + 1 (worker)</div>
+    <div><b>COMMITS</b>  14 (frontend) + 1 (worker)</div>
     <div><b>STATUS</b>  <span class="tag tag-grn">LIVE</span></div>
     <div><b>PRIOR</b>  <a href="2026-05-09_AIAnalyze_FixSummary.html" style="color:var(--cyn)">2026-05-09 (AI ANALYZE)</a></div>
   </div>
@@ -398,6 +398,41 @@ diagnostic: ungradedBefore / gradedThisRun / ungradedAfter</pre></div>
     <div class="fix-meta">commits: <a>be7e35e</a> · <a>226ef96</a> · file: <span class="code">backtest.html</span></div>
   </div>
 
+  <div class="fix amb">
+    <div class="fix-hdr">
+      <div><div class="fix-num">FIX #12 — TENNIS SPREAD CAPS</div><div class="fix-title">Cap HIGH on wide spreads + plus-money spreads</div><div class="fix-sub">Backtest finding: spread CLV is +3.08pp (right side, right price) but W/L is 10-15. Side selection sound; aggressive line + plus-money is the leak. Cap HIGH on -4g+ spreads (0-3 historical) and plus-money spreads (book pricing implies hard-to-clear line). Filter tag: spread_size_capped.</div></div>
+      <span class="tag tag-grn">SHIPPED</span>
+    </div>
+    <div class="fix-meta">commit: <a>7c88992</a></div>
+  </div>
+
+  <div class="fix amb">
+    <div class="fix-hdr">
+      <div><div class="fix-num">FIX #13 — EXPECTED-MARGIN COMMITMENT</div><div class="fix-title">HIGH spread reasoning must include numeric games-margin</div><div class="fix-sub">Calibration fix at the source. System prompt now requires every spread pick to include "expected margin: +N games" — for HIGH, margin must exceed spread by ≥1.5g. Public commitment forces the model to think about whether -4.5g is realistic vs THIS opponent. Defense in depth: post-parse validator catches HIGH spreads whose reasoning lacks the numeric commitment and downgrades to MEDIUM with spread_margin_missing tag.</div></div>
+      <span class="tag tag-grn">SHIPPED</span>
+    </div>
+    <div class="fix-meta">commit: <a>85c8f22</a> · 7/7 regex tests pass</div>
+  </div>
+
+  <div class="fix amb">
+    <div class="fix-hdr">
+      <div><div class="fix-num">FIX #14 — POST-UPSET LETDOWN DETECTION</div><div class="fix-title">Flag players coming off recent upset wins</div><div class="fix-sub">Real tennis pattern: emotional/physical comedown after upsetting a higher-ranked opponent. Detection: if player's most recent match (within 5 days) was a W vs opponent ranked ≥10 spots higher, the prompt context emits a ⚠️ POST-UPSET LETDOWN tag. System prompt rule: post-upset favorites get faded or capped at MEDIUM; post-upset dogs cannot be elevated by the upset itself ("upset isn't repeatable form"). Backtest hits 20% of historical picks (16/81); preferentially catches HIGH plus-money longshot losses.</div></div>
+      <span class="tag tag-grn">SHIPPED</span>
+    </div>
+    <div class="fix-meta">commit: <a>7250302</a></div>
+    <div class="ba">
+      <div class="ba-col before"><h4>BEFORE</h4><pre>Sonego L5: 4-1 (last: W vs Medvedev #5)
+Model sees the ranking + score
+Has to infer letdown from raw data
+Often misses → backs the form pick</pre></div>
+      <div class="ba-col after"><h4>AFTER</h4><pre>Sonego L5: 4-1 (last: W vs Medvedev #5)
+  ⚠️ POST-UPSET LETDOWN — defeated #5
+  (47 spots higher) 1d ago in 3 sets.
+  Letdown next round is documented pattern.
+  Fade if favored; downgrade otherwise.</pre></div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ════════════════ ENFORCEMENT MATRIX ════════════════ -->
@@ -443,7 +478,7 @@ diagnostic: ungradedBefore / gradedThisRun / ungradedAfter</pre></div>
 <h2>▎ COMMIT REFERENCES</h2>
 <div class="refs">
   <b>Frontend (GitHub Pages, auto-deploy):</b><br>
-  2b498c7 · f95edc0 · 278ffe1 · <span class="k-red">0842c92 (hotfix — duplicate let injected)</span> · 5e73ae8 · 0f055c7 · 108945d · 6778d78 · 927b1b6 · 544770b · 7f4f28a · 1270540 · 413d36f · e805c0f · 1798620 · 724ea9a · be7e35e · 226ef96 · ebf8585 · 1351a06<br><br>
+  2b498c7 · f95edc0 · 278ffe1 · <span class="k-red">0842c92 (hotfix — duplicate let injected)</span> · 5e73ae8 · 0f055c7 · 108945d · 6778d78 · 927b1b6 · 544770b · 7f4f28a · 1270540 · 413d36f · e805c0f · 1798620 · 724ea9a · be7e35e · 226ef96 · ebf8585 · 1351a06 · 7c88992 · 85c8f22 · 7250302<br><br>
   <b>Worker (Cloudflare, manual <span class="code">wrangler deploy</span>):</b><br>
   85a2467 · deployed version <span class="code">fe785a1f-0a86-431b-b1b2-80d9eb8fe662</span><br><br>
   <b>Workflow lesson learned:</b> Parse-validate every non-trivial <span class="code">index.html</span> JS edit with <span class="code">new Function(scriptBody)</span> before committing. Skipping this once cost 5 commits of a broken site — duplicate <span class="code">let injected</span> halted the entire main script block, taking the PIN gate down with it. Now codified in <a href="../CLAUDE.md">CLAUDE.md</a> under CODE WORKFLOW.
