@@ -5381,7 +5381,6 @@ async function generatePicks(force=false){
           if(muN.includes(aL)&&muN.includes(bL))_picksByMatch.set(qc.match.id,p);
         });
       });
-      let injected=0;
       // Tennis policy shift: when the LLM drops a quant AUTOPICK, that's
       // information — the qualitative reviewer saw something the math missed
       // (form collapse, surface transition, fatigue, injury read). Stop
