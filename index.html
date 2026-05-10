@@ -3853,10 +3853,19 @@ function selPick(idx){
     // Use nickname (last word) first — avoids city collisions e.g. "Philadelphia" matching both Phillies and 76ers
     const awLast=gm.aw.nm.toLowerCase().split(' ').pop();
     const hmLast=gm.hm.nm.toLowerCase().split(' ').pop();
-    if(awLast.length>3&&ms.includes(awLast))return true;
-    if(hmLast.length>3&&ms.includes(hmLast))return true;
-    // Fallback: any word >4 chars (catches edge cases but skips city-only names)
-    return gm.aw.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w))||gm.hm.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w));
+    const awHit=awLast.length>3&&ms.includes(awLast);
+    const hmHit=hmLast.length>3&&ms.includes(hmLast);
+    // Tennis: require BOTH last names to match. A single first-name hit
+    // (e.g. "Alexander") collides with other players sharing that first name
+    // and pulls the wrong game's odds into the detail panel.
+    if(gm.cat==='tennis')return awHit&&hmHit;
+    // Team sports: a single last-name hit is enough.
+    if(awHit||hmHit)return true;
+    // Fallback for short last names (e.g. "Li", "Wu"): any word >4 chars on
+    // BOTH sides — requires hits from both teams to avoid first-name collisions.
+    const awLong=gm.aw.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w));
+    const hmLong=gm.hm.nm.toLowerCase().split(' ').some(w=>w.length>4&&ms.includes(w));
+    return awLong&&hmLong;
   });
   if(g?.odds?.bookmakers?.length)h+=renderOdds(g);
   const ge=g?allE.filter(e=>e.g.id===g.id):[];
