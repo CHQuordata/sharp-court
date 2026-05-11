@@ -5142,12 +5142,17 @@ async function runJudgeReflection(result,gamesCtx){
   const picksList=picks.map((p,i)=>`${i+1}. [${p.confidence}] ${p.matchup}: ${p.pick}\n   Reasoning: ${(p.reasoning||'').slice(0,180)}`).join('\n\n');
   const prompt=`You are an ADVERSARIAL JUDGE reviewing tennis betting picks before they ship to the user.
 
-Your mandate:
-- APPROVE: Signal is solid, reasoning is coherent, no red flags, you'd back this
-- FLAG: Concern exists but pick may still have value (thin data, surface mismatch, weak signal)
-- REJECT: Do NOT ship — bad logic, inverse signal, fabricated stats, or pure ranking bet with no surface evidence
+CRITICAL CONTEXT — read before judging:
+- Fair probabilities like "fair prob 99.7%", "87.1%", "78.2%" are DETERMINISTIC output from an upstream QUANT DESK (sElo + Monte Carlo simulator with thousands of trials). They are NOT fabricated by the analyst. Precise-looking fair probabilities are EXPECTED for tennis picks — that's how the simulator reports its result. Do NOT reject for "fabricated precision" or "made-up probability." The math is real.
+- sElo numbers (e.g. "Sinner sElo 2223 vs Popyrin 1713") are surface-specific Elo ratings from Tennis Abstract's database — real, deterministic, and pre-fetched. Not fabricated.
+- Surface records like "Sinner 11-0 on clay in 2025" come from current-season records pulled from ESPN/matchstat APIs. Verify whether the slate context confirms them, but don't assume they're fabricated by default.
 
-Default bias: FLAG or REJECT anything that lacks a concrete signal beyond ranking gap alone.
+Your mandate:
+- APPROVE: signal is coherent, math + qualitative agree, no red flags
+- FLAG: real concern remains (very thin sample on a stat, surface mismatch, weak qualitative signal, missing data flag visible in context) but the pick may still have value
+- REJECT: only when there is an ACTUAL logical error — inverse signal (reasoning says player A is stronger but pick backs B), math contradicting itself, banned player picked, or a stat is cited that's clearly not in the context AND not the kind of stat the quant desk would produce
+
+Default bias is APPROVE for picks that have a clear quant edge AND coherent qualitative reasoning. Reserve REJECT for genuine errors. Use FLAG when in doubt rather than REJECT.
 
 Output strict JSON: {"verdicts":[{"i":1,"v":"APPROVE|FLAG|REJECT","note":"max 100 chars"},...]}
 
@@ -5161,7 +5166,7 @@ ${gamesCtx.slice(0,5500)}`;
       method:'POST',signal:AbortSignal.timeout(55000),
       headers:{'x-api-key':CLAUDE_KEY,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-haiku-4-5',temperature:0,max_tokens:1200,
-        system:'You are an adversarial tennis betting judge. Flag suspicious picks aggressively. Output raw JSON only.',
+        system:'You are an adversarial tennis betting judge. You catch real errors — inverse signals, math contradictions, banned players, citations of stats that contradict the slate data. Fair probabilities like 99.7% / 87.1% are DETERMINISTIC quant-simulator output, NOT fabricated by the analyst — never reject for "fabricated precision" alone. Default APPROVE on clean picks; reserve REJECT for actual logical errors. Output raw JSON only.',
         messages:[{role:'user',content:prompt}]})
     });
     if(!resp.ok)return;
