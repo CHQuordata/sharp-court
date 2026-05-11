@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backtest — Sharp Court v1</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{
+  --bg0:#0a0a14;--bg1:#0f0f1a;--bg2:#15151f;--bg3:#1c1c28;
+  --t1:#e8e8f0;--t2:#9090a8;--t3:#5a5a72;--t4:#3a3a50;
+  --bdr:#222230;--grn:#00e676;--cyn:#00e5ff;--amb:#ffb300;--red:#ff4757;--mag:#ff00ff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'JetBrains Mono','Courier New',monospace;background:var(--bg0);color:var(--t1);font-size:12px;line-height:1.5;padding:20px;max-width:1400px;margin:0 auto}
+h1{font-size:14px;letter-spacing:2px;color:var(--grn);margin-bottom:4px}
+.sub{font-size:10px;color:var(--t3);margin-bottom:20px}
+button{font-family:inherit;font-size:11px;font-weight:700;letter-spacing:1px;background:var(--grn);color:var(--bg0);border:none;padding:10px 16px;border-radius:3px;cursor:pointer}
+button:hover{background:#00ff88}
+button:disabled{background:var(--t4);cursor:not-allowed}
+.controls{display:flex;gap:10px;align-items:center;margin-bottom:20px}
+input[type=number]{font-family:inherit;font-size:11px;background:var(--bg2);color:var(--t1);border:1px solid var(--bdr);padding:8px 10px;border-radius:3px;width:120px}
+.status{font-size:10px;color:var(--t3);margin-left:auto}
+.status.err{color:var(--red)}
+.section{background:var(--bg1);border:1px solid var(--bdr);border-radius:4px;padding:16px;margin-bottom:16px}
+.section-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--cyn);margin-bottom:12px;border-bottom:1px solid var(--bdr);padding-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;color:var(--t3);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--bdr);font-size:10px;letter-spacing:1px}
+td{padding:6px 8px;border-bottom:1px solid var(--bg2);vertical-align:top}
+tr:hover{background:var(--bg2)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.pos{color:var(--grn);font-weight:700}
+.neg{color:var(--red);font-weight:700}
+.dim{color:var(--t3)}
+.policy-name{font-weight:700;color:var(--t1)}
+.bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:2px}
+.bar-fill{height:100%;background:var(--grn)}
+.bar-fill.neg{background:var(--red)}
+.chart{display:block;width:100%;height:240px;margin-top:8px}
+.tag{display:inline-block;font-size:9px;padding:1px 5px;border-radius:2px;margin-right:4px;background:var(--bg3);color:var(--t2)}
+.tag-w{background:rgba(0,230,118,.15);color:var(--grn)}
+.tag-l{background:rgba(255,71,87,.15);color:var(--red)}
+.tag-skip{background:var(--bg3);color:var(--t3)}
+.help{font-size:10px;color:var(--t3);margin:8px 0 4px;line-height:1.6}
+.help b{color:var(--t2)}
+</style>
+</head>
+<body>
+<h1>BACKTEST · sharp court v1</h1>
+<div class="sub">Replays graded tennis picks under each rule policy. Real W/L outcomes — only the staking and filtering rules differ.</div>
+
+<div class="controls">
+  <button id="runBtn" onclick="runBacktest()">RUN BACKTEST</button>
+  <button id="pasteBtn" onclick="document.getElementById('pasteBox').style.display='block'" style="background:var(--bg2);color:var(--t2)">PASTE JSON</button>
+  <label class="dim" style="font-size:10px">Starting bankroll $<input type="number" id="startBank" value="1000" min="100" step="100"></label>
+  <span class="status" id="status">Click RUN to fetch history and replay.</span>
+</div>
+<div id="pasteBox" style="display:none;margin-bottom:16px">
+  <textarea id="pasteArea" placeholder='Paste raw et_picks_history JSON (array of slates) — for local testing when worker CORS blocks fetch.' style="width:100%;height:80px;background:var(--bg2);color:var(--t1);border:1px solid var(--bdr);padding:8px;font-family:inherit;font-size:10px;border-radius:3px"></textarea>
+  <button onclick="runBacktestFromPaste()" style="margin-top:6px;background:var(--cyn)">RUN FROM PASTE</button>
+</div>
+
+<div id="results" style="display:none">
+  <div class="section">
+    <div class="section-title">POLICY RESULTS</div>
+    <div class="help"><b>Baseline (old)</b>: pre-fix kellyPct (the broken plus-money formula) at quarter-Kelly. <b>New stake</b>: post-fix kellyPct with 2% cap. <b>+ HIGH cap</b>: HIGH on ≥+200 sized as MEDIUM. <b>+ Dual confirm</b>: HIGH without quant_classification AUTOPICK / BORDERLINE+5%edge sized as MEDIUM. <b>+ Skip neg CLV</b>: skip picks where post-grade CLV < 0 (line moved against us = sharp money disagreed). <b>+ Ban expansion</b>: skip kyrgios/fognini/shapovalov/kokkinakis/garin retroactively.</div>
+    <table>
+      <thead><tr>
+        <th>POLICY</th><th class="num">FINAL $</th><th class="num">ROI</th><th class="num">W-L-P</th><th class="num">WIN%</th><th class="num">MAX DD</th><th class="num">SKIPPED</th>
+      </tr></thead>
+      <tbody id="policyRows"></tbody>
+    </table>
+    <canvas id="chart" class="chart"></canvas>
+  </div>
+
+  <div class="section">
+    <div class="section-title">PER-PICK COMPARISON</div>
+    <div class="help">Shows stake size and outcome under each policy. Hover any row to read the full pick reasoning.</div>
+    <table>
+      <thead><tr>
+        <th>DATE</th><th>MATCHUP</th><th>PICK</th><th>CONF</th><th class="num">ODDS</th><th class="num">RESULT</th>
+        <th class="num">BASELINE</th><th class="num">NEW</th><th class="num">+HIGH CAP</th><th class="num">+DUAL</th><th class="num">+CLV</th><th class="num">+BAN</th>
+      </tr></thead>
+      <tbody id="pickRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+import { aimp } from './lib/odds.js';
+
+// ── kellyPct: BOTH versions inline so the backtest is honest ────────────────
+
+// LEGACY (pre-fix): fixed win prob per confidence tag, ignores price.
+// This produced the absurd plus-money stakes we saw on May 4.
+function kellyPctLegacy(conf, pickStr, evData){
+  const m=(pickStr||'').match(/\(([+-]\d+)\)/);
+  const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);
+  const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;
+  const p=evData?.tp?Math.min(Math.max(parseFloat(evData.tp)/100,0.45),0.75)
+    :conf==='HIGH'?0.58:conf==='MEDIUM'?0.53:0.50;
+  const k=(p*(dec-1)-(1-p))/(dec-1);
+  return Math.max(0,k*100);
+}
+
+// NEW (post-fix): p derived from book-implied + small confidence-based edge.
+function kellyPctNew(conf, pickStr, evData){
+  const m=(pickStr||'').match(/\(([+-]\d+)\)/);
+  const amer=m?parseInt(m[1]):(conf==='HIGH'?-115:-110);
+  const dec=amer>0?amer/100+1:100/Math.abs(amer)+1;
+  const bookImplied=aimp(amer);
+  const edgeByConf=conf==='HIGH'?0.04:conf==='MEDIUM'?0.015:0.003;
+  const p=evData?.tp?Math.min(Math.max(parseFloat(evData.tp)/100,0.45),0.75)
+    :Math.min(0.95,bookImplied+edgeByConf);
+  const k=(p*(dec-1)-(1-p))/(dec-1);
+  return Math.max(0,k*100);
+}
+
+// Parse American odds out of "Player ML (-130)" or "Paul -1.5g (+105)" etc.
+function parseOdds(pickStr){
+  const m=(pickStr||'').match(/\(([+-]?\d{2,4})\)/);
+  return m?parseInt(m[1]):null;
+}
+
+// Decimal payout multiplier for a winning bet at American odds.
+function decPayout(amer){
+  if(amer==null)return null;
+  return amer>0?amer/100:100/Math.abs(amer);
+}
+
+const EXPANDED_BAN=['kyrgios','fognini','shapovalov','kokkinakis','garin'];
+
+// ── Policy definitions ─────────────────────────────────────────────────────
+// Each policy returns { stakePct, skip } given a pick. stakePct is % of CURRENT
+// bankroll to wager. skip means don't bet (stakePct=0).
+
+function stakeFromConf(pickConf, pickStr, useNew){
+  const fn = useNew ? kellyPctNew : kellyPctLegacy;
+  const fullK = fn(pickConf, pickStr, null);
+  return Math.min(fullK/4, useNew?2:Infinity); // 2% cap only on new
+}
+
+const POLICIES = [
+  {
+    key:'baseline',
+    name:'Baseline (old)',
+    color:'#888',
+    apply:(p)=>({stakePct: stakeFromConf(p.confidence, p.pick, false), skip:false})
+  },
+  {
+    key:'new',
+    name:'New stake (kellyPct fix + 2% cap)',
+    color:'#00e5ff',
+    apply:(p)=>({stakePct: stakeFromConf(p.confidence, p.pick, true), skip:false})
+  },
+  {
+    key:'high_cap',
+    name:'+ HIGH price cap (≥+200 → MEDIUM stake)',
+    color:'#ffb300',
+    apply:(p)=>{
+      const o=parseOdds(p.pick);
+      let conf=p.confidence;
+      if(conf==='HIGH'&&o!=null&&o>=200)conf='MEDIUM';
+      return {stakePct: stakeFromConf(conf, p.pick, true), skip:false};
+    }
+  },
+  {
+    key:'dual',
+    name:'+ Dual confirmation (HIGH needs quant)',
+    color:'#ff8800',
+    apply:(p)=>{
+      const o=parseOdds(p.pick);
+      let conf=p.confidence;
+      if(conf==='HIGH'&&o!=null&&o>=200)conf='MEDIUM';
+      if(conf==='HIGH'){
+        const cls=p.quant_classification;
+        const edge=p.quant_best_edge;
+        const quantAgrees = cls==='AUTOPICK' || (cls==='BORDERLINE' && typeof edge==='number' && edge>=0.05);
+        // If we have quant data and quant disagrees: downgrade.
+        // If we have NO quant data: keep HIGH (conservative — don't penalize unknown).
+        if(cls!=null && !quantAgrees) conf='MEDIUM';
+      }
+      return {stakePct: stakeFromConf(conf, p.pick, true), skip:false};
+    }
+  },
+  {
+    key:'clv',
+    name:'+ Skip negative post-grade CLV',
+    color:'#00e676',
+    apply:(p)=>{
+      const o=parseOdds(p.pick);
+      let conf=p.confidence;
+      if(conf==='HIGH'&&o!=null&&o>=200)conf='MEDIUM';
+      if(conf==='HIGH'){
+        const cls=p.quant_classification;
+        const edge=p.quant_best_edge;
+        const quantAgrees=cls==='AUTOPICK'||(cls==='BORDERLINE'&&typeof edge==='number'&&edge>=0.05);
+        if(cls!=null&&!quantAgrees)conf='MEDIUM';
+      }
+      // Skip if CLV is materially negative (sharp money moved away from us)
+      if(typeof p.clv==='number' && p.clv <= -1){
+        return {stakePct:0, skip:true, skipReason:'neg CLV'};
+      }
+      return {stakePct: stakeFromConf(conf, p.pick, true), skip:false};
+    }
+  },
+  {
+    key:'ban',
+    name:'+ Expanded ban list',
+    color:'#ff00ff',
+    apply:(p)=>{
+      const lower=(p.matchup||'').toLowerCase();
+      if(EXPANDED_BAN.some(b=>lower.includes(b))){
+        return {stakePct:0, skip:true, skipReason:'banned'};
+      }
+      const o=parseOdds(p.pick);
+      let conf=p.confidence;
+      if(conf==='HIGH'&&o!=null&&o>=200)conf='MEDIUM';
+      if(conf==='HIGH'){
+        const cls=p.quant_classification;
+        const edge=p.quant_best_edge;
+        const quantAgrees=cls==='AUTOPICK'||(cls==='BORDERLINE'&&typeof edge==='number'&&edge>=0.05);
+        if(cls!=null&&!quantAgrees)conf='MEDIUM';
+      }
+      if(typeof p.clv==='number' && p.clv <= -1){
+        return {stakePct:0, skip:true, skipReason:'neg CLV'};
+      }
+      return {stakePct: stakeFromConf(conf, p.pick, true), skip:false};
+    }
+  }
+];
+
+// ── Simulator ──────────────────────────────────────────────────────────────
+
+function simulate(picks, policy, startBank){
+  let bank = startBank;
+  const curve=[startBank];
+  let peak=startBank,maxDD=0;
+  let w=0,l=0,p=0,skipped=0;
+  picks.forEach(pk=>{
+    const dec=policy.apply(pk);
+    if(dec.skip||dec.stakePct<=0){skipped++;curve.push(bank);return}
+    const stake=bank*(dec.stakePct/100);
+    const odds=parseOdds(pk.pick);
+    const payout=decPayout(odds);
+    if(odds==null||payout==null){curve.push(bank);return}
+    if(pk.result==='W'){bank += stake*payout; w++}
+    else if(pk.result==='L'){bank -= stake; l++}
+    else if(pk.result==='P'||pk.result==='PUSH'){p++}
+    if(bank>peak)peak=bank;
+    const dd=(peak-bank)/peak;
+    if(dd>maxDD)maxDD=dd;
+    curve.push(bank);
+  });
+  return{bank,curve,w,l,p,skipped,maxDD,startBank};
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+
+function fmt$(v){return '$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtPct(v){return (v>=0?'+':'')+(v*100).toFixed(1)+'%'}
+
+function renderResults(picks, results){
+  const tbody=document.getElementById('policyRows');
+  tbody.innerHTML='';
+  results.forEach(r=>{
+    const roi=(r.bank-r.startBank)/r.startBank;
+    const wp=r.w+r.l>0?r.w/(r.w+r.l):0;
+    tbody.insertAdjacentHTML('beforeend',`<tr>
+      <td><span class="policy-name" style="color:${r.policy.color}">${r.policy.name}</span></td>
+      <td class="num ${r.bank>=r.startBank?'pos':'neg'}">${fmt$(r.bank)}</td>
+      <td class="num ${roi>=0?'pos':'neg'}">${fmtPct(roi)}</td>
+      <td class="num">${r.w}-${r.l}-${r.p}</td>
+      <td class="num">${(wp*100).toFixed(0)}%</td>
+      <td class="num neg">${(r.maxDD*100).toFixed(1)}%</td>
+      <td class="num dim">${r.skipped}</td>
+    </tr>`);
+  });
+
+  // Per-pick comparison
+  const pickTbody=document.getElementById('pickRows');
+  pickTbody.innerHTML='';
+  picks.forEach((pk,i)=>{
+    const row=results.map(r=>{
+      const dec=r.policy.apply(pk);
+      if(dec.skip)return `<td class="num dim" title="${dec.skipReason||'skip'}">skip</td>`;
+      if(dec.stakePct<=0)return `<td class="num dim">$0</td>`;
+      // Show stake at start-of-bet bankroll (compounded would be misleading per row)
+      const stake=r.startBank*(dec.stakePct/100);
+      return `<td class="num">${fmt$(stake)}</td>`;
+    }).join('');
+    const o=parseOdds(pk.pick);
+    const r=pk.result==='W'?'tag-w':pk.result==='L'?'tag-l':'tag-skip';
+    pickTbody.insertAdjacentHTML('beforeend',`<tr title="${(pk.reasoning||'').replace(/"/g,'&quot;').slice(0,300)}">
+      <td class="dim">${pk.date||''}</td>
+      <td>${pk.matchup}</td>
+      <td>${pk.pick}</td>
+      <td><span class="tag">${pk.confidence}</span></td>
+      <td class="num">${o!=null?(o>0?'+':'')+o:'?'}</td>
+      <td class="num"><span class="tag ${r}">${pk.result}</span></td>
+      ${row}
+    </tr>`);
+  });
+
+  drawChart(results);
+}
+
+function drawChart(results){
+  const cv=document.getElementById('chart');
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth, h=cv.clientHeight;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,w,h);
+  const all=results.flatMap(r=>r.curve);
+  const lo=Math.min(...all)*0.95, hi=Math.max(...all)*1.02;
+  const pad={l:50,r:8,t:8,b:18};
+  const px=i=>pad.l+(w-pad.l-pad.r)*(i/(results[0].curve.length-1));
+  const py=v=>pad.t+(h-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+  // axis
+  ctx.strokeStyle='#222230';ctx.beginPath();
+  ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,h-pad.b);ctx.lineTo(w-pad.r,h-pad.b);ctx.stroke();
+  // start-bank line
+  const sb=results[0].startBank;
+  ctx.strokeStyle='#3a3a50';ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(pad.l,py(sb));ctx.lineTo(w-pad.r,py(sb));ctx.stroke();ctx.setLineDash([]);
+  // labels
+  ctx.fillStyle='#5a5a72';ctx.font='10px monospace';
+  ctx.fillText('$'+Math.round(hi),4,pad.t+4);
+  ctx.fillText('$'+Math.round(sb),4,py(sb)+3);
+  ctx.fillText('$'+Math.round(lo),4,h-pad.b);
+  // curves
+  results.forEach(r=>{
+    ctx.strokeStyle=r.policy.color;ctx.lineWidth=1.5;ctx.beginPath();
+    r.curve.forEach((v,i)=>{i===0?ctx.moveTo(px(i),py(v)):ctx.lineTo(px(i),py(v))});
+    ctx.stroke();
+  });
+  // legend
+  ctx.font='10px monospace';
+  results.forEach((r,i)=>{
+    const x=pad.l+10+i*180,y=pad.t+12;
+    if(x>w-100)return;
+    ctx.fillStyle=r.policy.color;ctx.fillRect(x,y-6,10,2);
+    ctx.fillStyle='#9090a8';ctx.fillText(r.policy.name.split(' (')[0].slice(0,22),x+14,y);
+  });
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────
+
+const WORKER_URL='https://sportsedge-proxy.chuynh.workers.dev/kv/et_picks_history';
+
+// Normalise a matchup string to a stable key (case + punctuation + word order
+// independent) so "Bencic vs Andreescu" and "Andreescu vs Bencic" collapse.
+function matchupKey(date, m){
+  const norm=(m||'').toLowerCase().replace(/[^a-z\s]/g,' ').replace(/\s+/g,' ').trim();
+  const parts=norm.split(/\s+vs\s+/);
+  if(parts.length!==2)return date+'|'+norm;
+  const a=parts[0].split(' ').pop(), b=parts[1].split(' ').pop();
+  return date+'|'+[a,b].sort().join('_');
+}
+
+// Dedupe to ONE pick per (date, matchup). Real-world betting is one bet per
+// match — counting both Bencic ML and Andreescu ML on the same game inflates
+// stake count and distorts the simulated bankroll. Tie-breaks by score, then
+// HIGH > MEDIUM > LOW, then non-lean over lean. is_lean=true rows are dropped
+// outright since leans are explicitly monitoring, not bets.
+function dedupeOnePerMatchup(picks){
+  const confRank={HIGH:3,MEDIUM:2,LOW:1};
+  const byKey=new Map();
+  let dropped=0;
+  picks.forEach(p=>{
+    if(p.is_lean===true){dropped++;return}
+    const k=matchupKey(p.date, p.matchup);
+    const existing=byKey.get(k);
+    if(!existing){byKey.set(k,p);return}
+    // Prefer higher score; break ties on confidence rank; then prefer non-lean.
+    const sNew=parseFloat(p.score)||0, sOld=parseFloat(existing.score)||0;
+    if(sNew>sOld){byKey.set(k,p);dropped++;return}
+    if(sNew<sOld){dropped++;return}
+    const cNew=confRank[p.confidence]||0, cOld=confRank[existing.confidence]||0;
+    if(cNew>cOld){byKey.set(k,p);dropped++;return}
+    dropped++;
+  });
+  return {picks:[...byKey.values()], dropped};
+}
+
+function runWithHistory(history){
+  const status=document.getElementById('status');
+  const raw=[];
+  history.forEach(s=>(s.picks||[]).forEach(p=>{
+    if((p.sport||'').toLowerCase()!=='tennis')return;
+    if(!p.result||p.result==='?'||p.result==='PENDING')return;
+    raw.push({...p, date:s.date});
+  }));
+  raw.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const {picks, dropped}=dedupeOnePerMatchup(raw);
+  if(!picks.length){status.textContent='No graded tennis picks in history.';status.classList.add('err');return}
+  status.textContent=`Replaying ${picks.length} graded picks (deduped from ${raw.length} — ${dropped} same-matchup duplicates / leans dropped)…`;
+  const startBank=parseFloat(document.getElementById('startBank').value)||1000;
+  const results=POLICIES.map(policy=>({policy, ...simulate(picks,policy,startBank)}));
+  renderResults(picks,results);
+  document.getElementById('results').style.display='block';
+  status.textContent=`${picks.length} unique-matchup picks replayed across ${POLICIES.length} policies (${dropped} duplicates/leans dropped from ${raw.length} raw). Compounded ¼-Kelly staking.`;
+}
+
+window.runBacktest=async function(){
+  const status=document.getElementById('status');
+  const btn=document.getElementById('runBtn');
+  btn.disabled=true;status.textContent='Fetching history from worker…';status.classList.remove('err');
+  try{
+    const resp=await fetch(WORKER_URL);
+    if(!resp.ok)throw new Error('worker '+resp.status);
+    const wrap=await resp.json();
+    const history=JSON.parse(wrap.value||'[]');
+    runWithHistory(history);
+  }catch(e){
+    status.textContent='Error: '+e.message+' — worker CORS only allows the deployed origin (https://chquordata.github.io). Try PASTE JSON for local testing.';
+    status.classList.add('err');
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+window.runBacktestFromPaste=function(){
+  const status=document.getElementById('status');
+  status.classList.remove('err');
+  try{
+    const txt=document.getElementById('pasteArea').value.trim();
+    if(!txt){status.textContent='Paste area is empty.';status.classList.add('err');return}
+    let history=JSON.parse(txt);
+    // Tolerate a few wrapping formats: raw array, {value:"<json>"} from KV endpoint, {history:[...]}
+    if(history&&typeof history==='object'&&!Array.isArray(history)){
+      if(typeof history.value==='string')history=JSON.parse(history.value);
+      else if(Array.isArray(history.history))history=history.history;
+    }
+    if(!Array.isArray(history))throw new Error('expected an array of slates');
+    runWithHistory(history);
+  }catch(e){
+    status.textContent='Paste error: '+e.message;
+    status.classList.add('err');
+  }
+}
+</script>
+</body>
+</html>

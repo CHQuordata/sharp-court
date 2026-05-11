@@ -69,28 +69,45 @@ describe('aimp (American odds → implied probability)', () => {
 
 describe('kellyPct (Kelly criterion bet sizing)', () => {
   describe('confidence-based defaults (no evData)', () => {
+    // Updated formula: p = bookImplied + edgeByConf (HIGH=4pp, MEDIUM=1.5pp, LOW=0.3pp).
+    // Prior model used fixed p=0.58/0.53/0.50 ignoring price, producing absurd
+    // Kelly stakes on plus-money picks. New model derives p from book + edge.
     test('HIGH confidence at -110 returns a positive Kelly %', () => {
-      // p=0.58, dec≈1.909 → k=(0.58×0.909−0.42)/0.909≈11.8%
+      // book≈0.524, p=0.564, dec≈1.909 → k=(0.564×0.909−0.436)/0.909≈8.5%
       const result = kellyPct('HIGH', 'Team (-110)', null);
-      expect(result).toBeCloseTo(11.79, 1);
+      expect(result).toBeCloseTo(8.5, 0);
     });
 
     test('MEDIUM confidence at -110 returns a small positive Kelly %', () => {
-      // p=0.53, dec≈1.909 → k=(0.53×0.909−0.47)/0.909≈1.3%
+      // book≈0.524, p=0.539, dec≈1.909 → k≈3.2%
       const result = kellyPct('MEDIUM', 'Team (-110)', null);
-      expect(result).toBeCloseTo(1.3, 0);
+      expect(result).toBeCloseTo(3.2, 0);
     });
 
-    test('LOW confidence at -110 returns 0 (break-even, no edge)', () => {
-      // p=0.50 at -110: vig means no true edge → k<0 → clamped to 0
-      expect(kellyPct('LOW', 'Team (-110)', null)).toBe(0);
+    test('LOW confidence at -110 returns a tiny positive Kelly %', () => {
+      // book≈0.524, p=0.527 → barely above book, k tiny but positive
+      const result = kellyPct('LOW', 'Team (-110)', null);
+      expect(result).toBeGreaterThan(0);
+      expect(result).toBeLessThan(1);
     });
 
-    test('HIGH > MEDIUM > 0 at -110 odds', () => {
+    test('HIGH > MEDIUM > LOW > 0 at -110 odds', () => {
       const high   = kellyPct('HIGH',   'Team (-110)', null);
       const medium = kellyPct('MEDIUM', 'Team (-110)', null);
+      const low    = kellyPct('LOW',    'Team (-110)', null);
       expect(high).toBeGreaterThan(medium);
-      expect(medium).toBeGreaterThan(0);
+      expect(medium).toBeGreaterThan(low);
+      expect(low).toBeGreaterThan(0);
+    });
+
+    test('plus-money longshots produce small Kelly stakes (regression)', () => {
+      // Old formula: LOW +400 → 37.5% full Kelly (catastrophic).
+      // New formula: book=0.20, p=0.203 → tiny edge → tiny stake.
+      const lowLongshot = kellyPct('LOW', 'Team (+400)', null);
+      expect(lowLongshot).toBeLessThan(2);
+      // HIGH on a longshot still produces a stake but a sane one.
+      const highLongshot = kellyPct('HIGH', 'Team (+400)', null);
+      expect(highLongshot).toBeLessThan(8);
     });
   });
 
@@ -138,12 +155,9 @@ describe('kellyPct (Kelly criterion bet sizing)', () => {
   });
 
   describe('floor: never returns negative', () => {
-    test('returns 0 for a bet with clearly negative EV', () => {
-      // LOW conf (p=0.50) at -200 odds: huge favorite, certain negative EV
-      expect(kellyPct('LOW', 'Team (-200)', null)).toBe(0);
-    });
-
-    test('returns 0 when tp is at its minimum (0.45) against heavy juice', () => {
+    test('returns 0 when tp clamp produces negative EV against heavy juice', () => {
+      // tp=20 clamps to 0.45 floor; at -200 (book 66.7%, dec 1.5)
+      // k=(0.45×0.5−0.55)/0.5=−0.65 → clamped to 0
       expect(kellyPct('LOW', 'Team (-200)', { tp: '20' })).toBe(0);
     });
   });

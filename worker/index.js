@@ -1,7 +1,7 @@
 const ALLOWED_ORIGIN = 'https://chquordata.github.io';
 const PINNACLE_MMA_SPORT = 7;
 const PINNACLE_TENNIS_SPORT = 33;
-const CRON_SPORTS = ['basketball_nba', 'icehockey_nhl', 'baseball_mlb'];
+// Tennis sport keys are discovered dynamically via the Odds API sports list.
 
 // Rolling-window durations used across grading, signal performance, and the
 // learning agent. Centralised here so tuning one threshold changes all callers.
@@ -164,7 +164,24 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runNightlyCron(env));
+    // Wrap the cron in a top-level catch so a thrown error in any phase
+    // doesn't silently kill the entire run. Persist a 'cron failed' record
+    // to KV so the next /admin/run-cron call can see what went wrong.
+    ctx.waitUntil((async () => {
+      try {
+        await runNightlyCron(env);
+      } catch (e) {
+        try {
+          if (env.LEARNING_STORE) {
+            await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+              ts: Date.now(), iso: new Date().toISOString(),
+              fatal: true, error: e?.message || String(e),
+              stack: (e?.stack || '').slice(0, 1000)
+            }), { expirationTtl: 60 * 60 * 24 * 14 });
+          }
+        } catch (_) {}
+      }
+    })());
   }
 };
 
@@ -192,86 +209,126 @@ async function handleKvPost(key, request, env) {
 async function runNightlyCron(env) {
   if (!env.ODDS_API_KEY || !env.LEARNING_STORE) return;
 
+  // Phase tracking. Each phase records ok/error+ms so a failure in one
+  // step doesn't cause silent skipping of all subsequent steps. Diagnostic
+  // is written at the END so partial failures are visible.
+  const phases = [];
+  const phase = async (name, fn) => {
+    const t0 = Date.now();
+    try {
+      const out = await fn();
+      phases.push({ name, ok: true, ms: Date.now() - t0 });
+      return out;
+    } catch (e) {
+      phases.push({ name, ok: false, ms: Date.now() - t0, error: (e?.message || String(e)).slice(0, 300) });
+      return undefined;
+    }
+  };
+
   // 0a. Refresh surface-specific Elo from Tennis Abstract. Updates daily
   // post-match. This is the canonical baseline rating for sharp-court's
   // fair-price model — far more predictive than ATP/WTA rankings.
-  await refreshSEloKV(env).catch(() => {});
+  await phase('selo_refresh', () => refreshSEloKV(env));
 
   // 0b. Snapshot closing-line odds for upcoming games (next 4 hours). The
   // 2 AM ET cron is too late for tonight's games which already started, but
   // captures any AM games (early MLB, European tennis). Frontend SCAN
   // additionally hits /admin/snapshot-odds so the bulk of capture happens
   // organically as the user refreshes the dashboard pre-game.
-  await snapshotClosingOdds(env).catch(() => {});
+  await phase('closing_snapshot', () => snapshotClosingOdds(env));
 
   // 1. Fetch Odds API scores (primary source for CLV data)
-  const completedGames = await fetchAllCompletedScores(env.ODDS_API_KEY);
+  const oddsRes = await phase('odds_api_scores', () => fetchAllCompletedScores(env.ODDS_API_KEY));
+  const completedGames = oddsRes || [];
   const breakdown = completedGames._breakdown || {};
   const sportsListErr = completedGames._sportsListErr;
-  const games = completedGames.filter(g => g && !g._breakdown);
+  const games = (Array.isArray(completedGames) ? completedGames : []).filter(g => g && !g._breakdown);
 
-  await env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
+  await phase('kv_write_completed', () => env.LEARNING_STORE.put('et_completed_games', JSON.stringify({
     ts: Date.now(), games
-  }), { expirationTtl: 60 * 60 * 24 * 4 });
+  }), { expirationTtl: 60 * 60 * 24 * 4 }));
 
-  await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
-    ts: Date.now(), iso: new Date().toISOString(),
-    sportsListErr, breakdown, totalCompleted: games.length
-  }), { expirationTtl: 60 * 60 * 24 * 14 });
+  // 2. Read pick history (don't abort if KV is empty — still want diagnostic)
+  const historyRaw = await phase('kv_read_history', () => env.LEARNING_STORE.get('et_picks_history'));
+  let history = null;
+  if (historyRaw) {
+    try { history = JSON.parse(historyRaw); } catch (_) {}
+  }
 
-  // 2. Read pick history
-  const historyRaw = await env.LEARNING_STORE.get('et_picks_history');
-  if (!historyRaw) return;
-  let history;
-  try { history = JSON.parse(historyRaw); } catch { return; }
+  let espnGames = [], gradingPool = [], gradedCount = 0, ungradedBefore = 0, ungradedAfter = 0, clvComputed = 0;
 
-  // 3. Fetch ESPN scores for every pending pick, targeted by exact date+sport.
-  //    No fixed lookback window — goes as far back as needed. Covers all sports.
-  const espnGames = await fetchESPNScoresForPendingPicks(history);
-  const gradingPool = [...games, ...espnGames];
+  if (history) {
+    ungradedBefore = history.reduce((n, s) => n + (s.picks || []).filter(p => !p.result || p.result === '?').length, 0);
 
-  // 4. Grade all pending picks against the combined pool
-  let changed = false;
-  const clvTasks = [];
-  history.forEach(slate => {
-    (slate.picks || []).forEach(pick => {
-      if (pick.result && pick.result !== '?') return;
-      const result = gradePickFromScore(pick, gradingPool, slate.date);
-      if (result) {
-        pick.result = result; changed = true;
-        if (pick.clv == null) clvTasks.push(pick);
-      }
+    // 3. Fetch ESPN scores for every pending pick, targeted by exact date+sport.
+    //    No fixed lookback window — goes as far back as needed. Covers all sports.
+    espnGames = (await phase('espn_scores', () => fetchESPNScoresForPendingPicks(history))) || [];
+    gradingPool = [...games, ...espnGames];
+
+    // 4. Grade all pending picks against the combined pool
+    let changed = false;
+    const clvTasks = [];
+    await phase('grading_loop', async () => {
+      history.forEach(slate => {
+        (slate.picks || []).forEach(pick => {
+          if (pick.result && pick.result !== '?') return;
+          const result = gradePickFromScore(pick, gradingPool, slate.date);
+          if (result) {
+            pick.result = result; changed = true; gradedCount++;
+            if (pick.clv == null) clvTasks.push(pick);
+          }
+        });
+        if (slate.grading) {
+          slate.grading.forEach(g => {
+            if (g.result && g.result !== '?') return;
+            const matched = (slate.picks || []).find(p =>
+              p.pick === g.pick ||
+              (p.matchup && g.matchup && p.matchup.toLowerCase() === g.matchup.toLowerCase())
+            );
+            if (matched?.result) { g.result = matched.result; changed = true; }
+          });
+        }
+      });
     });
-    if (slate.grading) {
-      slate.grading.forEach(g => {
-        if (g.result && g.result !== '?') return;
-        const matched = (slate.picks || []).find(p =>
-          p.pick === g.pick ||
-          (p.matchup && g.matchup && p.matchup.toLowerCase() === g.matchup.toLowerCase())
-        );
-        if (matched?.result) { g.result = matched.result; changed = true; }
+
+    // Compute CLV for each newly graded pick — batched after grading loop
+    // since each call is an async KV read. Best-effort: per-pick failures
+    // are silent; the phase wrapper catches a wholesale failure.
+    if (clvTasks.length) {
+      await phase('clv_compute', async () => {
+        await Promise.allSettled(clvTasks.map(async pick => {
+          try {
+            const clvData = await _computeCLV(pick, env);
+            if (clvData) {
+              pick.clv = clvData.clv;
+              pick.clv_data = clvData;
+              changed = true;
+              clvComputed++;
+            }
+          } catch (_) {}
+        }));
       });
     }
-  });
 
-  // Compute CLV for each newly graded pick — batched after grading loop
-  // since each call is an async KV read. Best-effort: failures are silent.
-  if (clvTasks.length) {
-    await Promise.allSettled(clvTasks.map(async pick => {
-      try {
-        const clvData = await _computeCLV(pick, env);
-        if (clvData) {
-          pick.clv = clvData.clv;
-          pick.clv_data = clvData;
-          changed = true;
-        }
-      } catch (_) {}
-    }));
+    if (changed) {
+      await phase('kv_write_history', () => env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30))));
+    }
+
+    ungradedAfter = history.reduce((n, s) => n + (s.picks || []).filter(p => !p.result || p.result === '?').length, 0);
   }
 
-  if (changed) {
-    await env.LEARNING_STORE.put('et_picks_history', JSON.stringify(history.slice(0, 30)));
-  }
+  // Final diagnostic: persist phase results + counts BEFORE the learning
+  // agent runs so we always have a record of grading-phase outcomes even
+  // if the learning agent fails downstream. Last-write happens after agent.
+  await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+    ts: Date.now(), iso: new Date().toISOString(),
+    phases,
+    sportsListErr, breakdown,
+    totalCompleted: games.length,
+    espnFound: espnGames.length,
+    ungradedBefore, gradedThisRun: gradedCount, ungradedAfter,
+    clvComputed
+  }), { expirationTtl: 60 * 60 * 24 * 14 });
 
   // 4. Learning agent — runs EVERY cron, not just when new picks were graded.
   // computeSignalPerformance is deterministic and cheap (just counts W/L/P
@@ -281,7 +338,28 @@ async function runNightlyCron(env) {
   // there. The Claude rule-rewrite call inside runLearningAgent has its own
   // internal gating (requires ≥5 recent picks and CLAUDE_API_KEY) so it
   // won't fire wastefully when there's nothing new to learn from.
-  await runLearningAgent(env, history);
+  if (history) {
+    const t0 = Date.now();
+    try {
+      await runLearningAgent(env, history);
+      phases.push({ name: 'learning_agent', ok: true, ms: Date.now() - t0 });
+    } catch (e) {
+      phases.push({ name: 'learning_agent', ok: false, ms: Date.now() - t0, error: (e?.message || String(e)).slice(0, 300) });
+    }
+    // Re-write diagnostic with the learning_agent phase included so partial
+    // failures here are also visible.
+    try {
+      await env.LEARNING_STORE.put('et_cron_diagnostic', JSON.stringify({
+        ts: Date.now(), iso: new Date().toISOString(),
+        phases,
+        sportsListErr, breakdown,
+        totalCompleted: games.length,
+        espnFound: espnGames.length,
+        ungradedBefore, gradedThisRun: gradedCount, ungradedAfter,
+        clvComputed
+      }), { expirationTtl: 60 * 60 * 24 * 14 });
+    } catch (_) {}
+  }
 }
 
 // ── Learning agent ────────────────────────────────────────────────────────────
@@ -360,7 +438,7 @@ async function runLearningAgent(env, history) {
 
   // Collect picks from the last 7 days with confirmed results
   const cutoff = Date.now() - MS_7D;
-  const recentBySport = { tennis: [], nba: [], mlb: [], nhl: [] };
+  const recentBySport = { tennis: [] };
   history.forEach(slate => {
     if (new Date(slate.date).getTime() < cutoff) return;
     (slate.picks || []).forEach(pick => {
@@ -370,27 +448,23 @@ async function runLearningAgent(env, history) {
     });
   });
 
-  const totalRecent = Object.values(recentBySport).reduce((s, a) => s + a.length, 0);
+  const totalRecent = recentBySport.tennis.length;
   if (totalRecent < 5) return; // not enough data for meaningful lessons
 
-  // Read existing sport-specific rules
-  const sports = ['tennis', 'nba', 'mlb', 'nhl'];
+  // Read existing tennis rules
+  const sports = ['tennis'];
   const existingRules = await Promise.all(
     sports.map(s => env.LEARNING_STORE.get(`et_learned_rules_${s}`))
   );
   const rulesMap = Object.fromEntries(sports.map((s, i) => [s, existingRules[i] || '']));
 
-  // Build picks block grouped by sport
-  let picksBlock = '';
-  for (const [sport, picks] of Object.entries(recentBySport)) {
-    if (!picks.length) continue;
-    picksBlock += `\n${sport.toUpperCase()} (${picks.length} picks, last 7d):\n`;
-    picks.forEach(p => {
-      const tags = (p.filters || []).join(', ') || 'no signal tags';
-      const conf = p.confidence || '?';
-      picksBlock += `  ${p.result} | ${conf} | ${p.matchup || ''} | ${p.pick || ''} | signals: ${tags}\n`;
-    });
-  }
+  // Build picks block for tennis
+  let picksBlock = `\nTENNIS (${recentBySport.tennis.length} picks, last 7d):\n`;
+  recentBySport.tennis.forEach(p => {
+    const tags = (p.filters || []).join(', ') || 'no signal tags';
+    const conf = p.confidence || '?';
+    picksBlock += `  ${p.result} | ${conf} | ${p.matchup || ''} | ${p.pick || ''} | signals: ${tags}\n`;
+  });
 
   // Build signal performance summary for context. Includes Wilson 95% CI
   // bounds + a SIGNIFICANCE TAG so Claude can correctly distinguish noise
@@ -419,34 +493,34 @@ async function runLearningAgent(env, history) {
     .join('\n\n');
 
   const userMsg =
-`GRADED PICKS — last 7 days:
+`GRADED TENNIS PICKS — last 7 days:
 ${picksBlock}
 
-SIGNAL PERFORMANCE — last 30 days (all graded picks):
+SIGNAL PERFORMANCE — last 30 days (all graded tennis picks):
 ${perfSummary || '(insufficient data yet)'}
 
 EXISTING LEARNED RULES:
 ${existingRulesBlock || '(none yet)'}
 
 Instructions:
-- Analyze the pick results above by sport.
-- For each sport that has graded picks: identify what's working and what isn't.
+- Analyze the tennis pick results above.
+- Identify what signals are working and what isn't.
 
 DECAY POLICY — apply to EVERY existing rule before considering preservation:
-- DROP any rule whose referenced signal has FEWER THAN 3 picks in the last 30 days. Stale signals that don't appear in recent data must not persist — they were either learned from a different season, a tournament that's no longer running, or a pattern the system has stopped triggering on. A rule with no current evidence is noise.
-- DROP any rule whose referenced signal has win rate ≤40% with sample ≥10 in the last 30 days. The signal is actively losing money; preserving the rule is worse than having no rule.
-- DROP any rule that depends on a player, team, or tournament-specific name that doesn't appear in any pick from the last 14 days. Roster moves, retirements, and tournament substitutions invalidate name-specific rules quickly.
-- DOWN-PROMOTE (rewrite as softer "context only" guidance, max 15 words) any rule whose signal has 41-49% WR with sample ≥10. It's not a clear edge, just a weak lean.
+- DROP any rule whose referenced signal has FEWER THAN 3 picks in the last 30 days. Stale signals that don't appear in recent data must not persist — they were either learned from a different tournament or a pattern the system has stopped triggering on.
+- DROP any rule whose referenced signal has win rate ≤40% with sample ≥10 in the last 30 days. The signal is actively losing money.
+- DROP any rule that depends on a player-specific name that doesn't appear in any pick from the last 14 days. Retirements and tournament substitutions invalidate name-specific rules quickly.
+- DOWN-PROMOTE (rewrite as softer "context only" guidance, max 15 words) any rule whose signal has 41-49% WR with sample ≥10.
 
 PRESERVATION CRITERIA — a rule survives only if ALL hold:
 - Referenced signal has ≥3 picks in last 30d
-- Referenced signal has ≥50% WR (or strict policy rule from CLAUDE.md that does not depend on win rate, e.g. "never use SH%")
+- Referenced signal has ≥50% WR
 - Rule is still consistent with the pick reasoning patterns in the last 7 days
 
 ADDITION CRITERIA — only add new rules when:
 - Sample ≥5 picks for the new pattern in last 30d
 - Win rate ≥55% on that pattern
-- The pattern is reproducible (not just one hot streak with the same pick)
+- The pattern is reproducible (not just one hot streak)
 
 STATISTICAL SIGNIFICANCE GATE (HARD REQUIREMENT):
 - Each signal in the SIGNAL PERFORMANCE block above is tagged [EDGE], [FADE], or [NOISE].
@@ -456,18 +530,15 @@ STATISTICAL SIGNIFICANCE GATE (HARD REQUIREMENT):
 - ONLY generate "favors X" rules from [EDGE]-tagged signals.
 - ONLY generate "fade X" rules from [FADE]-tagged signals.
 - NEVER generate a rule from a [NOISE]-tagged signal regardless of raw WR.
-- This prevents 4-1 (80% WR) hot streaks from minting confident-looking rules
-  that are actually statistical noise.
 
 OUTPUT REQUIREMENTS:
-- Max 10 rules per sport (down from 12 — be aggressive about pruning)
+- Max 10 rules total — be aggressive about pruning
 - Each rule max 20 words, name the exact signal/condition/outcome
-- It is BETTER to have 3 strong rules than 10 weak ones — if a sport has no signals meeting preservation criteria, return an empty string for that sport's rules rather than preserving stale ones
-- If a sport has 0 graded picks in the last 30d, return its existing rules unchanged (no data = can't decay)
+- It is BETTER to have 3 strong rules than 10 weak ones — if no signals meet preservation criteria, return an empty string
 - Output raw JSON only. No markdown fences.
 
-Output format (all 4 sport fields required even if unchanged):
-{"tennis_rules":"rule1\\nrule2\\n...","nba_rules":"...","mlb_rules":"...","nhl_rules":"..."}`;
+Output format:
+{"tennis_rules":"rule1\\nrule2\\n..."}`;
 
   // Log learning agent failures to KV so they're queryable via
   // /kv/et_learning_agent_err. Silences the outer try-catch without
@@ -508,9 +579,6 @@ Output format (all 4 sport fields required even if unchanged):
 
     const ruleKeyMap = {
       tennis_rules: 'et_learned_rules_tennis',
-      nba_rules:    'et_learned_rules_nba',
-      mlb_rules:    'et_learned_rules_mlb',
-      nhl_rules:    'et_learned_rules_nhl'
     };
 
     // null/undefined = field absent from response → keep existing KV rules unchanged
@@ -529,12 +597,9 @@ Output format (all 4 sport fields required even if unchanged):
 
 // ── Score fetching ────────────────────────────────────────────────────────────
 
-// ESPN sport key map. Tennis needs both ATP and WTA leagues.
+// ESPN sport key map — tennis only (ATP + WTA leagues).
 const ESPN_LEAGUES = {
   tennis: ['tennis/atp', 'tennis/wta'],
-  nba:    ['basketball/nba'],
-  nhl:    ['hockey/nhl'],
-  mlb:    ['baseball/mlb'],
 };
 
 // Fetch ESPN scores for every pending pick by exact date+sport.
@@ -631,7 +696,7 @@ async function fetchESPNScoresForPendingPicks(history) {
 }
 
 async function fetchAllCompletedScores(apiKey) {
-  const sports = [...CRON_SPORTS];
+  const sports = [];
 
   // Discover active tennis sport keys
   let sportsListErr = null;
@@ -1317,13 +1382,9 @@ function buildBacktestReport(history, perf) {
 // we can later compute Closing Line Value when grading. Stores per-game with
 // a 4-day TTL (long enough to survive grading + a few backfill retries).
 
-const _CRON_SPORTS_ALL = [
-  'basketball_nba', 'icehockey_nhl', 'baseball_mlb', 'americanfootball_nfl'
-];
-
 async function snapshotClosingOdds(env) {
   if (!env.ODDS_API_KEY) return { error: 'no API key' };
-  const sports = [..._CRON_SPORTS_ALL];
+  const sports = [];
   // Discover active tennis sport keys
   try {
     const r = await fetch(`https://api.the-odds-api.com/v4/sports/?apiKey=${env.ODDS_API_KEY}`);

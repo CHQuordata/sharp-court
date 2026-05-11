@@ -16,6 +16,6 @@ compatibility_date = "2024-09-23"
 binding = "LEARNING_STORE"
 id = "e1d175f193354749bff5860783b014e5"
 
-# Nightly cron: 7 AM UTC = 3 AM ET
+# Nightly cron: 6 AM UTC = 1 AM ET
 [triggers]
-crons = ["0 7 * * *"]
+crons = ["0 6 * * *"]
