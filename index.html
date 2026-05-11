@@ -4682,10 +4682,12 @@ function autoGradeFromScores(completedGames){
 // surface, status, and doubles flag. Excludes timestamps and dynamic fields.
 function _matchFingerprint(g){
   const ml=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='h2h');
-  const prices=ml?.outcomes?.map(o=>{const p=parseInt(o.price)||0;return Math.round(p/5)*5;}).sort((a,b)=>a-b).join(',')||'';
+  const prices=ml?.outcomes?.map(o=>{const p=parseInt(o.price)||0;return Math.round(p/20)*20;}).sort((a,b)=>a-b).join(',')||'';
   const sp=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='spreads');
   const spread=sp?.outcomes?.[0]?.point??'';
-  return [g.id,g.sp,g.surf||'',g.st||'',g.isDoubles?1:0,prices,spread].join('|');
+  const tot=g.odds?.bookmakers?.[0]?.markets?.find(m=>m.key==='totals');
+  const total=tot?.outcomes?.find(o=>o.name==='Over')?.point??'';
+  return [g.id,g.sp,g.surf||'',g.st||'',g.isDoubles?1:0,prices,spread,total].join('|');
 }
 
 // Slate-level fingerprint: sorted concatenation of per-match fingerprints.
